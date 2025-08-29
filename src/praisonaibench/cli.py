@@ -102,9 +102,29 @@ Examples:
             print(f"❌ Cross-model test failed: {e}")
             sys.exit(1)
     
+    # Default to tests.yaml if no specific command provided
     else:
-        parser.print_help()
-        sys.exit(0)
+        default_suite = "tests.yaml"
+        if os.path.exists(default_suite):
+            print(f"\n📋 No command specified, running default test suite: {default_suite}...")
+            try:
+                results = bench.run_test_suite(default_suite, test_filter=args.test_name, default_model=args.model)
+                if args.test_name:
+                    print(f"✅ Test '{args.test_name}' completed")
+                else:
+                    print(f"✅ Test suite completed: {len(results)} tests")
+                
+            except Exception as e:
+                print(f"❌ Error running default test suite: {e}")
+                sys.exit(1)
+        else:
+            print(f"\n❌ No command specified and default test suite '{default_suite}' not found.")
+            print("\nCreate a tests.yaml file or use one of these commands:")
+            print("  praisonaibench --test 'Your prompt here'")
+            print("  praisonaibench --suite your_suite.yaml")
+            print("  praisonaibench --cross-model 'Your prompt' --models model1,model2")
+            parser.print_help()
+            sys.exit(1)
     
     # Show summary
     summary = bench.get_summary()
