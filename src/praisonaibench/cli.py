@@ -7,8 +7,43 @@ Simple command-line interface for running benchmarks.
 import argparse
 import sys
 import os
+import json
 from .bench import Bench
 from .version import __version__
+
+
+def extract_html_from_results(results_file, bench):
+    """Extract HTML content from benchmark results JSON file and save as .html files."""
+    try:
+        with open(results_file, 'r', encoding='utf-8') as f:
+            results_data = json.load(f)
+    except Exception as e:
+        raise Exception(f"Failed to read results file: {e}")
+    
+    extracted_count = 0
+    
+    # Handle both single result and list of results
+    if isinstance(results_data, dict):
+        results_list = [results_data]
+    elif isinstance(results_data, list):
+        results_list = results_data
+    else:
+        raise Exception("Invalid results file format")
+    
+    for result in results_list:
+        if 'response' in result and 'test_name' in result:
+            response = result['response']
+            test_name = result['test_name']
+            model = result.get('model', None)
+            
+            # Use the existing HTML extraction method from bench
+            try:
+                bench._extract_and_save_html(response, test_name, model)
+                extracted_count += 1
+            except Exception as e:
+                print(f"⚠️  Failed to extract HTML for test '{test_name}': {e}")
+    
+    return extracted_count
 
 
 def main():
@@ -23,6 +58,7 @@ Examples:
   praisonaibench --suite tests.yaml
   praisonaibench --suite tests.yaml --test-name "terrain_simulation"
   praisonaibench --cross-model "Write a poem" --models gpt-4o,gpt-3.5-turbo
+  praisonaibench --extract output/benchmark_results_20250829_173322.json
         """
     )
     
@@ -43,6 +79,9 @@ Examples:
     # Configuration
     parser.add_argument('--config', type=str, help='Configuration file path')
     parser.add_argument('--output', type=str, help='Output file for results')
+    
+    # Extract HTML from existing results
+    parser.add_argument('--extract', type=str, help='Extract HTML from existing benchmark results JSON file')
     
     args = parser.parse_args()
     
@@ -101,6 +140,27 @@ Examples:
         except Exception as e:
             print(f"❌ Cross-model test failed: {e}")
             sys.exit(1)
+    
+    # Extract HTML from existing results
+    elif args.extract:
+        if not os.path.exists(args.extract):
+            print(f"❌ Results file not found: {args.extract}")
+            sys.exit(1)
+            
+        print(f"\n🔍 Extracting HTML from {args.extract}...")
+        try:
+            extracted_count = extract_html_from_results(args.extract, bench)
+            if extracted_count > 0:
+                print(f"✅ Successfully extracted and saved {extracted_count} HTML files")
+            else:
+                print("ℹ️  No HTML content found in the results file")
+            
+        except Exception as e:
+            print(f"❌ Error extracting HTML: {e}")
+            sys.exit(1)
+        
+        # Exit early for extract operation - no need for summary or saving
+        return
     
     # Default to tests.yaml if no specific command provided
     else:

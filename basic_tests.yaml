@@ -1,0 +1,24 @@
+# Basic Three.js Test Suite for PraisonAI Bench
+# 5 essential Three.js tests covering different core aspects
+# Each test generates a complete, self-contained HTML file
+
+tests:
+  # Test 1: Basic 3D Shape & Controls
+  - name: "rotating_cube_controls"
+    prompt: "Create a complete HTML file with Three.js that displays a colorful cube with different colored faces. Include mouse orbit controls to rotate the view and make the cube slowly spin on its own axis. Add basic lighting to show depth. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'rotating_cube_controls.html'."
+  
+  # Test 2: Animation & Physics
+  - name: "bouncing_ball_animation"
+    prompt: "Create a complete HTML file with Three.js that shows a red ball bouncing up and down with realistic physics (gravity, acceleration). Include a ground plane and proper lighting. Make the ball cast shadows for realism. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'bouncing_ball_animation.html'."
+  
+  # Test 3: Lighting & Materials
+  - name: "lighting_materials_demo"
+    prompt: "Create a complete HTML file with Three.js that displays 3 spheres with different materials (basic, phong, standard) under different lighting conditions. Include a toggle button to switch between ambient and directional lighting to show the material differences. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'lighting_materials_demo.html'."
+  
+  # Test 4: User Interaction
+  - name: "interactive_color_cubes"
+    prompt: "Create a complete HTML file with Three.js that displays 5 cubes in a row with different initial colors. When a cube is clicked, it should change to a random color and briefly scale up. Include mouse raycasting for click detection and smooth animations. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'interactive_color_cubes.html'."
+  
+  # Test 5: Scene Composition
+  - name: "basic_3d_scene"
+    prompt: "Create a complete HTML file with Three.js that builds a simple 3D scene with a textured ground plane, 3-4 different geometric shapes (cube, sphere, cylinder, cone) arranged in the scene, proper lighting with shadows, and keyboard controls (WASD) to move the camera around. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'basic_3d_scene.html'."

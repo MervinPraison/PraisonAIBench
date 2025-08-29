@@ -66,7 +66,8 @@ class Bench:
     def run_single_test(self, 
                        prompt: str, 
                        model: str = None,
-                       test_name: str = None) -> Dict[str, Any]:
+                       test_name: str = None,
+                       llm_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Run a single benchmark test.
         
@@ -74,6 +75,7 @@ class Bench:
             prompt: Test prompt (this becomes the instruction to the agent)
             model: LLM model to use (defaults to first model in config)
             test_name: Optional test name
+            llm_config: Dictionary of LLM configuration parameters (max_tokens, temperature, etc.)
             
         Returns:
             Test result dictionary
@@ -81,10 +83,18 @@ class Bench:
         # Use the prompt as the instruction for the agent
         model = model or self.config.get("default_model", "gpt-4o")
         
+        # Build LLM configuration
+        if llm_config is not None:
+            # Merge model with provided config
+            final_llm_config = llm_config.copy()
+            final_llm_config["model"] = model
+        else:
+            final_llm_config = model
+        
         # Create agent with prompt as instruction
         agent = BenchAgent(
             name="BenchAgent",
-            llm=model,
+            llm=final_llm_config,
             instructions=prompt
         )
         
@@ -123,11 +133,13 @@ class Bench:
         
         suite_results = []
         
-        # Run tests
+        # Extract config and tests sections
         if isinstance(tests, dict) and 'tests' in tests:
             test_list = tests['tests']
+            suite_config = tests.get('config', {})
         else:
             test_list = tests
+            suite_config = {}
         
         for test in test_list:
             prompt = test.get('prompt', '')
@@ -139,7 +151,7 @@ class Bench:
                 continue
             
             print(f"Running test: {test_name}")
-            result = self.run_single_test(prompt, model, test_name)
+            result = self.run_single_test(prompt, model, test_name, llm_config=suite_config)
             suite_results.append(result)
             
             if result['status'] == 'success':
@@ -202,13 +214,34 @@ class Bench:
     
     def _extract_and_save_html(self, response, test_name, model=None):
         """Extract HTML code from response and save to .html file if found."""
-        # Look for HTML code blocks in markdown format
+        html_content = None
+        
+        # First, look for complete HTML code blocks in markdown format
         html_pattern = r'```html\s*\n(.*?)\n```'
         matches = re.findall(html_pattern, response, re.DOTALL | re.IGNORECASE)
         
         if matches:
-            # Use the first HTML block found
+            # Use the first complete HTML block found
             html_content = matches[0].strip()
+            print(f"✅ Found complete HTML block ({len(html_content)} chars)")
+        else:
+            # Check for truncated HTML blocks (starts with ```html but no closing ```)
+            truncated_pattern = r'```html\s*\n(.*)'
+            truncated_matches = re.findall(truncated_pattern, response, re.DOTALL | re.IGNORECASE)
+            
+            if truncated_matches:
+                # Use the truncated HTML content
+                html_content = truncated_matches[0].strip()
+                print(f"⚠️  Found truncated HTML block ({len(html_content)} chars) - attempting to extract")
+            else:
+                # Check if the entire response is raw HTML (starts with <!doctype or <html)
+                response_stripped = response.strip()
+                if (response_stripped.lower().startswith('<!doctype') or 
+                    response_stripped.lower().startswith('<html')):
+                    html_content = response_stripped
+                    print(f"✅ Found raw HTML content ({len(html_content)} chars)")
+            
+        if html_content:
             
             # Determine filename - look for specific filenames mentioned in the prompt/response
             filename_patterns = [

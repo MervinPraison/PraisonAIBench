@@ -132,6 +132,17 @@ praisonaibench --suite tests.yaml --model xai/grok-code-fast-1
 praisonaibench --cross-model "Write a poem" --models gpt-4o,gpt-3.5-turbo,xai/grok-code-fast-1
 ```
 
+### Extract HTML from Results
+
+```bash
+# Extract HTML from existing benchmark results
+praisonaibench --extract output/benchmark_results_20250829_160426.json
+# → Processes JSON file and saves any HTML content to .html files
+
+# Works with any benchmark results JSON file
+praisonaibench --extract my_results.json
+```
+
 ### HTML Generation Examples
 
 ```bash
@@ -159,6 +170,28 @@ tests:
   - name: "model_specific_test"
     prompt: "Explain quantum physics"
     model: "gpt-4o"
+```
+
+### Advanced Test Suite with Full Config Support
+
+```yaml
+# Global LLM configuration (applies to all tests)
+config:
+  max_tokens: 4000
+  temperature: 0.7
+  top_p: 0.9
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+  # Any LiteLLM-compatible parameter is supported!
+
+tests:
+  - name: "creative_writing"
+    prompt: "Write a detailed sci-fi story"
+    model: "gpt-4o"
+  
+  - name: "code_generation"
+    prompt: "Create a Python web scraper"
+    model: "xai/grok-code-fast-1"
 ```
 
 ### Three.js HTML Generation Suite
@@ -293,9 +326,13 @@ Results saved to: output/benchmark_results_20250829_160426.json
 - Automatic API key detection
 
 ### 💾 **Smart HTML Handling**
-- Auto-detects HTML code blocks in responses
-- Extracts and saves as `.html` files
+- Auto-detects HTML in multiple formats:
+  - Markdown-wrapped HTML (```html...```)
+  - Truncated HTML blocks (incomplete responses)
+  - Raw HTML content (direct HTML responses)
+- Extracts and saves as `.html` files automatically
 - Organizes by model in separate folders
+- Extract HTML from existing benchmark results with `--extract`
 - Perfect for Three.js, React, or any web development benchmarks
 
 ### 🎛️ **Flexible Test Management**
