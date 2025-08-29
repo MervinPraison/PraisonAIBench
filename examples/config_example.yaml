@@ -1,0 +1,28 @@
+# Example Configuration for PraisonAI Bench
+# Copy this file and customize for your needs
+
+# Models to test (supports OpenAI, Anthropic, Ollama, etc.)
+models:
+  - "gpt-4o"
+  - "gpt-3.5-turbo"
+  # - "claude-3-sonnet-20240229"  # Uncomment for Anthropic
+  # - "ollama/llama2"             # Uncomment for Ollama
+
+# Output settings
+output_format: "json"
+save_results: true
+output_dir: "output"
+
+# Agent settings (optional customization)
+agents:
+  reasoning:
+    instructions: "You are a logical reasoning specialist. Show step-by-step thinking."
+  
+  creative:
+    instructions: "You are a creative writing expert. Be imaginative and original."
+  
+  analysis:
+    instructions: "You are a data analyst. Provide structured, thorough analysis."
+  
+  general:
+    instructions: "You are a helpful AI assistant. Be accurate and comprehensive."

@@ -1,0 +1,36 @@
+# Example Test Suite for PraisonAI Bench
+# This file demonstrates how to create comprehensive test suites
+
+tests:
+  # Math and Logic Tests
+  - name: "basic_math"
+    prompt: "What is 127 + 89? Show your calculation."
+  
+  - name: "logic_puzzle"
+    prompt: "If all roses are flowers and some flowers fade quickly, can we conclude that some roses fade quickly?"
+  
+  # Creative Tests  
+  - name: "story_writing"
+    prompt: "Write a 100-word story about a time-traveling librarian."
+  
+  - name: "poem_generation"
+    prompt: "Create a haiku about machine learning."
+  
+  # Analysis Tests
+  - name: "data_interpretation"
+    prompt: "Analyze this trend: Sales increased 15% in Q1, decreased 5% in Q2, and increased 25% in Q3. What insights can you provide?"
+  
+  - name: "problem_analysis"
+    prompt: "What are the main factors contributing to climate change? Provide a structured analysis."
+  
+  # General Knowledge Tests
+  - name: "general_knowledge"
+    prompt: "Explain the concept of blockchain in simple terms."
+  
+  - name: "instruction_following"
+    prompt: "List exactly 5 benefits of renewable energy, numbered 1-5."
+  
+  # Model-specific test (optional)
+  - name: "specific_model_test"
+    prompt: "Explain quantum computing in one paragraph."
+    model: "gpt-4o"

@@ -1,0 +1,19 @@
+# Three.js Simulation Test Suite for PraisonAI Bench
+# This file contains prompts that test LLM ability to generate Three.js simulations in HTML files
+
+tests:
+  # 3D Rotating Cube Simulation
+  - name: "rotating_cube_simulation"
+    prompt: "Create a complete HTML file with Three.js that displays a rotating 3D cube. The cube should have different colored faces, rotate continuously, and include proper lighting. The HTML file should be self-contained with Three.js loaded from CDN. Include camera controls for user interaction. Save the output as 'rotating_cube.html'."
+  
+  # Solar System Simulation
+  - name: "solar_system_simulation"
+    prompt: "Create a complete HTML file with Three.js that simulates a simple solar system. Include the sun (yellow sphere) at the center, Earth (blue sphere) orbiting around it, and the moon (gray sphere) orbiting around Earth. Add realistic orbital speeds and include stars in the background. The HTML should be self-contained with Three.js from CDN. Save the output as 'solar_system.html'."
+  
+  # Particle System Animation
+  - name: "particle_system_simulation"
+    prompt: "Create a complete HTML file with Three.js that displays an animated particle system. The particles should move in interesting patterns (like a fountain, explosion, or flowing stream), change colors over time, and respond to mouse movement. Include at least 1000 particles with realistic physics. The HTML should be self-contained with Three.js from CDN. Save the output as 'particle_system.html'."
+  
+  # Interactive 3D Terrain
+  - name: "terrain_simulation"
+    prompt: "Create a complete HTML file with Three.js that generates and displays a 3D terrain landscape. The terrain should have hills and valleys using noise or height maps, include realistic texturing (grass, rock, etc.), and allow the user to fly through the scene with keyboard controls (WASD). Add fog effects for depth. The HTML should be self-contained with Three.js from CDN. Save the output as 'terrain_landscape.html'."
