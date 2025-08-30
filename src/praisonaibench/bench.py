@@ -288,7 +288,18 @@ class Bench:
         successful_tests = len([r for r in self.results if r.get("status") == "success"])
         failed_tests = total_tests - successful_tests
         
-        models_tested = list(set([r.get("model") for r in self.results]))
+        # Extract model names, handling both string and dict model configs
+        model_names = []
+        for r in self.results:
+            model = r.get("model")
+            if isinstance(model, dict):
+                # If model is a dict (LLM config), extract the model name
+                model_names.append(model.get("model", "unknown"))
+            elif isinstance(model, str):
+                model_names.append(model)
+            else:
+                model_names.append("unknown")
+        models_tested = list(set(model_names))
         
         avg_execution_time = sum([r.get("execution_time", 0) for r in self.results]) / total_tests
         
