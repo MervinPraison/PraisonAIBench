@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Shooter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/shaders/CopyShader.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: black; font-family: Arial, sans-serif; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; z-index: 1; }
+        #health { background: red; height: 20px; width: 200px; margin-bottom: 10px; }
+        #healthBar { background: green; height: 100%; width: 100%; }
+        #score { font-size: 20px; }
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-size: 30px; display: none; }
+        .mobileControls { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: center; gap: 10px; }
+        .controlBtn { width: 60px; height: 60px; background: rgba(255,255,255,0.3); border: none; border-radius: 50%; color: white; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="health"><div id="healthBar"></div></div>
+        <div id="score">Score: 0</div>
+    </div>
+    <div id="gameOver">Game Over<br>Tap to Restart</div>
+    <div class="mobileControls" id="mobileControls">
+        <button class="controlBtn" id="leftBtn">LEFT</button>
+        <button class="controlBtn" id="shootBtn">SHOOT</button>
+        <button class="controlBtn" id="rightBtn">RIGHT</button>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // Game variables
+        let scene, camera, renderer, composer;
+        let playerShip, enemies, projectiles, hitParticles, stars;
+        let health = 100, score = 0;
+        let difficulty = 1, enemySpeed = 0.05;
+        let lastShootTime = 0, shootCooldown = 200;
+        let gameRunning = true;
+        let keys = {};
+        let touchX = 0, isDragging = false;
+
+        // Initialize Three.js
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000);
+
+            // Post-processing for bloom
+            composer = new THREE.EffectComposer(renderer);
+            const renderPass = new THREE.RenderPass(scene, camera);
+            composer.addPass(renderPass);
+
+            const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            composer.addPass(bloomPass);
+
+            const copyPass = new THREE.ShaderPass(THREE.CopyShader);
+            copyPass.renderToScreen = true;
+            composer.addPass(copyPass);
+
+            // Starfield
+            const starGeometry = new THREE.BufferGeometry();
+            const starVertices = [];
+            for (let i = 0; i < 1000; i++) {
+                starVertices.push((Math.random() - 0.5) * 200, (Math.random() - 0.5) * 200, Math.random() * -200);
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+            const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
+            stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+
+            // Player ship
+            const shipGeometry = new THREE.BoxGeometry(1, 0.5, 0.5);
+            const shipMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            playerShip = new THREE.Mesh(shipGeometry, shipMaterial);
+            playerShip.position.set(0, -3, 0);
+            scene.add(playerShip);
+
+            // Enemies (instanced)
+            const enemyGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+            const enemyMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            enemies = new THREE.InstancedMesh(enemyGeometry, enemyMaterial, 100);
+            enemies.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            scene.add(enemies);
+
+            // Projectiles
+            projectiles = [];
+
+            // Hit particles (GPU particles)
+            const particleGeometry = new THREE.BufferGeometry();
+            const particleVertices = [];
+            for (let i = 0; i < 100; i++) {
+                particleVertices.push(0, 0, 0);
+            }
+            particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(particleVertices, 3));
+            const particleMaterial = new THREE.PointsMaterial({ color: 0xffff00, size: 0.1 });
+            hitParticles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(hitParticles);
+            hitParticles.visible = false;
+
+            // Controls
+            window.addEventListener('keydown', (e) => keys[e.code] = true);
+            window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+            // Mobile controls
+            const leftBtn = document.getElementById('leftBtn');
+            const rightBtn = document.getElementById('rightBtn');
+            const shootBtn = document.getElementById('shootBtn');
+            leftBtn.addEventListener('touchstart', () => keys['ArrowLeft'] = true);
+            leftBtn.addEventListener('touchend', () => keys['ArrowLeft'] = false);
+            rightBtn.addEventListener('touchstart', () => keys['ArrowRight'] = true);
+            rightBtn.addEventListener('touchend', () => keys['ArrowRight'] = false);
+            shootBtn.addEventListener('touchstart', () => shoot());
+            shootBtn.addEventListener('touchend', () => {});
+
+            // Touch drag for movement
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                touchX = e.touches[0].clientX;
+            });
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                if (isDragging) {
+                    const newX = e.touches[0].clientX;
+                    const deltaX = newX - touchX;
+                    playerShip.position.x += deltaX * 0.01;
+                    touchX = newX;
+                }
+            });
+            renderer.domElement.addEventListener('touchend', () => isDragging = false);
+
+            // Restart
+            document.getElementById('gameOver').addEventListener('click', restart);
+
+            animate();
+        }
+
+        // Spawn enemies
+        function spawnEnemy() {
+            const matrix = new THREE.Matrix4();
+            matrix.setPosition(Math.random() * 10 - 5, 5, 0);
+            enemies.setMatrixAt(Math.floor(Math.random() * 100), matrix);
+            enemies.instanceMatrix.needsUpdate = true;
+        }
+
+        // Shoot projectile
+        function shoot() {
+            if (Date.now() - lastShootTime < shootCooldown) return;
+            lastShootTime = Date.now();
+            const projGeometry = new THREE.SphereGeometry(0.1);
+            const projMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+            const proj = new THREE.Mesh(projGeometry, projMaterial);
+            proj.position.copy(playerShip.position);
+            proj.position.z -= 1;
+            projectiles.push(proj);
+            scene.add(proj);
+        }
+
+        // Update game
+        function update() {
+            // Starfield scrolling
+            stars.position.z += 0.05;
+
+            // Player movement
+            if (keys['ArrowLeft'] && playerShip.position.x > -5) playerShip.position.x -= 0.1;
+            if (keys['ArrowRight'] && playerShip.position.x < 5) playerShip.position.x += 0.1;
+            if (keys['Space']) shoot();
+
+            // Enemies movement
+            enemies.position.z += enemySpeed;
+            if (Math.random() < 0.02 * difficulty) spawnEnemy();
+
+            // Projectiles
+            for (let i = projectiles.length - 1; i >= 0; i--) {
+                projectiles[i].position.z -= 0.1;
+                if (projectiles[i].position.z < -10) {
+                    scene.remove(projectiles[i]);
+                    projectiles.splice(i, 1);
+                }
+            }
+
+            // Collision detection (simple)
+            for (let i = 0; i < enemies.count; i++) {
+                const matrix = new THREE.Matrix4();
+                enemies.getMatrixAt(i, matrix);
+                const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+                if (position.z > playerShip.position.z && position.distanceTo(playerShip.position) < 1) {
+                    health -= 10;
+                    if (health <= 0) gameOver();
+                    // Hide enemy
+                    enemies.setMatrixAt(i, new THREE.Matrix4().set(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0));
+                    enemies.instanceMatrix.needsUpdate = true;
+                }
+                // Check projectiles
+                for (let j = projectiles.length - 1; j >= 0; j--) {
+                    if (position.distanceTo(projectiles[j].position) < 1) {
+                        score += 10;
+                        // Show hit effect
+                        hitParticles.position.copy(position);
+                        hitParticles.visible = true;
+                        setTimeout(() => hitParticles.visible = false, 500);
+                        // Hide enemy
+                        enemies.setMatrixAt(i, new THREE.Matrix4().set(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0));
+                        enemies.instanceMatrix.needsUpdate = true;
+                        // Remove projectile
+                        scene.remove(projectiles[j]);
+                        projectiles.splice(j, 1);
+                        break;
+                    }
+                }
+            }
+
+            // Difficulty scaling
+            if (score > difficulty * 100) {
+                difficulty++;
+                enemySpeed += 0.01;
+            }
+
+            // UI update
+            document.getElementById('healthBar').style.width = health + '%';
+            document.getElementById('score').innerText = 'Score: ' + score;
+        }
+
+        // Game over
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        // Restart
+        function restart() {
+            health = 100;
+            score = 0;
+            difficulty = 1;
+            enemySpeed = 0.05;
+            playerShip.position.set(0, -3, 0);
+            gameRunning = true;
+            document.getElementById('gameOver').style.display = 'none';
+            // Reset enemies
+            for (let i = 0; i < enemies.count; i++) {
+                enemies.setMatrixAt(i, new THREE.Matrix4().set(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0));
+                enemies.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            if (gameRunning) {
+                update();
+            }
+            composer.render();
+        }
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        init();
+    </script>
+</body>
+</html>

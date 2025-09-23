@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural Terrain Flight Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        #minimap {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 200px;
+            height: 200px;
+            border: 2px solid white;
+            border-radius: 5px;
+            background: rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+        #speedometer {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 16px;
+            z-index: 100;
+        }
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            z-index: 99;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>Flight Controls:</strong><br>
+        W/S - Pitch Up/Down<br>
+        A/D - Roll Left/Right<br>
+        Q/E - Yaw Left/Right<br>
+        Shift - Speed Boost<br>
+        Space - Brake<br>
+        R - Reset Position<br>
+        Mouse - Look Around
+    </div>
+    <div id="minimap">
+        <canvas id="minimapCanvas"></canvas>
+    </div>
+    <div id="speedometer">
+        Speed: <span id="speed">0</span> km/h | 
+        Altitude: <span id="altitude">0</span>m
+    </div>
+    <div id="crosshair"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Simplex Noise implementation
+        class SimplexNoise {
+            constructor(seed = Math.random()) {
+                this.grad3 = [
+                    [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+                    [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+                    [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+                ];
+                this.p = [];
+                for (let i = 0; i < 256; i++) {
+                    this.p[i] = Math.floor(seed * 256);
+                    seed = (seed * 16807) % 2147483647;
+                }
+                this.perm = [];
+                for(let i = 0; i < 512; i++) {
+                    this.perm[i] = this.p[i & 255];
+                }
+            }
+
+            dot(g, x, y) {
+                return g[0] * x + g[1] * y;
+            }
+
+            noise2D(xin, yin) {
+                const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+                const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+                
+                let s = (xin + yin) * F2;
+                let i = Math.floor(xin + s);
+                let j = Math.floor(yin + s);
+                
+                let t = (i + j) * G2;
+                let X0 = i - t;
+                let Y0 = j - t;
+                let x0 = xin - X0;
+                let y0 = yin - Y0;
+                
+                let i1, j1;
+                if(x0 > y0) {
+                    i1 = 1; j1 = 0;
+                } else {
+                    i1 = 0; j1 = 1;
+                }
+                
+                let x1 = x0 - i1 + G2;
+                let y1 = y0 - j1 + G2;
+                let x2 = x0 - 1.0 + 2.0 * G2;
+                let y2 = y0 - 1.0 + 2.0 * G2;
+                
+                let ii = i & 255;
+                let jj = j & 255;
+                let gi0 = this.perm[ii + this.perm[jj]] % 12;
+                let gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
+                let gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+                
+                let t0 = 0.5 - x0*x0 - y0*y0;
+                let n0 = t0 < 0 ? 0 : Math.pow(t0, 4) * this.dot(this.grad3[gi0], x0, y0);
+                
+                let t1 = 0.5 - x1*x1 - y1*y1;
+                let n1 = t1 < 0 ? 0 : Math.pow(t1, 4) * this.dot(this.grad3[gi1], x1, y1);
+                
+                let t2 = 0.5 - x2*x2 - y2*y2;
+                let n2 = t2 < 0 ? 0 : Math.pow(t2, 4) * this.dot(this.grad3[gi2], x2, y2);
+                
+                return 70.0 * (n0 + n1 + n2);
+            }
+        }
+
+        // Global variables
+        let scene, camera, renderer;
+        let terrain, water;
+        let trees = [];
+        let drone;
+        let noise = new SimplexNoise();
+        let minimapCanvas, minimapCtx;
+        
+        // Terrain parameters
+        const TERRAIN_SIZE = 512;
+        const TERRAIN_SEGMENTS = 128;
+        const TERRAIN_HEIGHT = 50;
+        const WATER_LEVEL = 5;
+        const TREE_COUNT = 1000;
+        
+        // Drone controller
+        const droneController = {
+            position: new THREE.Vector3(0, 100, 0),
+            velocity: new THREE.Vector3(0, 0, 0),
+            rotation: new THREE.Euler(0, 0, 0),
+            speed: 0,
+            maxSpeed: 50,
+            boostSpeed: 100,
+            acceleration: 0.5,
+            deceleration: 0.3,
+            rotationSpeed: 0.02,
+            minAltitude: 10,
+            collisionRadius: 5
+        };
+        
+        // Input state
+        const keys = {};
+        let mouseX = 0, mouseY = 0;
+        
+        // Initialize scene
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 100, 1000);
+            
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(
+                75, 
+                window.innerWidth / window.innerHeight, 
+                0.1, 
+                2000
+            );
+            
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(100, 200, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.camera.left = -200;
+            directionalLight.shadow.camera.right = 200;
+            directionalLight.shadow.camera.top = 200;
+            directionalLight.shadow.camera.bottom = -200;
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+            
+            // Sky
+            const skyGeometry = new THREE.SphereGeometry(1000, 32, 32);
+            const skyMaterial = new THREE.MeshBasicMaterial({
+                color: 0x87CEEB,
+                side: THREE.BackSide
+            });
+            const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+            scene.add(sky);
+            
+            // Initialize minimap
+            initMinimap();
+            
+            // Generate terrain
+            generateTerrain();
+            
+            // Add water
+            createWater();
+            
+            // Add trees
+            generateTrees();
+            
+            // Create drone
+            createDrone();
+            
+            // Setup controls
+            setupControls();
+            
+            // Start animation
+            animate();
+        }
+        
+        // Initialize minimap
+        function initMinimap() {
+            minimapCanvas = document.getElementById('minimapCanvas');
+            minimapCanvas.width = 196;
+            minimapCanvas.height = 196;
+            minimapCtx = minimapCanvas.getContext('2d');
+        }
+        
+        // Generate terrain using Perlin noise
+        function generateTerrain() {
+            const geometry = new THREE.PlaneGeometry(
+                TERRAIN_SIZE, 
+                TERRAIN_SIZE, 
+                TERRAIN_SEGMENTS, 
+                TERRAIN_SEGMENTS
+            );
+            
+            const vertices = geometry.attributes.position.array;
+            
+            // Generate heightmap
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const y = vertices[i + 1];
+                
+                // Multi-octave noise for realistic terrain
+                let height = 0;
+                let amplitude = 1;
+                let frequency = 0.005;
+                
+                for (let octave = 0; octave < 4; octave++) {
+                    height += noise.noise2D(x * frequency, y * frequency) * amplitude;
+                    amplitude *= 0.5;
+                    frequency *= 2;
+                }
+                
+                // Add mountains
+                const mountainNoise = noise.noise2D(x * 0.001, y * 0.001);
+                if (mountainNoise > 0.3) {
+                    height += mountainNoise * TERRAIN_HEIGHT * 1.5;
+                }
+                
+                // Create river valleys
+                const riverX = Math.sin(y * 0.01) * 50;
+                const distToRiver = Math.abs(x - riverX);
+                if (distToRiver < 30) {
+                    height -= (1 - distToRiver / 30) * 10;
+                }
+                
+                vertices[i + 2] = height * TERRAIN_HEIGHT;
+            }
+            
+            geometry.computeVertexNormals();
+            
+            // Create material with vertex colors
+            const material = new THREE.MeshLambertMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide
+            });
+            
+            // Add colors based on height
+            const colors = [];
+            for (let i = 0; i < vertices.length; i += 3) {
+                const height = vertices[i + 2];
+                let color;
+                
+                if (height < WATER_LEVEL) {
+                    color = new THREE.Color(0x8B7355); // Sand
+                } else if (height < 15) {
+                    color = new THREE.Color(0x228B22); // Grass
+                } else if (height < 30) {
+                    color = new THREE.Color(0x2F4F2F); // Dark green
+                } else if (height < 40) {
+                    color = new THREE.Color(0x808080); // Rock
+                } else {
+                    color = new THREE.Color(0xFFFFFF); // Snow
+                }
+                
+                colors.push(color.r, color.g, color.b);
+            }
+            
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            
+            terrain = new THREE.Mesh(geometry, material);
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+        }
+        
+        // Create water plane
+        function createWater() {
+            const waterGeometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE);
+            const waterMaterial = new THREE.MeshPhongMaterial({
+                color: 0x006994,
+                transparent: true,
+                opacity: 0.6,
+                shininess: 100
+            });
+            
+            water = new THREE.Mesh(waterGeometry, waterMaterial);
+            water.rotation.x = -Math.PI / 2;
+            water.position.y = WATER_LEVEL;
+            scene.add(water);
+        }
+        
+        // Generate trees using instanced meshes
+        function generateTrees() {
+            // Tree geometry (simple cone for performance)
+            const treeGeometry = new THREE.ConeGeometry(2, 8, 6);
+            const treeMaterial = new THREE.MeshLambertMaterial({ color: 0x0d5d2e });
+            
+            // Trunk geometry
+            const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.5, 4);
+            const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+            
+            // Create instanced mesh for trees
+            const treeInstancedMesh = new THREE.InstancedMesh(
+                treeGeometry, 
+                treeMaterial, 
+                TREE_COUNT
+            );
+            treeInstancedMesh.castShadow = true;
+            treeInstancedMesh.receiveShadow = true;
+            
+            const trunkInstancedMesh = new THREE.InstancedMesh(
+                trunkGeometry, 
+                trunkMaterial, 
+                TREE_COUNT
+            );
+            trunkInstancedMesh.castShadow = true;
+            
+            const dummy = new THREE.Object3D();
+            
+            // Place trees
+            for (let i = 0; i < TREE_COUNT; i++) {
+                let x, z, height;
+                let attempts = 0;
+                
+                // Find suitable position
+                do {
+                    x = (Math.random() - 0.5) * TERRAIN_SIZE * 0.8;
+                    z = (Math.random() - 0.5) * TERRAIN_SIZE * 0.8;
+                    height = getTerrainHeight(x, z);
+                    attempts++;
+                } while ((height < WATER_LEVEL + 2 || height > 35) && attempts < 10);
+                
+                if (attempts < 10) {
+                    // Tree canopy
+                    dummy.position.set(x, height + 6, z);
+                    dummy.scale.set(
+                        1 + Math.random() * 0.5,
+                        1 + Math.random() * 0.5,
+                        1 + Math.random() * 0.5
+                    );
+                    dummy.rotation.y = Math.random() * Math.PI * 2;
+                    dummy.updateMatrix();
+                    treeInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    
+                    // Tree trunk
+                    dummy.position.set(x, height + 2, z);
+                    dummy.scale.set(1, 1, 1);
+                    dummy.updateMatrix();
+                    trunkInstancedMesh.setMatrixAt(i, dummy.matrix);
+                    
+                    trees.push({ x, z, height: height + 8 });
+                }
+            }
+            
+            scene.add(treeInstancedMesh);
+            scene.add(trunkInstancedMesh);
+        }
+        
+        // Get terrain height at position
+        function getTerrainHeight(x, z) {
+            let height = 0;
+            let amplitude = 1;
+            let frequency = 0.005;
+            
+            for (let octave = 0; octave < 4; octave++) {
+                height += noise.noise2D(x * frequency, z * frequency) * amplitude;
+                amplitude *= 0.5;
+                frequency *= 2;
+            }
+            
+            const mountainNoise = noise.noise2D(x * 0.001, z * 0.001);
+            if (mountainNoise > 0.3) {
+                height += mountainNoise * TERRAIN_HEIGHT * 1.5;
+            }
+            
+            const riverX = Math.sin(z * 0.01) * 50;
+            const distToRiver = Math.abs(x - riverX);
+            if (distToRiver < 30) {
+                height -= (1 - distToRiver / 30) * 10;
+            }
+            
+            return height * TERRAIN_HEIGHT;
+        }
+        
+        // Create drone model
+        function createDrone() {
+            drone = new THREE.Group();
+            
+            // Drone body
+            const bodyGeometry = new THREE.BoxGeometry(2, 0.5, 3);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            drone.add(body);
+            
+            // Drone propellers
+            const propellerGeometry = new THREE.CylinderGeometry(2, 2, 0.1, 8);
+            const propellerMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
+            
+            for (let i = 0; i < 4; i++) {
+                const propeller = new THREE.Mesh(propellerGeometry, propellerMaterial);
+                const angle = (i / 4) * Math.PI * 2;
+                propeller.position.set(Math.cos(angle) * 2, 0.5, Math.sin(angle) * 2);
+                drone.add(propeller);
+            }
+            
+            drone.position.copy(droneController.position);
+            scene.add(drone);
+        }
+        
+        // Setup controls
+        function setupControls() {
+            // Keyboard events
+            document.addEventListener('keydown', (e) => {
+                keys[e.key.toLowerCase()] = true;
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                keys[e.key.toLowerCase()] = false;
+            });
+            
+            // Mouse events
+            document.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+                mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+            
+            // Window resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+        
+        // Update drone physics
+        function updateDrone(deltaTime) {
+            const controller = droneController;
+            
+            // Reset position
+            if (keys['r']) {
+                controller.position.set(0, 100, 0);
+                controller.velocity.set(0, 0, 0);
+                controller.rotation.set(0, 0, 0);
+                controller.speed = 0;
+                return;
+            }
+            
+            // Speed control
+            let targetSpeed = controller.speed;
+            const maxSpeed = keys['shift'] ? controller.boostSpeed : controller.maxSpeed;
+            
+            if (keys['w']) {
+                targetSpeed = Math.min(targetSpeed + controller.acceleration, maxSpeed);
+            } else if (keys['s']) {
+                targetSpeed = Math.max(targetSpeed - controller.acceleration, -maxSpeed / 2);
+            } else if (keys[' ']) {
+                targetSpeed *= 0.95; // Brake
+            } else {
+                targetSpeed *= 0.99; // Natural deceleration
+            }
+            
+            controller.speed = targetSpeed;
+            
+            // Rotation control
+            if (keys['a']) controller.rotation.z += controller.rotationSpeed;
+            if (keys['d']) controller.rotation.z -= controller.rotationSpeed;
+            if (keys['q']) controller.rotation.y += controller.rotationSpeed;
+            if (keys['e']) controller.rotation.y -= controller.rotationSpeed;
+            
+            // Mouse look
+            controller.rotation.x += mouseY * controller.rotationSpeed * 0.5;
+            controller.rotation.y += mouseX * controller.rotationSpeed * 0.5;
+            
+            // Clamp pitch
+            controller.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, controller.rotation.x));
+            
+            // Calculate velocity
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyEuler(controller.rotation);
+            controller.velocity = direction.multiplyScalar(controller.speed * deltaTime);
+            
+            // Update position
+            const newPosition = controller.position.clone().add(controller.velocity);
+            
+            // Collision detection with terrain
+            const terrainHeight = getTerrainHeight(newPosition.x, newPosition.z);
+            const minHeight = terrainHeight + controller.minAltitude;
+            
+            if (newPosition.y < minHeight) {
+                newPosition.y = minHeight;
+                controller.velocity.y = Math.abs(controller.velocity.y) * 0.5; // Bounce
+            }
+            
+            // Collision detection with trees
+            for (const tree of trees) {
+                const distance = Math.sqrt(
+                    Math.pow(newPosition.x - tree.x, 2) + 
+                    Math.pow(newPosition.z - tree.z, 2)
+                );
+                
+                if (distance < controller.collisionRadius && 
+                    newPosition.y < tree.height + 5) {
+                    // Avoid tree
+                    const avoidVector = new THREE.Vector3(
+                        newPosition.x - tree.x,
+                        0,
+                        newPosition.z - tree.z
+                    ).normalize().multiplyScalar(controller.collisionRadius);
+                    
+                    newPosition.x = tree.x + avoidVector.x;
+                    newPosition.z = tree.z + avoidVector.z;
+                    controller.speed *= 0.5; // Slow down
+                }
+            }
+            
+            // Boundary check
+            const boundary = TERRAIN_SIZE / 2 - 10;
+            newPosition.x = Math.max(-boundary, Math.min(boundary, newPosition.x));
+            newPosition.z = Math.max(-boundary, Math.min(boundary, newPosition.z));
+            
+            controller.position.copy(newPosition);
+            
+            // Update drone model
+            drone.position.copy(controller.position);
+            drone.rotation.copy(controller.rotation);
+            
+            // Update camera (third person view)
+            const cameraOffset = new THREE.Vector3(0, 5, 15);
+            cameraOffset.applyEuler(controller.rotation);
+            camera.position.copy(controller.position).add(cameraOffset);
+            camera.lookAt(controller.position);
+            
+            // Update HUD
+            updateHUD();
+        }
+        
+        // Update HUD elements
+        function updateHUD() {
+            // Update speedometer
+            document.getElementById('speed').textContent = Math.round(droneController.speed * 2);
+            document.getElementById('altitude').textContent = Math.round(droneController.position.y);
+            
+            // Update minimap
+            minimapCtx.fillStyle = '#1a1a1a';
+            minimapCtx.fillRect(0, 0, 196, 196);
+            
+            // Draw terrain on minimap
+            minimapCtx.fillStyle = '#2d5016';
+            minimapCtx.fillRect(10, 10, 176, 176);
+            
+            // Draw water areas
+            minimapCtx.fillStyle = '#006994';
+            minimapCtx.beginPath();
+            for (let x = 0; x < 176; x += 4) {
+                const worldX = (x - 88) * 3;
+                const riverX = Math.sin((x - 88) * 0.03) * 20 + 98;
+                minimapCtx.fillRect(riverX - 5, x + 10, 10, 4);
+            }
+            
+            // Draw drone position
+            const droneX = (droneController.position.x / TERRAIN_SIZE + 0.5) * 176 + 10;
+            const droneZ = (droneController.position.z / TERRAIN_SIZE + 0.5) * 176 + 10;
+            
+            minimapCtx.fillStyle = '#ff0000';
+            minimapCtx.beginPath();
+            minimapCtx.arc(droneX, droneZ, 3, 0, Math.PI * 2);
+            minimapCtx.fill();
+            
+            // Draw drone direction
+            minimapCtx.strokeStyle = '#ffff00';
+            minimapCtx.lineWidth = 2;
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(droneX, droneZ);
+            const dirX = Math.sin(droneController.rotation.y) * 15;
+            const dirZ = -Math.cos(droneController.rotation.y) * 15;
+            minimapCtx.lineTo(droneX + dirX, droneZ + dirZ);
+            minimapCtx.stroke();
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const deltaTime = 0.016; // Assume 60 FPS
+            
+            // Update drone
+            updateDrone(deltaTime);
+            
+            // Animate water
+            if (water) {
+                water.material.opacity = 0.6 + Math.sin(Date.now() * 0.001) * 0.1;
+            }
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+        
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

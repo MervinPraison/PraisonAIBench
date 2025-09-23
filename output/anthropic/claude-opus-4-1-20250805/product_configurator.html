@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Chair Configurator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .controls-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            width: 320px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        }
+
+        .controls-panel h2 {
+            margin-bottom: 20px;
+            color: #333;
+            font-size: 24px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .control-group h3 {
+            margin-bottom: 10px;
+            color: #555;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .control-item {
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        input[type="color"] {
+            width: 100%;
+            height: 40px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+            cursor: pointer;
+        }
+
+        input[type="checkbox"] {
+            margin-right: 8px;
+            transform: scale(1.2);
+            cursor: pointer;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .camera-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .camera-buttons button {
+            margin-bottom: 0;
+        }
+
+        .export-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .export-buttons button {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+        }
+
+        .slider-value {
+            min-width: 40px;
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    
+    <div class="controls-panel">
+        <h2>🪑 Chair Configurator</h2>
+        
+        <div class="control-group">
+            <h3>🎨 Colors</h3>
+            <div class="control-item">
+                <label for="seatColor">Seat Color</label>
+                <input type="color" id="seatColor" value="#8B4513">
+            </div>
+            <div class="control-item">
+                <label for="backrestColor">Backrest Color</label>
+                <input type="color" id="backrestColor" value="#8B4513">
+            </div>
+            <div class="control-item">
+                <label for="legsColor">Legs Color</label>
+                <input type="color" id="legsColor" value="#2C1810">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>✨ Materials</h3>
+            <div class="control-item">
+                <label for="seatMaterial">Seat Material</label>
+                <select id="seatMaterial">
+                    <option value="leather">Leather</option>
+                    <option value="fabric">Fabric</option>
+                    <option value="plastic">Plastic</option>
+                    <option value="wood">Wood</option>
+                </select>
+            </div>
+            <div class="control-item">
+                <label for="legsMaterial">Legs Material</label>
+                <select id="legsMaterial">
+                    <option value="wood">Wood</option>
+                    <option value="metal">Metal</option>
+                    <option value="plastic">Plastic</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>🔧 Components</h3>
+            <div class="control-item">
+                <label>
+                    <input type="checkbox" id="toggleArmrests" checked>
+                    Show Armrests
+                </label>
+            </div>
+            <div class="control-item">
+                <label>
+                    <input type="checkbox" id="toggleCushion" checked>
+                    Show Cushion
+                </label>
+            </div>
+            <div class="control-item">
+                <label>
+                    <input type="checkbox" id="toggleBackrestDecoration" checked>
+                    Show Backrest Decoration
+                </label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>💡 Lighting</h3>
+            <div class="control-item">
+                <label for="ambientIntensity">Ambient Light</label>
+                <div class="slider-container">
+                    <input type="range" id="ambientIntensity" min="0" max="100" value="40">
+                    <span class="slider-value">40</span>
+                </div>
+            </div>
+            <div class="control-item">
+                <label for="directionalIntensity">Directional Light</label>
+                <div class="slider-container">
+                    <input type="range" id="directionalIntensity" min="0" max="100" value="60">
+                    <span class="slider-value">60</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>📸 Camera Views</h3>
+            <div class="camera-buttons">
+                <button onclick="setCameraView('front')">Front</button>
+                <button onclick="setCameraView('back')">Back</button>
+                <button onclick="setCameraView('left')">Left</button>
+                <button onclick="setCameraView('right')">Right</button>
+                <button onclick="setCameraView('top')">Top</button>
+                <button onclick="setCameraView('iso')">Isometric</button>
+            </div>
+        </div>
+
+        <div class="export-buttons">
+            <button onclick="exportConfig()">📄 Export Config</button>
+            <button onclick="takeSnapshot()">📷 Snapshot</button>
+            <button onclick="resetConfig()">🔄 Reset</button>
+            <button onclick="randomizeConfig()">🎲 Random</button>
+        </div>
+    </div>
+
+    <div id="info">
+        Use mouse to rotate | Scroll to zoom | Right-click to pan
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        let scene, camera, renderer, controls;
+        let chair = {};
+        let lights = {};
+        let config = {
+            seatColor: '#8B4513',
+            backrestColor: '#8B4513',
+            legsColor: '#2C1810',
+            seatMaterial: 'leather',
+            legsMaterial: 'wood',
+            showArmrests: true,
+            showCushion: true,
+            showBackrestDecoration: true,
+            ambientIntensity: 0.4,
+            directionalIntensity: 0.6
+        };
+
+        // Materials library
+        const materials = {
+            leather: () => new THREE.MeshPhysicalMaterial({
+                roughness: 0.3,
+                metalness: 0,
+                clearcoat: 0.5,
+                clearcoatRoughness: 0.2
+            }),
+            fabric: () => new THREE.MeshPhysicalMaterial({
+                roughness: 0.8,
+                metalness: 0,
+                sheen: 0.5,
+                sheenRoughness: 0.8,
+                sheenColor: new THREE.Color(0.1, 0.1, 0.1)
+            }),
+            plastic: () => new THREE.MeshPhysicalMaterial({
+                roughness: 0.2,
+                metalness: 0,
+                clearcoat: 1,
+                clearcoatRoughness: 0
+            }),
+            wood: () => new THREE.MeshPhysicalMaterial({
+                roughness: 0.7,
+                metalness: 0,
+                clearcoat: 0.3,
+                clearcoatRoughness: 0.5
+            }),
+            metal: () => new THREE.MeshPhysicalMaterial({
+                roughness: 0.4,
+                metalness: 0.9
+            })
+        };
+
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+            scene.fog = new THREE.Fog(0xf0f0f0, 10, 50);
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(
+                60,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(5, 5, 5);
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true,
+                preserveDrawingBuffer: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Controls setup
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 2;
+            controls.maxDistance = 20;
+            controls.target.set(0, 1, 0);
+
+            // Lighting
+            setupLighting();
+
+            // Environment
+            setupEnvironment();
+
+            // Create chair
+            createChair();
+
+            // Setup event listeners
+            setupEventListeners();
+
+            // Start animation
+            animate();
+        }
+
+        function setupLighting() {
+            // Ambient light
+            lights.ambient = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(lights.ambient);
+
+            // Main directional light
+            lights.directional = new THREE.DirectionalLight(0xffffff, 0.6);
+            lights.directional.position.set(5, 10, 5);
+            lights.directional.castShadow = true;
+            lights.directional.shadow.camera.near = 0.1;
+            lights.directional.shadow.camera.far = 30;
+            lights.directional.shadow.camera.left = -10;
+            lights.directional.shadow.camera.right = 10;
+            lights.directional.shadow.camera.top = 10;
+            lights.directional.shadow.camera.bottom = -10;
+            lights.directional.shadow.mapSize.width = 2048;
+            lights.directional.shadow.mapSize.height = 2048;
+            lights.directional.shadow.bias = -0.001;
+            scene.add(lights.directional);
+
+            // Fill light
+            const fillLight = new THREE.DirectionalLight(0x4488ff, 0.2);
+            fillLight.position.set(-5, 3, -5);
+            scene.add(fillLight);
+
+            // Rim light
+            const rimLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            rimLight.position.set(0, 5, -8);
+            scene.add(rimLight);
+        }
+
+        function setupEnvironment() {
+            // Ground plane
+            const groundGeometry = new THREE.PlaneGeometry(50, 50);
+            const groundMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xffffff,
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Add environment map for reflections
+            const envTexture = createEnvironmentMap();
+            scene.environment = envTexture;
+        }
+
+        function createEnvironmentMap() {
+            const format = renderer.capabilities.isWebGL2 ? THREE.RedFormat : THREE.LuminanceFormat;
+            const colors = [];
+            const size = 256;
+
+            for (let i = 0; i < size; i++) {
+                const color = new THREE.Color();
+                color.setHSL(0.6 - (i / size) * 0.2, 0.1, 0.5 + (i / size) * 0.5);
+                colors.push(color.r * 255);
+            }
+
+            const gradientTexture = new THREE.DataTexture(
+                new Uint8Array(colors),
+                1,
+                size,
+                format,
+                THREE.UnsignedByteType
+            );
+            gradientTexture.needsUpdate = true;
+
+            return gradientTexture;
+        }
+
+        function createChair() {
+            const chairGroup = new THREE.Group();
+
+            // Seat
+            const seatGeometry = new THREE.BoxGeometry(2, 0.2, 2);
+            chair.seatMaterial = materials.leather();
+            chair.seatMaterial.color = new THREE.Color(config.seatColor);
+            chair.seat = new THREE.Mesh(seatGeometry, chair.seatMaterial);
+            chair.seat.position.y = 2;
+            chair.seat.castShadow = true;
+            chair.seat.receiveShadow = true;
+            chairGroup.add(chair.seat);
+
+            // Cushion
+            const cushionGeometry = new THREE.BoxGeometry(1.8, 0.3, 1.8);
+            const cushionMaterial = new THREE.MeshPhysicalMaterial({
+                color: 0xffeeee,
+                roughness: 0.9,
+                metalness: 0
+            });
+            chair.cushion = new THREE.Mesh(cushionGeometry, cushionMaterial);
+            chair.cushion.position.y = 2.25;
+            chair.cushion.castShadow = true;
+            chairGroup.add(chair.cushion);
+
+            // Backrest
+            const backrestGeometry = new THREE.BoxGeometry(2, 2.5, 0.2);
+            chair.backrestMaterial = materials.leather();
+            chair.backrestMaterial.color = new THREE.Color(config.backrestColor);
+            chair.backrest = new THREE.Mesh(backrestGeometry, chair.backrestMaterial);
+            chair.backrest.position.set(0, 3.25, -0.9);
+            chair.backrest.castShadow = true;
+            chair.backrest.receiveShadow = true;
+            chairGroup.add(chair.backrest);
+
+            // Backrest decoration
+            const decorationGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1.8);
+            const decorationMaterial = new THREE.MeshStandardMaterial({ color: 0x444444 });
+            chair.backrestDecoration = new THREE.Group();
+            
+            for (let i = 0; i < 3; i++) {
+                const bar = new THREE.Mesh(decorationGeometry, decorationMaterial);
+                bar.position.set(-0.6 + i * 0.6, 3.25, -0.8);
+                bar.castShadow = true;
+                chair.backrestDecoration.add(bar);
+            }
+            chairGroup.add(chair.backrestDecoration);
+
+            // Legs
+            const legGeometry = new THREE.CylinderGeometry(0.08, 0.08, 2);
+            chair.legsMaterial = materials.wood();
+            chair.legsMaterial.color = new THREE.Color(config.legsColor);
+            
+            chair.legs = new THREE.Group();
+            const legPositions = [
+                [-0.85, 1, -0.85],
+                [0.85, 1, -0.85],
+                [-0.85, 1, 0.85],
+                [0.85, 1, 0.85]
+            ];
+
+            legPositions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeometry, chair.legsMaterial);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                leg.receiveShadow = true;
+                chair.legs.add(leg);
+            });
+            chairGroup.add(chair.legs);
+
+            // Armrests
+            chair.armrests = new THREE.Group();
+            const armrestGeometry = new THREE.BoxGeometry(0.15, 0.8, 2);
+            const armrestMaterial = materials.wood();
+            armrestMaterial.color = new THREE.Color(config.legsColor);
+
+            const leftArmrest = new THREE.Mesh(armrestGeometry, armrestMaterial);
+            leftArmrest.position.set(-1.075, 2.4, 0);
+            leftArmrest.castShadow = true;
+            chair.armrests.add(leftArmrest);
+
+            const rightArmrest = new THREE.Mesh(armrestGeometry, armrestMaterial);
+            rightArmrest.position.set(1.075, 2.4, 0);
+            rightArmrest.castShadow = true;
+            chair.armrests.add(rightArmrest);
+
+            // Armrest tops
+            const armrestTopGeometry = new THREE.BoxGeometry(0.3, 0.1, 2);
+            const leftArmrestTop = new THREE.Mesh(armrestTopGeometry, armrestMaterial);
+            leftArmrestTop.position.set(-1.075, 2.85, 0);
+            leftArmrestTop.castShadow = true;
+            chair.armrests.add(leftArmrestTop);
+
+            const rightArmrestTop = new THREE.Mesh(armrestTopGeometry, armrestMaterial);
+            rightArmrestTop.position.set(1.075, 2.85, 0);
+            rightArmrestTop.castShadow = true;
+            chair.armrests.add(rightArmrestTop);
+
+            chairGroup.add(chair.armrests);
+
+            chair.group = chairGroup;
+            scene.add(chairGroup);
+        }
+
+        function setupEventListeners() {
+            // Color controls
+            document.getElementById('seatColor').addEventListener('input', (e) => {
+                config.seatColor = e.target.value;
+                chair.seatMaterial.color = new THREE.Color(e.target.value);
+            });
+
+            document.getElementById('backrestColor').addEventListener('input', (e) => {
+                config.backrestColor = e.target.value;
+                chair.backrestMaterial.color = new THREE.Color(e.target.value);
+            });
+
+            document.getElementById('legsColor').addEventListener('input', (e) => {
+                config.legsColor = e.target.value;
+                chair.legsMaterial.color = new THREE.Color(e.target.value);
+                chair.armrests.children.forEach(child => {
+                    child.material.color = new THREE.Color(e.target.value);
+                });
+            });
+
+            // Material controls
+            document.getElementById('seatMaterial').addEventListener('change', (e) => {
+                config.seatMaterial = e.target.value;
+                const newMaterial = materials[e.target.value]();
+                newMaterial.color = new THREE.Color(config.seatColor);
+                chair.seat.material = newMaterial;
+                chair.seatMaterial = newMaterial;
+                chair.backrest.material = newMaterial;
+                chair.backrestMaterial = newMaterial;
+            });
+
+            document.getElementById('legsMaterial').addEventListener('change', (e) => {
+                config.legsMaterial = e.target.value;
+                const newMaterial = materials[e.target.value]();
+                newMaterial.color = new THREE.Color(config.legsColor);
+                chair.legs.children.forEach(leg => {
+                    leg.material = newMaterial;
+                });
+                chair.legsMaterial = newMaterial;
+                chair.armrests.children.forEach(child => {
+                    child.material = newMaterial;
+                });
+            });
+
+            // Component toggles
+            document.getElementById('toggleArmrests').addEventListener('change', (e) => {
+                config.showArmrests = e.target.checked;
+                chair.armrests.visible = e.target.checked;
+            });
+
+            document.getElementById('toggleCushion').addEventListener('change', (e) => {
+                config.showCushion = e.target.checked;
+                chair.cushion.visible = e.target.checked;
+            });
+
+            document.getElementById('toggleBackrestDecoration').addEventListener('change', (e) => {
+                config.showBackrestDecoration = e.target.checked;
+                chair.backrestDecoration.visible = e.target.checked;
+            });
+
+            // Lighting controls
+            document.getElementById('ambientIntensity').addEventListener('input', (e) => {
+                const value = e.target.value / 100;
+                config.ambientIntensity = value;
+                lights.ambient.intensity = value;
+                e.target.nextElementSibling.textContent = e.target.value;
+            });
+
+            document.getElementById('directionalIntensity').addEventListener('input', (e) => {
+                const value = e.target.value / 100;
+                config.directionalIntensity = value;
+                lights.directional.intensity = value;
+                e.target.nextElementSibling.textContent = e.target.value;
+            });
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function setCameraView(view) {
+            const distance = 8;
+            const height = 3;
+            let position;
+
+            switch(view) {
+                case 'front':
+                    position = new THREE.Vector3(0, height, distance);
+                    break;
+                case 'back':
+                    position = new THREE.Vector3(0, height, -distance);
+                    break;
+                case 'left':
+                    position = new THREE.Vector3(-distance, height, 0);
+                    break;
+                case 'right':
+                    position = new THREE.Vector3(distance, height, 0);
+                    break;
+                case 'top':
+                    position = new THREE.Vector3(0, distance * 1.5, 0.1);
+                    break;
+                case 'iso':
+                    position = new THREE.Vector3(distance, distance, distance);
+                    break;
+            }
+
+            // Animate camera movement
+            const startPos = camera.position.clone();
+            const startTime = Date.now();
+            const duration = 1000;
+
+            function animateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+
+                camera.position.lerpVectors(startPos, position, eased);
+                camera.lookAt(controls.target);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                }
+            }
+
+            animateCamera();
+        }
+
+        function exportConfig() {
+            const configJSON = JSON.stringify(config, null, 2);
+            const blob = new Blob([configJSON], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `chair_config_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function takeSnapshot() {
+            renderer.render(scene, camera);
+            renderer.domElement.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chair_snapshot_${Date.now()}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+        }
+
+        function resetConfig() {
+            // Reset to default configuration
+            config = {
+                seatColor: '#8B4513',
+                backrestColor: '#8B4513',
+                legsColor: '#2C1810',
+                seatMaterial: 'leather',
+                legsMaterial: 'wood',
+                showArmrests: true,
+                showCushion: true,
+                showBackrestDecoration: true,
+                ambientIntensity: 0.4,
+                directionalIntensity: 0.6
+            };
+
+            // Update UI
+            document.getElementById('seatColor').value = config.seatColor;
+            document.getElementById('backrestColor').value = config.backrestColor;
+            document.getElementById('legsColor').value = config.legsColor;
+            document.getElementById('seatMaterial').value = config.seatMaterial;
+            document.getElementById('legsMaterial').value = config.legsMaterial;
+            document.getElementById('toggleArmrests').checked = config.showArmrests;
+            document.getElementById('toggleCushion').checked = config.showCushion;
+            document.getElementById('toggleBackrestDecoration').checked = config.showBackrestDecoration;
+            document.getElementById('ambientIntensity').value = config.ambientIntensity * 100;
+            document.getElementById('directionalIntensity').value = config.directionalIntensity * 100;
+
+            // Update sliders display
+            document.getElementById('ambientIntensity').nextElementSibling.textContent = config.ambientIntensity * 100;
+            document.getElementById('directionalIntensity').nextElementSibling.textContent = config.directionalIntensity * 100;
+
+            // Apply configuration
+            applyConfig();
+        }
+
+        function randomizeConfig() {
+            const colors = ['#8B4513', '#654321', '#A0522D', '#D2691E', '#F4A460', '#DEB887', '#D3D3D3', '#000000'];
+            const materialTypes = ['leather', 'fabric', 'plastic', 'wood'];
+            const legMaterialTypes = ['wood', 'metal', 'plastic'];
+
+            config.seatColor = colors[Math.floor(Math.random() * colors.length)];
+            config.backrestColor = colors[Math.floor(Math.random() * colors.length)];
+            config.legsColor = colors[Math.floor(Math.random() * colors.length)];
+            config.seatMaterial = materialTypes[Math.floor(Math.random() * materialTypes.length)];
+            config.legsMaterial = legMaterialTypes[Math.floor(Math.random() * legMaterialTypes.length)];
+            config.showArmrests = Math.random() > 0.3;
+            config.showCushion = Math.random() > 0.3;
+            config.showBackrestDecoration = Math.random() > 0.3;
+
+            // Update UI
+            document.getElementById('seatColor').value = config.seatColor;
+            document.getElementById('backrestColor').value = config.backrestColor;
+            document.getElementById('legsColor').value = config.legsColor;
+            document.getElementById('seatMaterial').value = config.seatMaterial;
+            document.getElementById('legsMaterial').value = config.legsMaterial;
+            document.getElementById('toggleArmrests').checked = config.showArmrests;
+            document.getElementById('toggleCushion').checked = config.showCushion;
+            document.getElementById('toggleBackrestDecoration').checked = config.showBackrestDecoration;
+
+            applyConfig();
+        }
+
+        function applyConfig() {
+            // Apply colors
+            chair.seatMaterial.color = new THREE.Color(config.seatColor);
+            chair.backrestMaterial.color = new THREE.Color(config.backrestColor);
+            chair.legsMaterial.color = new THREE.Color(config.legsColor);
+            chair.armrests.children.forEach(child => {
+                child.material.color = new THREE.Color(config.legsColor);
+            });
+
+            // Apply materials
+            const seatMat = materials[config.seatMaterial]();
+            seatMat.color = new THREE.Color(config.seatColor);
+            chair.seat.material = seatMat;
+            chair.seatMaterial = seatMat;
+            chair.backrest.material = seatMat;
+            chair.backrestMaterial = seatMat;
+
+            const legMat = materials[config.legsMaterial]();
+            legMat.color = new THREE.Color(config.legsColor);
+            chair.legs.children.forEach(leg => {
+                leg.material = legMat;
+            });
+            chair.legsMaterial = legMat;
+            chair.armrests.children.forEach(child => {
+                child.material = legMat;
+            });
+
+            // Apply visibility
+            chair.armrests.visible = config.showArmrests;
+            chair.cushion.visible = config.showCushion;
+            chair.backrestDecoration.visible = config.showBackrestDecoration;
+
+            // Apply lighting
+            lights.ambient.intensity = config.ambientIntensity;
+            lights.directional.intensity = config.directionalIntensity;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // Subtle rotation animation
+            if (chair.group) {
+                chair.group.rotation.y += 0.001;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Initialize the scene
+        init();
+    </script>
+</body>
+</html>

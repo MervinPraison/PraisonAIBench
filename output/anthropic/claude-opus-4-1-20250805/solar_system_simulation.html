@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            user-select: none;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            user-select: none;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid white;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Solar System Simulation</h3>
+        <p>Drag to rotate camera | Scroll to zoom</p>
+    </div>
+    <div id="controls">
+        <button id="pauseBtn">Pause/Resume</button>
+        <button id="speedUpBtn">Speed Up</button>
+        <button id="slowDownBtn">Slow Down</button>
+        <button id="resetBtn">Reset View</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Global variables
+        let scene, camera, renderer;
+        let sun, earth, moon;
+        let earthOrbit, moonOrbit;
+        let earthAngle = 0, moonAngle = 0;
+        let isPaused = false;
+        let speedMultiplier = 1;
+        let stars;
+        let sunLight, ambientLight;
+
+        // Orbital parameters (scaled for visibility)
+        const EARTH_ORBITAL_RADIUS = 50;
+        const MOON_ORBITAL_RADIUS = 10;
+        const EARTH_ORBITAL_SPEED = 0.01; // radians per frame
+        const MOON_ORBITAL_SPEED = 0.05;  // radians per frame (moon orbits faster)
+
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.00005);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                10000
+            );
+            camera.position.set(80, 50, 80);
+            camera.lookAt(0, 0, 0);
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Add lights
+            createLights();
+
+            // Create celestial bodies
+            createSun();
+            createEarth();
+            createMoon();
+
+            // Create orbital paths
+            createOrbitalPaths();
+
+            // Create starfield
+            createStarfield();
+
+            // Add controls
+            addMouseControls();
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Setup button controls
+            setupControls();
+        }
+
+        // Create lights
+        function createLights() {
+            // Sunlight (point light from sun)
+            sunLight = new THREE.PointLight(0xffffff, 2, 300);
+            sunLight.position.set(0, 0, 0);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+
+            // Ambient light for minimal visibility
+            ambientLight = new THREE.AmbientLight(0x222244, 0.3);
+            scene.add(ambientLight);
+        }
+
+        // Create the Sun
+        function createSun() {
+            const sunGeometry = new THREE.SphereGeometry(10, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffff00,
+                emissive: 0xffff00,
+                emissiveIntensity: 1
+            });
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            sun.position.set(0, 0, 0);
+            
+            // Add glow effect to sun
+            const glowGeometry = new THREE.SphereGeometry(12, 32, 32);
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffff88,
+                transparent: true,
+                opacity: 0.3
+            });
+            const sunGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+            sun.add(sunGlow);
+            
+            scene.add(sun);
+        }
+
+        // Create Earth
+        function createEarth() {
+            const earthGeometry = new THREE.SphereGeometry(3, 32, 32);
+            const earthMaterial = new THREE.MeshPhongMaterial({
+                color: 0x2233ff,
+                emissive: 0x112244,
+                shininess: 10,
+                specular: 0x222222
+            });
+            earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            earth.castShadow = true;
+            earth.receiveShadow = true;
+            
+            // Create Earth's orbital group
+            earthOrbit = new THREE.Group();
+            earthOrbit.add(earth);
+            earth.position.x = EARTH_ORBITAL_RADIUS;
+            
+            scene.add(earthOrbit);
+        }
+
+        // Create Moon
+        function createMoon() {
+            const moonGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const moonMaterial = new THREE.MeshPhongMaterial({
+                color: 0x888888,
+                emissive: 0x222222,
+                shininess: 5
+            });
+            moon = new THREE.Mesh(moonGeometry, moonMaterial);
+            moon.castShadow = true;
+            moon.receiveShadow = true;
+            
+            // Create Moon's orbital group (attached to Earth)
+            moonOrbit = new THREE.Group();
+            moonOrbit.add(moon);
+            moon.position.x = MOON_ORBITAL_RADIUS;
+            
+            earth.add(moonOrbit);
+        }
+
+        // Create orbital paths
+        function createOrbitalPaths() {
+            // Earth's orbital path
+            const earthOrbitCurve = new THREE.EllipseCurve(
+                0, 0,
+                EARTH_ORBITAL_RADIUS, EARTH_ORBITAL_RADIUS,
+                0, 2 * Math.PI,
+                false,
+                0
+            );
+            const earthOrbitPoints = earthOrbitCurve.getPoints(100);
+            const earthOrbitGeometry = new THREE.BufferGeometry().setFromPoints(earthOrbitPoints);
+            const earthOrbitMaterial = new THREE.LineBasicMaterial({
+                color: 0x444444,
+                transparent: true,
+                opacity: 0.3
+            });
+            const earthOrbitLine = new THREE.Line(earthOrbitGeometry, earthOrbitMaterial);
+            earthOrbitLine.rotation.x = Math.PI / 2;
+            scene.add(earthOrbitLine);
+
+            // Moon's orbital path (relative to Earth)
+            const moonOrbitCurve = new THREE.EllipseCurve(
+                0, 0,
+                MOON_ORBITAL_RADIUS, MOON_ORBITAL_RADIUS,
+                0, 2 * Math.PI,
+                false,
+                0
+            );
+            const moonOrbitPoints = moonOrbitCurve.getPoints(50);
+            const moonOrbitGeometry = new THREE.BufferGeometry().setFromPoints(moonOrbitPoints);
+            const moonOrbitMaterial = new THREE.LineBasicMaterial({
+                color: 0x333333,
+                transparent: true,
+                opacity: 0.2
+            });
+            const moonOrbitLine = new THREE.Line(moonOrbitGeometry, moonOrbitMaterial);
+            moonOrbitLine.rotation.x = Math.PI / 2;
+            earth.add(moonOrbitLine);
+        }
+
+        // Create starfield background
+        function createStarfield() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.5,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            const starsVertices = [];
+            for (let i = 0; i < 10000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                starsVertices.push(x, y, z);
+            }
+
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            stars = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(stars);
+        }
+
+        // Add mouse controls
+        function addMouseControls() {
+            let mouseX = 0, mouseY = 0;
+            let startX = 0, startY = 0;
+            let isMouseDown = false;
+
+            document.addEventListener('mousedown', (e) => {
+                isMouseDown = true;
+                startX = e.clientX;
+                startY = e.clientY;
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isMouseDown) return;
+                
+                mouseX = (e.clientX - startX) * 0.01;
+                mouseY = (e.clientY - startY) * 0.01;
+                
+                camera.position.x = Math.cos(mouseX) * 100;
+                camera.position.z = Math.sin(mouseX) * 100;
+                camera.position.y = 50 + mouseY * 50;
+                camera.lookAt(0, 0, 0);
+            });
+
+            document.addEventListener('mouseup', () => {
+                isMouseDown = false;
+            });
+
+            // Add zoom with mouse wheel
+            document.addEventListener('wheel', (e) => {
+                const zoomSpeed = 0.1;
+                const direction = new THREE.Vector3();
+                camera.getWorldDirection(direction);
+                
+                if (e.deltaY > 0) {
+                    camera.position.addScaledVector(direction, -10);
+                } else {
+                    camera.position.addScaledVector(direction, 10);
+                }
+            });
+        }
+
+        // Setup control buttons
+        function setupControls() {
+            document.getElementById('pauseBtn').addEventListener('click', () => {
+                isPaused = !isPaused;
+            });
+
+            document.getElementById('speedUpBtn').addEventListener('click', () => {
+                speedMultiplier = Math.min(speedMultiplier * 1.5, 10);
+            });
+
+            document.getElementById('slowDownBtn').addEventListener('click', () => {
+                speedMultiplier = Math.max(speedMultiplier / 1.5, 0.1);
+            });
+
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                camera.position.set(80, 50, 80);
+                camera.lookAt(0, 0, 0);
+                speedMultiplier = 1;
+            });
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!isPaused) {
+                // Rotate sun
+                sun.rotation.y += 0.005 * speedMultiplier;
+
+                // Earth orbits around sun
+                earthAngle += EARTH_ORBITAL_SPEED * speedMultiplier;
+                earthOrbit.rotation.y = earthAngle;
+                
+                // Earth rotates on its axis
+                earth.rotation.y += 0.02 * speedMultiplier;
+
+                // Moon orbits around Earth
+                moonAngle += MOON_ORBITAL_SPEED * speedMultiplier;
+                moonOrbit.rotation.y = moonAngle;
+                
+                // Moon rotates on its axis (tidally locked would be same as orbit)
+                moon.rotation.y += 0.01 * speedMultiplier;
+
+                // Slowly rotate starfield for effect
+                stars.rotation.y += 0.0001 * speedMultiplier;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // Start the application
+        init();
+        animate();
+    </script>
+</body>
+</html>

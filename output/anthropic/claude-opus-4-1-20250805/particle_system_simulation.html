@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Particle System</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #000428, #004e92);
+            font-family: Arial, sans-serif;
+        }
+        
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 1px solid white;
+            border-radius: 3px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        button.active {
+            background: rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <div id="info">
+            <div>Particle System Demo</div>
+            <div>Particles: <span id="particle-count">0</span></div>
+            <div>FPS: <span id="fps">0</span></div>
+            <div>Move mouse to interact</div>
+        </div>
+        <div id="controls">
+            <button id="fountain-btn" class="active">Fountain</button>
+            <button id="explosion-btn">Explosion</button>
+            <button id="vortex-btn">Vortex</button>
+            <button id="reset-btn">Reset</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Camera position
+        camera.position.z = 50;
+        camera.position.y = 10;
+        camera.lookAt(0, 0, 0);
+
+        // Mouse tracking
+        const mouse = new THREE.Vector2();
+        const mouseWorld = new THREE.Vector3();
+        let mouseInfluence = 0;
+
+        // Particle system configuration
+        const PARTICLE_COUNT = 2000;
+        const particles = [];
+        let particleGeometry;
+        let particleMaterial;
+        let particleSystem;
+        let mode = 'fountain';
+
+        // Particle class
+        class Particle {
+            constructor(index) {
+                this.index = index;
+                this.reset();
+                this.lifespan = Math.random() * 2 + 1;
+                this.age = Math.random() * this.lifespan;
+            }
+
+            reset() {
+                switch(mode) {
+                    case 'fountain':
+                        this.position = new THREE.Vector3(
+                            (Math.random() - 0.5) * 2,
+                            0,
+                            (Math.random() - 0.5) * 2
+                        );
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = Math.random() * 15 + 10;
+                        this.velocity = new THREE.Vector3(
+                            Math.cos(angle) * speed * 0.3,
+                            speed,
+                            Math.sin(angle) * speed * 0.3
+                        );
+                        break;
+                    
+                    case 'explosion':
+                        this.position = new THREE.Vector3(0, 0, 0);
+                        const theta = Math.random() * Math.PI * 2;
+                        const phi = Math.acos(Math.random() * 2 - 1);
+                        const expSpeed = Math.random() * 20 + 10;
+                        this.velocity = new THREE.Vector3(
+                            Math.sin(phi) * Math.cos(theta) * expSpeed,
+                            Math.sin(phi) * Math.sin(theta) * expSpeed,
+                            Math.cos(phi) * expSpeed
+                        );
+                        break;
+                    
+                    case 'vortex':
+                        const radius = Math.random() * 20;
+                        const vortexAngle = Math.random() * Math.PI * 2;
+                        this.position = new THREE.Vector3(
+                            Math.cos(vortexAngle) * radius,
+                            (Math.random() - 0.5) * 10,
+                            Math.sin(vortexAngle) * radius
+                        );
+                        this.velocity = new THREE.Vector3(
+                            -Math.sin(vortexAngle) * 5,
+                            Math.random() * 2 - 1,
+                            Math.cos(vortexAngle) * 5
+                        );
+                        break;
+                }
+                
+                this.acceleration = new THREE.Vector3(0, -9.8, 0);
+                this.color = new THREE.Color();
+                this.size = Math.random() * 3 + 1;
+                this.age = 0;
+                this.lifespan = Math.random() * 3 + 2;
+                this.mass = Math.random() * 0.5 + 0.5;
+            }
+
+            update(deltaTime) {
+                this.age += deltaTime;
+                
+                if (this.age >= this.lifespan) {
+                    this.reset();
+                    return;
+                }
+
+                // Apply physics
+                const scaledDelta = deltaTime * 0.5;
+                
+                // Apply gravity and air resistance
+                this.velocity.add(this.acceleration.clone().multiplyScalar(scaledDelta));
+                this.velocity.multiplyScalar(0.99); // Air resistance
+                
+                // Special behavior based on mode
+                if (mode === 'vortex') {
+                    // Apply vortex force
+                    const distance = this.position.length();
+                    if (distance > 0.1) {
+                        const vortexForce = new THREE.Vector3(
+                            -this.position.z,
+                            0,
+                            this.position.x
+                        ).normalize().multiplyScalar(10 / (distance * 0.5));
+                        this.velocity.add(vortexForce.multiplyScalar(scaledDelta));
+                    }
+                }
+                
+                // Mouse influence
+                if (mouseInfluence > 0) {
+                    const toMouse = mouseWorld.clone().sub(this.position);
+                    const distance = toMouse.length();
+                    if (distance < 20 && distance > 0.1) {
+                        const force = toMouse.normalize().multiplyScalar(mouseInfluence * 50 / (distance + 1));
+                        this.velocity.add(force.multiplyScalar(scaledDelta));
+                    }
+                }
+                
+                // Update position
+                this.position.add(this.velocity.clone().multiplyScalar(scaledDelta));
+                
+                // Bounce off ground
+                if (this.position.y < -20) {
+                    this.position.y = -20;
+                    this.velocity.y *= -0.6;
+                    this.velocity.x *= 0.8;
+                    this.velocity.z *= 0.8;
+                }
+                
+                // Boundary constraints
+                const boundary = 50;
+                if (Math.abs(this.position.x) > boundary) {
+                    this.position.x = Math.sign(this.position.x) * boundary;
+                    this.velocity.x *= -0.5;
+                }
+                if (Math.abs(this.position.z) > boundary) {
+                    this.position.z = Math.sign(this.position.z) * boundary;
+                    this.velocity.z *= -0.5;
+                }
+                
+                // Update color based on age and velocity
+                const ageRatio = this.age / this.lifespan;
+                const speed = this.velocity.length();
+                const hue = (ageRatio * 360 + speed * 10) % 360;
+                const saturation = 1 - ageRatio * 0.3;
+                const lightness = 0.5 + speed * 0.01;
+                this.color.setHSL(hue / 360, saturation, lightness);
+                
+                // Update size based on age
+                this.size = (1 - ageRatio) * 3 + 1;
+            }
+        }
+
+        // Initialize particles
+        function initParticles() {
+            particles.length = 0;
+            
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+            const sizes = new Float32Array(PARTICLE_COUNT);
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const particle = new Particle(i);
+                particles.push(particle);
+                
+                positions[i * 3] = particle.position.x;
+                positions[i * 3 + 1] = particle.position.y;
+                positions[i * 3 + 2] = particle.position.z;
+                
+                colors[i * 3] = particle.color.r;
+                colors[i * 3 + 1] = particle.color.g;
+                colors[i * 3 + 2] = particle.color.b;
+                
+                sizes[i] = particle.size;
+            }
+            
+            particleGeometry = new THREE.BufferGeometry();
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            // Particle material with custom shader
+            particleMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    pixelRatio: { value: renderer.getPixelRatio() }
+                },
+                vertexShader: `
+                    attribute float size;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    uniform float pixelRatio;
+                    
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * pixelRatio * (300.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vColor;
+                    
+                    void main() {
+                        vec2 center = vec2(0.5, 0.5);
+                        float dist = distance(gl_PointCoord, center);
+                        
+                        if (dist > 0.5) discard;
+                        
+                        float alpha = 1.0 - smoothstep(0.3, 0.5, dist);
+                        gl_FragColor = vec4(vColor, alpha);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            
+            if (particleSystem) {
+                scene.remove(particleSystem);
+            }
+            
+            particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particleSystem);
+            
+            document.getElementById('particle-count').textContent = PARTICLE_COUNT;
+        }
+
+        // Update particles
+        function updateParticles(deltaTime) {
+            const positions = particleGeometry.attributes.position.array;
+            const colors = particleGeometry.attributes.color.array;
+            const sizes = particleGeometry.attributes.size.array;
+            
+            for (let i = 0; i < particles.length; i++) {
+                const particle = particles[i];
+                particle.update(deltaTime);
+                
+                positions[i * 3] = particle.position.x;
+                positions[i * 3 + 1] = particle.position.y;
+                positions[i * 3 + 2] = particle.position.z;
+                
+                colors[i * 3] = particle.color.r;
+                colors[i * 3 + 1] = particle.color.g;
+                colors[i * 3 + 2] = particle.color.b;
+                
+                sizes[i] = particle.size;
+            }
+            
+            particleGeometry.attributes.position.needsUpdate = true;
+            particleGeometry.attributes.color.needsUpdate = true;
+            particleGeometry.attributes.size.needsUpdate = true;
+        }
+
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+        // Add ground reference
+        const groundGeometry = new THREE.PlaneGeometry(100, 100, 20, 20);
+        const groundMaterial = new THREE.MeshBasicMaterial({
+            color: 0x111111,
+            wireframe: true,
+            opacity: 0.3,
+            transparent: true
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -20;
+        scene.add(ground);
+
+        // Mouse events
+        document.addEventListener('mousemove', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Convert mouse position to world coordinates
+            mouseWorld.set(mouse.x * 30, mouse.y * 30, 0);
+            mouseInfluence = 1;
+        });
+
+        document.addEventListener('mouseleave', () => {
+            mouseInfluence = 0;
+        });
+
+        // Control buttons
+        document.getElementById('fountain-btn').addEventListener('click', () => {
+            mode = 'fountain';
+            updateButtonStates();
+            resetParticles();
+        });
+
+        document.getElementById('explosion-btn').addEventListener('click', () => {
+            mode = 'explosion';
+            updateButtonStates();
+            resetParticles();
+        });
+
+        document.getElementById('vortex-btn').addEventListener('click', () => {
+            mode = 'vortex';
+            updateButtonStates();
+            resetParticles();
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            resetParticles();
+        });
+
+        function updateButtonStates() {
+            document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            if (mode === 'fountain') document.getElementById('fountain-btn').classList.add('active');
+            if (mode === 'explosion') document.getElementById('explosion-btn').classList.add('active');
+            if (mode === 'vortex') document.getElementById('vortex-btn').classList.add('active');
+        }
+
+        function resetParticles() {
+            particles.forEach(particle => particle.reset());
+        }
+
+        // Window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // FPS counter
+        let fps = 0;
+        let frameCount = 0;
+        let lastFpsUpdate = performance.now();
+
+        // Animation loop
+        let lastTime = performance.now();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const currentTime = performance.now();
+            const deltaTime = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            
+            // Update FPS
+            frameCount++;
+            if (currentTime - lastFpsUpdate >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                lastFpsUpdate = currentTime;
+                document.getElementById('fps').textContent = fps;
+            }
+            
+            // Update particles
+            if (particleSystem) {
+                updateParticles(deltaTime);
+                particleMaterial.uniforms.time.value = currentTime * 0.001;
+            }
+            
+            // Rotate camera slightly
+            camera.position.x = Math.sin(currentTime * 0.0001) * 50;
+            camera.position.z = Math.cos(currentTime * 0.0001) * 50;
+            camera.lookAt(0, 0, 0);
+            
+            // Fade mouse influence
+            if (mouseInfluence > 0) {
+                mouseInfluence *= 0.95;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Initialize and start
+        initParticles();
+        animate();
+    </script>
+</body>
+</html>

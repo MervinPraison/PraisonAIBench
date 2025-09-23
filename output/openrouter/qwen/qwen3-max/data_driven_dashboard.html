@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Data Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        #container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            transition: background-color 0.3s;
+        }
+        
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        #theme-toggle {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        #export-csv {
+            background-color: #2196F3;
+            color: white;
+        }
+        
+        #view-controls button {
+            background-color: #9C27B0;
+            color: white;
+        }
+        
+        #tooltip {
+            position: absolute;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+            color: white;
+        }
+        
+        .light-theme {
+            background-color: #f5f5f5;
+            color: #333333;
+        }
+        
+        .light-theme #controls {
+            background-color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .light-theme button {
+            color: #333333;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="tooltip"></div>
+    <div id="controls">
+        <button id="theme-toggle">Toggle Theme</button>
+        <button id="export-csv">Export CSV</button>
+        <div id="view-controls">
+            <button id="view-front">Front View</button>
+            <button id="view-top">Top View</button>
+            <button id="view-side">Side View</button>
+            <button id="view-isometric">Isometric View</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/examples/js/libs/tween.umd.min.js"></script>
+
+    <script>
+        // Initialize scene, camera, and renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // Add orbit controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Set up lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 10, 7);
+        scene.add(directionalLight);
+
+        // Add axis helpers
+        const axesHelper = new THREE.AxesHelper(10);
+        scene.add(axesHelper);
+
+        // Position camera
+        camera.position.set(10, 10, 10);
+        camera.lookAt(0, 0, 0);
+
+        // Generate random dataset
+        function generateRandomData() {
+            const data = [];
+            const categories = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+            const series = ['Sales', 'Profit', 'Expenses', 'Growth'];
+            
+            for (let i = 0; i < 20; i++) {
+                data.push({
+                    id: i + 1,
+                    category: categories[i % categories.length],
+                    x: i % 5,
+                    y: Math.floor(i / 5),
+                    z: Math.random() * 5 + 1,
+                    value: Math.random() * 100,
+                    series: series[Math.floor(Math.random() * series.length)]
+                });
+            }
+            return data;
+        }
+
+        const dataset = generateRandomData();
+
+        // Create data visualization elements
+        const visualizationGroup = new THREE.Group();
+        scene.add(visualizationGroup);
+
+        // Create bars
+        function createBars(data) {
+            const barGroup = new THREE.Group();
+            const barMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x4287f5, 
+                transparent: true, 
+                opacity: 0.8 
+            });
+
+            data.forEach((item, index) => {
+                const barHeight = item.value / 10;
+                const geometry = new THREE.BoxGeometry(0.8, barHeight, 0.8);
+                const mesh = new THREE.Mesh(geometry, barMaterial);
+                
+                mesh.position.set(item.x * 2 - 4, barHeight / 2, item.y * 2 - 2);
+                mesh.userData = { 
+                    type: 'bar', 
+                    data: item,
+                    id: `bar-${index}`
+                };
+                
+                barGroup.add(mesh);
+            });
+
+            return barGroup;
+        }
+
+        // Create scatter points
+        function createScatterPoints(data) {
+            const scatterGroup = new THREE.Group();
+            const pointGeometry = new THREE.SphereGeometry(0.2, 16, 16);
+            
+            data.forEach((item, index) => {
+                let color;
+                switch(item.series) {
+                    case 'Sales': color = 0xff5722; break;
+                    case 'Profit': color = 0x4caf50; break;
+                    case 'Expenses': color = 0xf44336; break;
+                    case 'Growth': color = 0x9c27b0; break;
+                    default: color = 0xffffff;
+                }
+                
+                const pointMaterial = new THREE.MeshPhongMaterial({ color: color });
+                const mesh = new THREE.Mesh(pointGeometry, pointMaterial);
+                
+                mesh.position.set(item.x * 2 - 4, item.z + 0.5, item.y * 2 - 2);
+                mesh.userData = { 
+                    type: 'scatter', 
+                    data: item,
+                    id: `scatter-${index}`
+                };
+                
+                scatterGroup.add(mesh);
+            });
+
+            return scatterGroup;
+        }
+
+        // Create ribbons (curved lines connecting points)
+        function createRibbons(data) {
+            const ribbonGroup = new THREE.Group();
+            
+            // Group data by series for ribbons
+            const seriesGroups = {};
+            data.forEach(item => {
+                if (!seriesGroups[item.series]) {
+                    seriesGroups[item.series] = [];
+                }
+                seriesGroups[item.series].push(item);
+            });
+            
+            Object.keys(seriesGroups).forEach((seriesName, seriesIndex) => {
+                const seriesData = seriesGroups[seriesName].sort((a, b) => a.id - b.id);
+                
+                if (seriesData.length < 2) return;
+                
+                let color;
+                switch(seriesName) {
+                    case 'Sales': color = 0xff5722; break;
+                    case 'Profit': color = 0x4caf50; break;
+                    case 'Expenses': color = 0xf44336; break;
+                    case 'Growth': color = 0x9c27b0; break;
+                    default: color = 0xffffff;
+                }
+                
+                const ribbonMaterial = new THREE.MeshBasicMaterial({ 
+                    color: color, 
+                    transparent: true, 
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+                
+                // Create a ribbon by connecting points
+                for (let i = 0; i < seriesData.length - 1; i++) {
+                    const pointA = seriesData[i];
+                    const pointB = seriesData[i + 1];
+                    
+                    const startPos = new THREE.Vector3(pointA.x * 2 - 4, pointA.z + 0.5, pointA.y * 2 - 2);
+                    const endPos = new THREE.Vector3(pointB.x * 2 - 4, pointB.z + 0.5, pointB.y * 2 - 2);
+                    
+                    // Create a curved ribbon using a custom shape
+                    const curve = new THREE.CubicBezierCurve3(
+                        startPos,
+                        startPos.clone().add(new THREE.Vector3(0, 1, 0)),
+                        endPos.clone().add(new THREE.Vector3(0, 1, 0)),
+                        endPos
+                    );
+                    
+                    const tubeGeometry = new THREE.TubeGeometry(curve, 20, 0.1, 8, false);
+                    const ribbonMesh = new THREE.Mesh(tubeGeometry, ribbonMaterial);
+                    ribbonMesh.userData = {
+                        type: 'ribbon',
+                        data: { from: pointA, to: pointB, series: seriesName },
+                        id: `ribbon-${seriesIndex}-${i}`
+                    };
+                    
+                    ribbonGroup.add(ribbonMesh);
+                }
+            });
+            
+            return ribbonGroup;
+        }
+
+        // Create grid
+        function createGrid() {
+            const gridHelper = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
+            gridHelper.position.y = 0;
+            scene.add(gridHelper);
+            
+            // Add labels for axes
+            const axesLabels = new THREE.Group();
+            const loader = new THREE.FontLoader();
+            
+            // We'll use a simpler approach for labels with basic geometry
+            const labelMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            
+            // X-axis labels
+            for (let i = 0; i < 5; i++) {
+                const geometry = new THREE.PlaneGeometry(1, 0.5);
+                const text = new THREE.Mesh(geometry, labelMaterial);
+                text.position.set(i * 2 - 4, -0.5, -3);
+                text.rotation.x = -Math.PI / 2;
+                axesLabels.add(text);
+            }
+            
+            // Z-axis labels (Y in 3D space)
+            for (let i = 0; i < 4; i++) {
+                const geometry = new THREE.PlaneGeometry(1, 0.5);
+                const text = new THREE.Mesh(geometry, labelMaterial);
+                text.position.set(-5, -0.5, i * 2 - 2);
+                text.rotation.x = -Math.PI / 2;
+                text.rotation.z = Math.PI / 2;
+                axesLabels.add(text);
+            }
+            
+            scene.add(axesLabels);
+        }
+
+        // Initialize visualization
+        function initVisualization() {
+            // Clear existing visualization
+            while(visualizationGroup.children.length > 0) {
+                const child = visualizationGroup.children[0];
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) child.material.dispose();
+                visualizationGroup.remove(child);
+            }
+            
+            // Create new visualization elements
+            const bars = createBars(dataset);
+            const scatterPoints = createScatterPoints(dataset);
+            const ribbons = createRibbons(dataset);
+            
+            visualizationGroup.add(bars);
+            visualizationGroup.add(scatterPoints);
+            visualizationGroup.add(ribbons);
+            
+            // Create grid
+            createGrid();
+        }
+
+        // Initialize the visualization
+        initVisualization();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Raycaster for tooltips
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        // Tooltip functionality
+        document.addEventListener('mousemove', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // Theme toggle
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            document.body.classList.toggle('light-theme');
+            
+            // Update scene background
+            if (document.body.classList.contains('light-theme')) {
+                scene.background = new THREE.Color(0xf0f0f0);
+                scene.fog = new THREE.Fog(0xf0f0f0, 10, 30);
+                
+                // Update lights for better visibility in light theme
+                ambientLight.intensity = 0.7;
+                directionalLight.intensity = 1.0;
+            } else {
+                scene.background = new THREE.Color(0x121212);
+                scene.fog = new THREE.Fog(0x121212, 10, 30);
+                
+                // Reset lights for dark theme
+                ambientLight.intensity = 0.5;
+                directionalLight.intensity = 0.8;
+            }
+        });
+
+        // CSV Export
+        document.getElementById('export-csv').addEventListener('click', () => {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "ID,Category,X,Y,Z,Value,Series\n";
+            
+            dataset.forEach(item => {
+                csvContent += `${item.id},${item.category},${item.x},${item.y},${item.z.toFixed(2)},${item.value.toFixed(2)},${item.series}\n`;
+            });
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "data_dashboard_export.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // Camera tween animations
+        function tweenCamera(targetPosition, targetLookAt, duration = 1000) {
+            const startPos = camera.position.clone();
+            const startLookAt = controls.target.clone();
+            
+            const tween = new TWEEN.Tween({ 
+                x: startPos.x, 
+                y: startPos.y, 
+                z: startPos.z,
+                lookX: startLookAt.x,
+                lookY: startLookAt.y,
+                lookZ: startLookAt.z
+            })
+            .to({
+                x: targetPosition.x,
+                y: targetPosition.y,
+                z: targetPosition.z,
+                lookX: targetLookAt.x,
+                lookY: targetLookAt.y,
+                lookZ: targetLookAt.z
+            }, duration)
+            .easing(TWEEN.Easing.Cubic.InOut)
+            .onUpdate(function(object) {
+                camera.position.set(object.x, object.y, object.z);
+                controls.target.set(object.lookX, object.lookY, object.lookZ);
+                camera.lookAt(object.lookX, object.lookY, object.lookZ);
+            })
+            .start();
+        }
+
+        // View controls
+        document.getElementById('view-front').addEventListener('click', () => {
+            tweenCamera(
+                new THREE.Vector3(0, 5, 15),
+                new THREE.Vector3(0, 5, 0),
+                1000
+            );
+        });
+
+        document.getElementById('view-top').addEventListener('click', () => {
+            tweenCamera(
+                new THREE.Vector3(0, 15, 0),
+                new THREE.Vector3(0, 0, 0),
+                1000
+            );
+        });
+
+        document.getElementById('view-side').addEventListener('click', () => {
+            tweenCamera(
+                new THREE.Vector3(15, 5, 0),
+                new THREE.Vector3(0, 5, 0),
+                1000
+            );
+        });
+
+        document.getElementById('view-isometric').addEventListener('click', () => {
+            tweenCamera(
+                new THREE.Vector3(10, 10, 10),
+                new THREE.Vector3(0, 0, 0),
+                1000
+            );
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update tween animations
+            TWEEN.update();
+            
+            // Update controls
+            controls.update();
+            
+            // Handle tooltips
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(visualizationGroup.children, true);
+            
+            const tooltip = document.getElementById('tooltip');
+            
+            if (intersects.length > 0) {
+                const intersect = intersects[0];
+                const userData = intersect.object.userData;
+                
+                if (userData && userData.data) {
+                    let tooltipText = "";
+                    const data = userData.data;
+                    
+                    if (userData.type === 'bar') {
+                        tooltipText = `Bar\nCategory: ${data.category}\nValue: ${data.value.toFixed(2)}\nPosition: (${data.x}, ${data.y})`;
+                    } else if (userData.type === 'scatter') {
+                        tooltipText = `Scatter Point\nSeries: ${data.series}\nValue: ${data.value.toFixed(2)}\nPosition: (${data.x}, ${data.y}, ${data.z.toFixed(2)})`;
+                    } else if (userData.type === 'ribbon') {
+                        tooltipText = `Ribbon\nSeries: ${data.series}\nFrom: ${data.from.category}\nTo: ${data.to.category}`;
+                    }
+                    
+                    tooltip.innerHTML = tooltipText;
+                    tooltip.style.opacity = '1';
+                    tooltip.style.left = (mouse.x * window.innerWidth / 2 + window.innerWidth / 2 + 10) + 'px';
+                    tooltip.style.top = (-(mouse.y * window.innerHeight / 2) + window.innerHeight / 2 + 10) + 'px';
+                }
+            } else {
+                tooltip.style.opacity = '0';
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Start animation
+        animate();
+
+        // Set initial dark theme
+        scene.background = new THREE.Color(0x121212);
+        scene.fog = new THREE.Fog(0x121212, 10, 30);
+    </script>
+</body>
+</html>

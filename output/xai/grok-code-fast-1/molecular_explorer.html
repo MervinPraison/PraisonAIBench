@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Molecular Explorer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        #canvas {
+            display: block;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+        }
+        #input {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+            width: 300px;
+        }
+        textarea {
+            width: 100%;
+            height: 150px;
+        }
+        button {
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls"></div>
+    <div id="input">
+        <label for="moleculeInput">Input Molecule (XYZ format):</label><br>
+        <textarea id="moleculeInput" placeholder="Enter XYZ data here..."></textarea><br>
+        <button onclick="loadMoleculeFromInput()">Load Custom Molecule</button><br>
+        <button onclick="loadSample('water')">Water</button>
+        <button onclick="loadSample('caffeine')">Caffeine</button>
+        <button onclick="loadSample('dna')">DNA Segment</button>
+        <button onclick="loadRandom()">Random Sample</button>
+        <button onclick="exportSnapshot()">Export Snapshot</button>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <!-- Load Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Load dat.GUI for controls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+
+    <script>
+        // Initialize Three.js components
+        let scene, camera, renderer, controls;
+        let atoms = [];
+        let bonds = [];
+        let originalPositions = [];
+        let moleculeGroup = new THREE.Group();
+        let clippingPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+        let gui;
+        let settings = {
+            mode: 'ball-stick',
+            clipping: false,
+            explode: 0,
+            atomScale: 1,
+            bondScale: 1
+        };
+
+        // Atom colors and radii
+        const elementColors = {
+            'H': 0xffffff, 'C': 0x000000, 'N': 0x0000ff, 'O': 0xff0000, 'P': 0xffaa00,
+            'S': 0xffff00, 'F': 0x00ff00, 'Cl': 0x00ff00, 'Br': 0x8b0000, 'I': 0x660066
+        };
+        const covalentRadii = { 'H': 0.31, 'C': 0.76, 'N': 0.71, 'O': 0.66, 'P': 1.07 };
+        const vdwRadii = { 'H': 1.2, 'C': 1.7, 'N': 1.55, 'O': 1.52, 'P': 1.8 };
+
+        // Sample molecules in XYZ-like format (simple JSON for atoms)
+        const sampleMolecules = {
+            water: [
+                { element: 'O', x: 0, y: 0, z: 0 },
+                { element: 'H', x: 0.757, y: 0.586, z: 0 },
+                { element: 'H', x: -0.757, y: 0.586, z: 0 }
+            ],
+            caffeine: [
+                { element: 'C', x: 0, y: 0, z: 0 }, { element: 'C', x: 1.5, y: 0, z: 0 }, { element: 'N', x: 2.7, y: 0, z: 0 },
+                { element: 'C', x: 4.0, y: 0, z: 0 }, { element: 'N', x: 5.2, y: 0, z: 0 }, { element: 'C', x: 6.4, y: 0, z: 0 },
+                { element: 'O', x: 7.6, y: 0, z: 0 }, { element: 'C', x: 0, y: 1.2, z: 0 }, { element: 'O', x: 0, y: 2.4, z: 0 },
+                { element: 'N', x: 1.5, y: 1.2, z: 0 }, { element: 'C', x: 2.7, y: 1.2, z: 0 }, { element: 'N', x: 4.0, y: 1.2, z: 0 },
+                { element: 'C', x: 5.2, y: 1.2, z: 0 }, { element: 'N', x: 2.7, y: 2.4, z: 0 }, { element: 'C', x: 4.0, y: 2.4, z: 0 },
+                { element: 'C', x: 2.7, y: -1.2, z: 0 }, { element: 'O', x: 4.0, y: -1.2, z: 0 }
+                // Simplified caffeine structure (actual has H atoms, but omitted for brevity)
+            ],
+            dna: [
+                // Simplified DNA segment (guanine-cytosine pair base)
+                { element: 'N', x: 0, y: 0, z: 0 }, { element: 'C', x: 1.2, y: 0, z: 0 }, { element: 'N', x: 2.4, y: 0, z: 0 },
+                { element: 'C', x: 1.2, y: 1.2, z: 0 }, { element: 'C', x: 2.4, y: 1.2, z: 0 }, { element: 'C', x: 3.6, y: 0, z: 0 },
+                { element: 'N', x: 4.8, y: 0, z: 0 }, { element: 'O', x: 4.8, y: 1.2, z: 0 }, { element: 'C', x: 1.2, y: -1.2, z: 0 },
+                { element: 'N', x: 2.4, y: -1.2, z: 0 }, { element: 'P', x: 0, y: 3, z: 0 }, { element: 'O', x: 1.2, y: 3, z: 0 }
+                // Add more for full segment, but keep simple
+            ]
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas') });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.localClippingEnabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            camera.position.z = 5;
+
+            scene.add(moleculeGroup);
+
+            // GUI for controls
+            gui = new dat.GUI();
+            gui.add(settings, 'mode', ['ball-stick', 'space-filling']).onChange(renderMolecule);
+            gui.add(settings, 'clipping').onChange(() => {
+                moleculeGroup.children.forEach(obj => {
+                    obj.material.clippingPlanes = settings.clipping ? [clippingPlane] : [];
+                });
+            });
+            gui.add(settings, 'explode', 0, 5, 0.1).onChange(animateExplode);
+            gui.add(settings, 'atomScale', 0.1, 2, 0.1).onChange(renderMolecule);
+            gui.add(settings, 'bondScale', 0.1, 2, 0.1).onChange(renderMolecule);
+
+            // Load default molecule
+            loadSample('water');
+
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function loadMolecule(atomData) {
+            atoms = atomData;
+            originalPositions = atoms.map(a => ({ x: a.x, y: a.y, z: a.z }));
+            renderMolecule();
+        }
+
+        function renderMolecule() {
+            // Clear previous
+            while (moleculeGroup.children.length > 0) {
+                moleculeGroup.remove(moleculeGroup.children[0]);
+            }
+            bonds = inferBonds(atoms);
+
+            if (settings.mode === 'ball-stick') {
+                renderBallStick();
+            } else {
+                renderSpaceFilling();
+            }
+        }
+
+        function inferBonds(atoms) {
+            let bondsList = [];
+            for (let i = 0; i < atoms.length; i++) {
+                for (let j = i + 1; j < atoms.length; j++) {
+                    let a1 = atoms[i], a2 = atoms[j];
+                    let dist = Math.sqrt((a1.x - a2.x)**2 + (a1.y - a2.y)**2 + (a1.z - a2.z)**2);
+                    let radiusSum = (covalentRadii[a1.element] || 0.7) + (covalentRadii[a2.element] || 0.7);
+                    if (dist < radiusSum + 0.4) { // Tolerance for bond
+                        bondsList.push([i, j]);
+                    }
+                }
+            }
+            return bondsList;
+        }
+
+        function renderBallStick() {
+            // Atoms as spheres
+            atoms.forEach((atom, i) => {
+                let color = elementColors[atom.element] || 0x888888;
+                let radius = (covalentRadii[atom.element] || 0.7) * settings.atomScale;
+                let geometry = new THREE.SphereGeometry(radius, 16, 16);
+                let material = new THREE.MeshPhongMaterial({ color });
+                if (settings.clipping) material.clippingPlanes = [clippingPlane];
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(atom.x, atom.y, atom.z);
+                moleculeGroup.add(sphere);
+            });
+
+            // Bonds as cylinders
+            bonds.forEach(([i, j]) => {
+                let a1 = atoms[i], a2 = atoms[j];
+                let mid = new THREE.Vector3((a1.x + a2.x)/2, (a1.y + a2.y)/2, (a1.z + a2.z)/2);
+                let direction = new THREE.Vector3(a2.x - a1.x, a2.y - a1.y, a2.z - a1.z);
+                let length = direction.length();
+                direction.normalize();
+
+                let geometry = new THREE.CylinderGeometry(0.1 * settings.bondScale, 0.1 * settings.bondScale, length, 8);
+                let material = new THREE.MeshPhongMaterial({ color: 0xcccccc });
+                if (settings.clipping) material.clippingPlanes = [clippingPlane];
+                let cylinder = new THREE.Mesh(geometry, material);
+                cylinder.position.copy(mid);
+                cylinder.lookAt(new THREE.Vector3(a2.x, a2.y, a2.z));
+                moleculeGroup.add(cylinder);
+            });
+        }
+
+        function renderSpaceFilling() {
+            atoms.forEach((atom, i) => {
+                let color = elementColors[atom.element] || 0x888888;
+                let radius = (vdwRadii[atom.element] || 1.5) * settings.atomScale;
+                let geometry = new THREE.SphereGeometry(radius, 16, 16);
+                let material = new THREE.MeshPhongMaterial({ color });
+                if (settings.clipping) material.clippingPlanes = [clippingPlane];
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(atom.x, atom.y, atom.z);
+                moleculeGroup.add(sphere);
+            });
+        }
+
+        function animateExplode() {
+            moleculeGroup.children.forEach((obj, index) => {
+                if (originalPositions[index]) {
+                    let orig = originalPositions[index];
+                    let direction = new THREE.Vector3(orig.x, orig.y, orig.z).normalize();
+                    obj.position.set(orig.x + direction.x * settings.explode,
+                                     orig.y + direction.y * settings.explode,
+                                     orig.z + direction.z * settings.explode);
+                }
+            });
+        }
+
+        function loadSample(name) {
+            loadMolecule(sampleMolecules[name]);
+        }
+
+        function loadRandom() {
+            let keys = Object.keys(sampleMolecules);
+            let randomKey = keys[Math.floor(Math.random() * keys.length)];
+            loadSample(randomKey);
+        }
+
+        function loadMoleculeFromInput() {
+            let text = document.getElementById('moleculeInput').value.trim();
+            let lines = text.split('\n');
+            let atomData = [];
+            lines.forEach(line => {
+                let parts = line.trim().split(/\s+/);
+                if (parts.length >= 4) {
+                    atomData.push({
+                        element: parts[0],
+                        x: parseFloat(parts[1]),
+                        y: parseFloat(parts[2]),
+                        z: parseFloat(parts[3])
+                    });
+                }
+            });
+            if (atomData.length > 0) {
+                loadMolecule(atomData);
+            }
+        }
+
+        function exportSnapshot() {
+            let canvas = renderer.domElement;
+            let link = document.createElement('a');
+            link.download = 'molecular_snapshot.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

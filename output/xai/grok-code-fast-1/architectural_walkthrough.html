@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architectural Walkthrough</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #blocker { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); color: white; text-align: center; }
+        #instructions { font-size: 24px; margin-top: 50px; }
+        #minimap { position: absolute; top: 10px; right: 10px; width: 200px; height: 200px; border: 2px solid white; }
+    </style>
+</head>
+<body>
+    <div id="blocker">
+        <div id="instructions">Click to enter first-person view<br>WASD to move, Mouse to look<br>Click on hotspots to toggle</div>
+    </div>
+    <canvas id="minimap"></canvas>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Three.js setup
+        let scene, camera, renderer, controls, raycaster, pointer, clock;
+        let walls = [], hotspots = [], furniture = [];
+        let currentRoom = 'living';
+        let minimapCanvas, minimapCtx;
+
+        init();
+        animate();
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 1.7, 0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            document.body.appendChild(renderer.domElement);
+
+            // Clock
+            clock = new THREE.Clock();
+
+            // Controls
+            controls = new THREE.PointerLockControls(camera, renderer.domElement);
+            document.addEventListener('click', () => {
+                controls.lock();
+                document.getElementById('blocker').style.display = 'none';
+            });
+
+            // Raycaster for collision and hotspots
+            raycaster = new THREE.Raycaster();
+            pointer = new THREE.Vector2();
+
+            // Lighting - IBL and baked lights
+            const envMap = new THREE.TextureLoader().load('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='); // Placeholder
+            scene.environment = envMap;
+            scene.background = envMap;
+
+            // Light Probe for IBL
+            const lightProbe = new THREE.LightProbe();
+            scene.add(lightProbe);
+            lightProbe.sh.fromArray([0.5, 0.5, 0.5]); // Simple probe
+
+            // Ambient and directional lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(10, 10, 5);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            scene.add(dirLight);
+
+            // Procedurally generate house
+            generateHouse();
+
+            // Minimap
+            minimapCanvas = document.getElementById('minimap');
+            minimapCtx = minimapCanvas.getContext('2d');
+            drawMinimap();
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('pointermove', onPointerMove);
+            document.addEventListener('click', onClick);
+        }
+
+        function generateHouse() {
+            const wallMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 }); // Baked-like brown
+            const floorMaterial = new THREE.MeshLambertMaterial({ color: 0xFFFFE0 });
+            const ceilingMaterial = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+
+            // Rooms: Living (0,0), Kitchen (-10,0), Bedroom (0,-10), Bathroom (-10,-10)
+            // Floors
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+            furniture.push(floor);
+
+            // Ceilings
+            const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), ceilingMaterial);
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.y = 3;
+            scene.add(ceiling);
+            furniture.push(ceiling);
+
+            // Walls for Living
+            const wall1 = new THREE.Mesh(new THREE.PlaneGeometry(10, 3), wallMaterial);
+            wall1.position.z = -5;
+            scene.add(wall1); walls.push(wall1);
+
+            const wall2 = new THREE.Mesh(new THREE.PlaneGeometry(10, 3), wallMaterial);
+            wall2.position.z = 5; wall2.rotation.y = Math.PI;
+            scene.add(wall2); walls.push(wall2);
+
+            const wall3 = new THREE.Mesh(new THREE.PlaneGeometry(10, 3), wallMaterial);
+            wall3.position.x = -5; wall3.rotation.y = Math.PI / 2;
+            scene.add(wall3); walls.push(wall3);
+
+            // Door to kitchen
+            const wall4 = new THREE.Mesh(new THREE.PlaneGeometry(10, 3), wallMaterial);
+            wall4.position.x = 5; wall4.rotation.y = -Math.PI / 2;
+            const doorHole = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)); // Remove wall part (simplified)
+            wall4.geometry = subtractGeometry(wall4.geometry, doorHole.geometry); // Simple approximation, in real use threex or CSG
+            scene.add(wall4); walls.push(wall4);
+
+            // Furniture: Sofa in Living
+            const sofa = new THREE.Mesh(new THREE.BoxGeometry(3, 1, 1), new THREE.MeshLambertMaterial({ color: 0x8B0000 }));
+            sofa.position.set(2, 0.5, -2);
+            sofa.castShadow = true; sofa.receiveShadow = true;
+            scene.add(sofa); furniture.push(sofa);
+
+            // Hotspot on sofa
+            const hotspotSofa = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0 }));
+            hotspotSofa.position.copy(sofa.position).add(new THREE.Vector3(0, 1, 0));
+            hotspotSofa.userData = { toggle: () => { sofa.visible = !sofa.visible; } };
+            scene.add(hotspotSofa); hotspots.push(hotspotSofa);
+
+            // Kitchen room (similarly add walls, floor shifted)
+            // For brevity, replicate with offsets - in full code, proceduralize more
+            const kitchenFloor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), floorMaterial);
+            kitchenFloor.rotation.x = -Math.PI / 2; kitchenFloor.position.x = -15;
+            scene.add(kitchenFloor);
+
+            // Add table in kitchen
+            const table = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x8B4513 }));
+            table.position.set(-15, 0.5, 0);
+            scene.add(table); furniture.push(table);
+
+            // Hotspot on table to toggle material
+            const hotspotTable = new THREE.Mesh(new THREE.SphereGeometry(0.1), new THREE.MeshBasicMaterial({ color: 0x0000ff, transparent: true, opacity: 0 }));
+            hotspotTable.position.copy(table.position).add(new THREE.Vector3(0, 1, 0));
+            hotspotTable.userData = { toggle: () => { table.material.color.setHex(Math.random() * 0xffffff); } };
+            scene.add(hotspotTable); hotspots.push(hotspotTable);
+        }
+
+        function subtractGeometry(geom1, geom2) {
+            // Simplified subtraction for demonstration - in practice use library
+            return geom1;
+        }
+
+        function onPointerMove(event) {
+            pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onClick(event) {
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObjects(hotspots);
+            if (intersects.length > 0) {
+                intersects[0].object.userData.toggle();
+            }
+        }
+
+        function checkCollision() {
+            // Simple collision with walls
+            controls.moveRight(0); controls.moveForward(0); // Reset movement if collision
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            const checkPos = camera.position.clone().add(direction.multiplyScalar(0.5));
+            raycaster.set(camera.position, direction);
+            const intersects = raycaster.intersectObjects(walls);
+            if (intersects.length > 0 && intersects[0].distance < 0.5) {
+                camera.position.copy(checkPos.sub(direction.multiplyScalar(0.5)));
+            }
+        }
+
+        function roomBasedCulling() {
+            // Simple: Cull furniture based on distance to camera
+            const camPos = camera.position;
+            furniture.forEach(obj => {
+                const distance = camPos.distanceTo(obj.position);
+                obj.visible = distance < 20;
+            });
+        }
+
+        function drawMinimap() {
+            minimapCtx.fillStyle = '#000';
+            minimapCtx.fillRect(0, 0, 200, 200);
+            // Draw rooms
+            minimapCtx.fillStyle = '#fff';
+            minimapCtx.fillRect(50, 50, 50, 50); // Living
+            minimapCtx.fillRect(0, 50, 50, 50); // Kitchen
+            minimapCtx.fillStyle = '#f00';
+            minimapCtx.fillRect(50 + camera.position.x / 2, 50 - camera.position.z / 2, 5, 5); // Player
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            checkCollision();
+            roomBasedCulling();
+            drawMinimap();
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>

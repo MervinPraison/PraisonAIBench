@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Molecular Explorer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            z-index: 100;
+            max-width: 300px;
+        }
+        #controls h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        .control-group {
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        select, input {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        #snapshot {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            border-radius: 5px;
+            display: none;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="controls">
+        <h3>Molecular Explorer</h3>
+        <div class="control-group">
+            <label for="moleculeSelect">Select Molecule:</label>
+            <select id="moleculeSelect">
+                <option value="water">Water (H₂O)</option>
+                <option value="caffeine">Caffeine (C₈H₁₀N₄O₂)</option>
+                <option value="dna">DNA Segment</option>
+                <option value="random">Random Molecule</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="renderMode">Render Mode:</label>
+            <select id="renderMode">
+                <option value="ballAndStick">Ball and Stick</option>
+                <option value="spaceFilling">Space Filling</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label for="clipPlane">Section Clipping (X-plane):</label>
+            <input type="range" id="clipPlane" min="-10" max="10" value="10" step="0.1">
+            <span id="clipValue">10.0</span>
+        </div>
+        <div class="control-group">
+            <button id="explodeBtn">Explode Animation</button>
+            <button id="resetBtn">Reset View</button>
+        </div>
+    </div>
+    <div id="snapshot">
+        <button id="snapshotBtn">Save Snapshot</button>
+    </div>
+    <div id="loading">Loading molecule...</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Element colors (CPK coloring)
+        const elementColors = {
+            'H': 0xFFFFFF,  // White
+            'C': 0x333333,  // Dark gray
+            'N': 0x3366FF,  // Blue
+            'O': 0xFF0000,  // Red
+            'P': 0xFFA500,  // Orange
+            'S': 0xFFFF00   // Yellow
+        };
+
+        // Atomic radii (for space-filling mode)
+        const atomicRadii = {
+            'H': 0.5,
+            'C': 0.7,
+            'N': 0.65,
+            'O': 0.6,
+            'P': 1.0,
+            'S': 1.0
+        };
+
+        // Bond radius for ball-and-stick mode
+        const bondRadius = 0.15;
+
+        // Sample molecules
+        const molecules = {
+            water: {
+                name: "Water (H₂O)",
+                atoms: [
+                    { element: 'O', position: [0, 0, 0] },
+                    { element: 'H', position: [0.757, 0.586, 0] },
+                    { element: 'H', position: [-0.757, 0.586, 0] }
+                ]
+            },
+            caffeine: {
+                name: "Caffeine (C₈H₁₀N₄O₂)",
+                atoms: [
+                    { element: 'C', position: [0.0, 0.0, 0.0] },
+                    { element: 'C', position: [1.4, 0.0, 0.0] },
+                    { element: 'N', position: [2.1, 1.2, 0.0] },
+                    { element: 'C', position: [1.4, 2.4, 0.0] },
+                    { element: 'N', position: [0.0, 2.4, 0.0] },
+                    { element: 'C', position: [-0.7, 1.2, 0.0] },
+                    { element: 'C', position: [-1.4, 2.4, 0.0] },
+                    { element: 'O', position: [-2.8, 2.4, 0.0] },
+                    { element: 'N', position: [2.8, 2.4, 0.0] },
+                    { element: 'C', position: [3.5, 1.2, 0.0] },
+                    { element: 'O', position: [4.9, 1.2, 0.0] },
+                    { element: 'C', position: [2.1, -1.2, 0.0] },
+                    { element: 'N', position: [3.5, -1.2, 0.0] },
+                    { element: 'C', position: [4.2, -2.4, 0.0] },
+                    { element: 'H', position: [0.7, -0.9, 0.8] },
+                    { element: 'H', position: [0.7, -0.9, -0.8] },
+                    { element: 'H', position: [1.4, 3.3, 0.0] },
+                    { element: 'H', position: [-1.4, 3.3, 0.0] },
+                    { element: 'H', position: [4.2, -3.3, 0.8] },
+                    { element: 'H', position: [4.2, -3.3, -0.8] }
+                ]
+            },
+            dna: {
+                name: "DNA Segment",
+                atoms: [
+                    // Simplified DNA segment (one base pair + backbone)
+                    // Phosphate groups
+                    { element: 'P', position: [0.0, 0.0, 0.0] },
+                    { element: 'O', position: [0.5, 0.8, 0.0] },
+                    { element: 'O', position: [0.5, -0.8, 0.0] },
+                    { element: 'O', position: [-0.5, 0.0, 0.8] },
+                    
+                    // Sugar (Deoxyribose) - first nucleotide
+                    { element: 'C', position: [1.5, 0.0, 0.0] },
+                    { element: 'C', position: [2.2, 0.8, 0.5] },
+                    { element: 'C', position: [1.7, 1.8, 1.0] },
+                    { element: 'C', position: [0.5, 1.8, 0.8] },
+                    { element: 'C', position: [0.0, 1.0, 0.0] },
+                    { element: 'O', position: [0.8, 2.5, 1.2] },
+                    
+                    // Adenine base
+                    { element: 'N', position: [2.5, 2.5, 1.5] },
+                    { element: 'C', position: [3.5, 2.0, 1.5] },
+                    { element: 'N', position: [4.0, 1.0, 1.0] },
+                    { element: 'C', position: [3.5, 0.0, 0.5] },
+                    { element: 'C', position: [2.2, 0.0, 0.5] },
+                    { element: 'N', position: [1.7, -1.0, 0.0] },
+                    { element: 'C', position: [0.7, -1.5, -0.5] },
+                    { element: 'N', position: [-0.5, -1.0, -0.5] },
+                    { element: 'C', position: [-1.0, 0.0, 0.0] },
+                    { element: 'C', position: [0.0, 0.8, 0.0] },
+                    
+                    // Complementary strand - Thymine
+                    { element: 'P', position: [0.0, 0.0, 3.0] },
+                    { element: 'O', position: [0.5, 0.8, 3.0] },
+                    { element: 'O', position: [0.5, -0.8, 3.0] },
+                    { element: 'O', position: [-0.5, 0.0, 3.8] },
+                    
+                    // Sugar (Deoxyribose) - second nucleotide
+                    { element: 'C', position: [1.5, 0.0, 3.0] },
+                    { element: 'C', position: [2.2, 0.8, 3.5] },
+                    { element: 'C', position: [1.7, 1.8, 4.0] },
+                    { element: 'C', position: [0.5, 1.8, 3.8] },
+                    { element: 'C', position: [0.0, 1.0, 3.0] },
+                    { element: 'O', position: [0.8, 2.5, 4.2] },
+                    
+                    // Thymine base
+                    { element: 'N', position: [2.5, 2.5, 4.5] },
+                    { element: 'C', position: [3.5, 2.0, 4.5] },
+                    { element: 'O', position: [4.0, 2.5, 5.0] },
+                    { element: 'N', position: [4.0, 1.0, 4.0] },
+                    { element: 'C', position: [3.5, 0.0, 3.5] },
+                    { element: 'C', position: [2.2, 0.0, 3.5] },
+                    { element: 'O', position: [1.7, -1.0, 3.0] },
+                    { element: 'C', position: [0.7, -1.5, 2.5] },
+                    { element: 'N', position: [-0.5, -1.0, 2.5] },
+                    { element: 'C', position: [-1.0, 0.0, 3.0] },
+                    { element: 'C', position: [0.0, 0.8, 3.0] },
+                    
+                    // Hydrogen atoms for bonding (simplified)
+                    { element: 'H', position: [3.0, 2.2, 1.5] },
+                    { element: 'H', position: [3.0, 2.2, 4.5] },
+                    { element: 'H', position: [3.0, -0.5, 0.5] },
+                    { element: 'H', position: [3.0, -0.5, 3.5] }
+                ]
+            }
+        };
+
+        // Scene setup
+        let scene, camera, renderer, controls;
+        let atomMeshes = [];
+        let bondMeshes = [];
+        let clipPlane;
+        let currentMolecule = null;
+        let originalPositions = [];
+        let isExploding = false;
+        let explosionFactor = 0;
+
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 15;
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Add orbit controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // Setup clipping plane
+            clipPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -10);
+            renderer.clippingPlanes = [clipPlane];
+
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('moleculeSelect').addEventListener('change', loadMolecule);
+            document.getElementById('renderMode').addEventListener('change', updateRenderMode);
+            document.getElementById('clipPlane').addEventListener('input', updateClipPlane);
+            document.getElementById('explodeBtn').addEventListener('click', toggleExplode);
+            document.getElementById('resetBtn').addEventListener('click', resetView);
+            document.getElementById('snapshotBtn').addEventListener('click', takeSnapshot);
+
+            // Load initial molecule
+            loadMolecule();
+            
+            // Start animation loop
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function loadMolecule() {
+            const select = document.getElementById('moleculeSelect');
+            const moleculeKey = select.value;
+            
+            // Show loading indicator
+            document.getElementById('loading').style.display = 'block';
+            
+            // Clear existing molecule
+            clearMolecule();
+            
+            // Create molecule data
+            let moleculeData;
+            if (moleculeKey === 'random') {
+                moleculeData = generateRandomMolecule();
+            } else {
+                moleculeData = molecules[moleculeKey];
+            }
+            
+            currentMolecule = moleculeData;
+            
+            // Render molecule
+            setTimeout(() => {
+                renderMolecule(moleculeData);
+                document.getElementById('loading').style.display = 'none';
+            }, 100);
+        }
+
+        function clearMolecule() {
+            // Remove all atom and bond meshes
+            atomMeshes.forEach(mesh => scene.remove(mesh));
+            bondMeshes.forEach(mesh => scene.remove(mesh));
+            atomMeshes = [];
+            bondMeshes = [];
+            originalPositions = [];
+        }
+
+        function renderMolecule(moleculeData) {
+            // Store original positions
+            originalPositions = moleculeData.atoms.map(atom => [...atom.position]);
+            
+            // Create atoms
+            moleculeData.atoms.forEach((atom, index) => {
+                const element = atom.element;
+                const position = atom.position;
+                const color = elementColors[element] || 0xFFFFFF;
+                const radius = atomicRadii[element] || 0.5;
+                
+                const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                const material = new THREE.MeshPhongMaterial({ 
+                    color: color,
+                    shininess: 100,
+                    specular: 0x333333
+                });
+                
+                const atomMesh = new THREE.Mesh(geometry, material);
+                atomMesh.position.set(position[0], position[1], position[2]);
+                atomMesh.userData = { 
+                    originalPosition: [...position],
+                    element: element,
+                    index: index
+                };
+                
+                scene.add(atomMesh);
+                atomMeshes.push(atomMesh);
+            });
+            
+            // Create bonds (ball-and-stick mode)
+            if (document.getElementById('renderMode').value === 'ballAndStick') {
+                createBonds(moleculeData.atoms);
+            }
+            
+            // Center the camera on the molecule
+            centerCamera();
+        }
+
+        function createBonds(atoms) {
+            // Clear existing bonds
+            bondMeshes.forEach(mesh => scene.remove(mesh));
+            bondMeshes = [];
+            
+            // Simple bond inference based on distance
+            const bondLengths = {
+                'HH': 0.74,
+                'CC': 1.54,
+                'NN': 1.45,
+                'OO': 1.48,
+                'CN': 1.47,
+                'CO': 1.43,
+                'HO': 0.96,
+                'HC': 1.09,
+                'HN': 1.01,
+                'default': 2.0
+            };
+            
+            for (let i = 0; i < atoms.length; i++) {
+                for (let j = i + 1; j < atoms.length; j++) {
+                    const atom1 = atoms[i];
+                    const atom2 = atoms[j];
+                    const pos1 = new THREE.Vector3(...atom1.position);
+                    const pos2 = new THREE.Vector3(...atom2.position);
+                    const distance = pos1.distanceTo(pos2);
+                    
+                    // Get bond length threshold
+                    let key = atom1.element + atom2.element;
+                    if (!bondLengths[key]) key = atom2.element + atom1.element;
+                    const maxBondLength = bondLengths[key] || bondLengths['default'];
+                    
+                    // If atoms are close enough, create a bond
+                    if (distance <= maxBondLength * 1.3) {
+                        createBond(pos1, pos2, atom1.element, atom2.element);
+                    }
+                }
+            }
+        }
+
+        function createBond(startPos, endPos, element1, element2) {
+            // Create cylinder for bond
+            const direction = new THREE.Vector3().subVectors(endPos, startPos);
+            const length = direction.length();
+            direction.normalize();
+            
+            const bondGeometry = new THREE.CylinderGeometry(bondRadius, bondRadius, length, 16, 1, false);
+            const bondMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xCCCCCC,
+                shininess: 30
+            });
+            
+            const bondMesh = new THREE.Mesh(bondGeometry, bondMaterial);
+            
+            // Position and orient the bond
+            bondMesh.position.copy(startPos);
+            bondMesh.position.add(direction.clone().multiplyScalar(length / 2));
+            
+            const axis = new THREE.Vector3(0, 1, 0);
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, direction);
+            bondMesh.quaternion.copy(quaternion);
+            
+            // Store original positions for explosion animation
+            bondMesh.userData = {
+                startPos: startPos.toArray(),
+                endPos: endPos.toArray()
+            };
+            
+            scene.add(bondMesh);
+            bondMeshes.push(bondMesh);
+        }
+
+        function updateRenderMode() {
+            const mode = document.getElementById('renderMode').value;
+            
+            // Update atom sizes
+            atomMeshes.forEach(atomMesh => {
+                const element = atomMesh.userData.element;
+                const radius = mode === 'spaceFilling' ? 
+                    (atomicRadii[element] || 0.5) : 
+                    (atomicRadii[element] || 0.5) * 0.5;
+                
+                const geometry = new THREE.SphereGeometry(radius, 32, 32);
+                atomMesh.geometry.dispose();
+                atomMesh.geometry = geometry;
+            });
+            
+            // Update bonds
+            if (mode === 'ballAndStick') {
+                if (currentMolecule) {
+                    createBonds(currentMolecule.atoms);
+                }
+            } else {
+                // Remove bonds in space-filling mode
+                bondMeshes.forEach(mesh => scene.remove(mesh));
+                bondMeshes = [];
+            }
+        }
+
+        function updateClipPlane() {
+            const value = parseFloat(document.getElementById('clipPlane').value);
+            document.getElementById('clipValue').textContent = value.toFixed(1);
+            clipPlane.constant = -value;
+        }
+
+        function toggleExplode() {
+            isExploding = !isExploding;
+            document.getElementById('explodeBtn').textContent = 
+                isExploding ? "Stop Explode" : "Explode Animation";
+        }
+
+        function updateExplosion() {
+            if (!isExploding || !currentMolecule) return;
+            
+            // Update explosion factor
+            explosionFactor += 0.02;
+            if (explosionFactor > 5) explosionFactor = 5;
+            
+            // Explode atoms
+            atomMeshes.forEach((atomMesh, index) => {
+                const originalPos = atomMesh.userData.originalPosition;
+                const center = getMoleculeCenter();
+                
+                // Calculate direction from center
+                const dir = new THREE.Vector3(
+                    originalPos[0] - center.x,
+                    originalPos[1] - center.y,
+                    originalPos[2] - center.z
+                ).normalize();
+                
+                // Move atom outward
+                atomMesh.position.set(
+                    originalPos[0] + dir.x * explosionFactor,
+                    originalPos[1] + dir.y * explosionFactor,
+                    originalPos[2] + dir.z * explosionFactor
+                );
+            });
+            
+            // Update bonds if in ball-and-stick mode
+            if (document.getElementById('renderMode').value === 'ballAndStick') {
+                bondMeshes.forEach(bondMesh => {
+                    const startPos = new THREE.Vector3().fromArray(bondMesh.userData.startPos);
+                    const endPos = new THREE.Vector3().fromArray(bondMesh.userData.endPos);
+                    const center = getMoleculeCenter();
+                    
+                    // Calculate directions from center
+                    const dir1 = new THREE.Vector3(
+                        startPos.x - center.x,
+                        startPos.y - center.y,
+                        startPos.z - center.z
+                    ).normalize();
+                    
+                    const dir2 = new THREE.Vector3(
+                        endPos.x - center.x,
+                        endPos.y - center.y,
+                        endPos.z - center.z
+                    ).normalize();
+                    
+                    // Move bond endpoints
+                    startPos.add(dir1.clone().multiplyScalar(explosionFactor));
+                    endPos.add(dir2.clone().multiplyScalar(explosionFactor));
+                    
+                    // Update bond position and orientation
+                    const direction = new THREE.Vector3().subVectors(endPos, startPos);
+                    const length = direction.length();
+                    direction.normalize();
+                    
+                    bondMesh.position.copy(startPos);
+                    bondMesh.position.add(direction.clone().multiplyScalar(length / 2));
+                    
+                    const axis = new THREE.Vector3(0, 1, 0);
+                    const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, direction);
+                    bondMesh.quaternion.copy(quaternion);
+                });
+            }
+        }
+
+        function resetView() {
+            // Reset explosion
+            isExploding = false;
+            explosionFactor = 0;
+            document.getElementById('explodeBtn').textContent = "Explode Animation";
+            
+            // Reset atom positions
+            atomMeshes.forEach((atomMesh, index) => {
+                const originalPos = atomMesh.userData.originalPosition;
+                atomMesh.position.set(originalPos[0], originalPos[1], originalPos[2]);
+            });
+            
+            // Reset bonds
+            if (document.getElementById('renderMode').value === 'ballAndStick' && currentMolecule) {
+                bondMeshes.forEach(mesh => scene.remove(mesh));
+                bondMeshes = [];
+                createBonds(currentMolecule.atoms);
+            }
+            
+            // Reset camera
+            centerCamera();
+            controls.reset();
+        }
+
+        function getMoleculeCenter() {
+            if (atomMeshes.length === 0) return new THREE.Vector3(0, 0, 0);
+            
+            let sum = new THREE.Vector3(0, 0, 0);
+            atomMeshes.forEach(atomMesh => {
+                sum.add(atomMesh.position);
+            });
+            
+            return sum.divideScalar(atomMeshes.length);
+        }
+
+        function centerCamera() {
+            if (atomMeshes.length === 0) return;
+            
+            const center = getMoleculeCenter();
+            
+            // Calculate bounding sphere
+            let maxDistance = 0;
+            atomMeshes.forEach(atomMesh => {
+                const distance = atomMesh.position.distanceTo(center);
+                maxDistance = Math.max(maxDistance, distance);
+            });
+            
+            // Set camera position
+            camera.position.set(center.x, center.y, center.z + maxDistance * 3);
+            camera.lookAt(center);
+            controls.target.copy(center);
+        }
+
+        function takeSnapshot() {
+            // Create a clone of the renderer's canvas
+            const canvas = renderer.domElement;
+            const image = canvas.toDataURL("image/png");
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.download = currentMolecule ? currentMolecule.name.replace(/[^\w]/g, '_') + '.png' : 'molecule.png';
+            link.href = image;
+            link.click();
+        }
+
+        function generateRandomMolecule() {
+            // Generate a random small molecule
+            const numAtoms = Math.floor(Math.random() * 10) + 3;
+            const elements = ['C', 'H', 'O', 'N'];
+            const atoms = [];
+            
+            // First atom at origin
+            atoms.push({
+                element: 'C',
+                position: [0, 0, 0]
+            });
+            
+            // Add remaining atoms
+            for (let i = 1; i < numAtoms; i++) {
+                const element = elements[Math.floor(Math.random() * elements.length)];
+                const prevAtom = atoms[Math.floor(Math.random() * atoms.length)];
+                const radius = atomicRadii[element] || 0.5;
+                const prevRadius = atomicRadii[prevAtom.element] || 0.5;
+                
+                // Generate position near previous atom
+                const distance = (radius + prevRadius) * (0.8 + Math.random() * 0.4);
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.random() * Math.PI;
+                
+                const x = prevAtom.position[0] + distance * Math.sin(phi) * Math.cos(theta);
+                const y = prevAtom.position[1] + distance * Math.sin(phi) * Math.sin(theta);
+                const z = prevAtom.position[2] + distance * Math.cos(phi);
+                
+                atoms.push({
+                    element: element,
+                    position: [x, y, z]
+                });
+            }
+            
+            return {
+                name: "Random Molecule",
+                atoms: atoms
+            };
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update controls
+            controls.update();
+            
+            // Handle explosion animation
+            updateExplosion();
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+
+        // Initialize the application
+        init();
+    </script>
+</body>
+</html>

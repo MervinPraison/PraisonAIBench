@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Landscape</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            font-family: Arial, sans-serif;
+        }
+        canvas { 
+            display: block; 
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            pointer-events: none;
+            text-shadow: 1px 1px 1px black;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">3D Terrain Landscape<br>Use WASD to fly around</div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script>
+        // Simplex noise implementation
+        class SimplexNoise {
+            constructor(seed = Math.random()) {
+                this.p = new Uint8Array(512);
+                this.perm = new Uint8Array(512);
+                this.grad3 = [
+                    [1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+                    [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+                    [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]
+                ];
+                
+                // Initialize permutation table
+                for(let i = 0; i < 256; i++) {
+                    this.p[i] = Math.floor(seed * 1000 + i) % 256;
+                }
+                
+                // To remove the need for index wrapping, double the permutation table length
+                for(let i = 0; i < 512; i++) {
+                    this.perm[i] = this.p[i & 255];
+                }
+            }
+            
+            dot(g, x, y, z) {
+                return g[0]*x + g[1]*y + g[2]*z;
+            }
+            
+            mix(a, b, t) {
+                return (1.0-t)*a + t*b;
+            }
+            
+            fade(t) {
+                return t*t*t*(t*(t*6-15)+10);
+            }
+            
+            noise(x, y, z = 0) {
+                let X = Math.floor(x) & 255,
+                    Y = Math.floor(y) & 255,
+                    Z = Math.floor(z) & 255;
+                
+                x -= Math.floor(x);
+                y -= Math.floor(y);
+                z -= Math.floor(z);
+                
+                let u = this.fade(x),
+                    v = this.fade(y),
+                    w = this.fade(z);
+                
+                let A = this.perm[X  ]+Y, AA = this.perm[A]+Z, AB = this.perm[A+1]+Z,
+                    B = this.perm[X+1]+Y, BA = this.perm[B]+Z, BB = this.perm[B+1]+Z;
+                
+                return this.mix(
+                    this.mix(
+                        this.mix(
+                            this.dot(this.grad3[this.perm[AA  ]], x  , y  , z   ),
+                            this.dot(this.grad3[this.perm[BA  ]], x-1, y  , z   ), u),
+                        this.mix(
+                            this.dot(this.grad3[this.perm[AB  ]], x  , y-1, z   ),
+                            this.dot(this.grad3[this.perm[BB  ]], x-1, y-1, z   ), u), v),
+                    this.mix(
+                        this.mix(
+                            this.dot(this.grad3[this.perm[AA+1]], x  , y  , z-1 ),
+                            this.dot(this.grad3[this.perm[BA+1]], x-1, y  , z-1 ), u),
+                        this.mix(
+                            this.dot(this.grad3[this.perm[AB+1]], x  , y-1, z-1 ),
+                            this.dot(this.grad3[this.perm[BB+1]], x-1, y-1, z-1 ), u), v), w);
+            }
+        }
+
+        // Initialize Three.js scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x87CEEB); // Sky blue
+        document.body.appendChild(renderer.domElement);
+
+        // Add fog for depth
+        scene.fog = new THREE.FogExp2(0x87CEEB, 0.005);
+
+        // Create terrain with noise
+        const noise = new SimplexNoise(12345);
+        const terrainSize = 512;
+        const terrainSegments = 128;
+        const terrainGeometry = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegments, terrainSegments);
+        const terrainMaterial = new THREE.MeshLambertMaterial({ 
+            vertexColors: true, 
+            side: THREE.DoubleSide 
+        });
+        
+        // Generate height map and vertex colors
+        const vertices = terrainGeometry.attributes.position.array;
+        const colors = [];
+        const heightMap = [];
+        
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const z = vertices[i + 2];
+            
+            // Generate height using multiple octaves of noise
+            let height = 0;
+            let amplitude = 1.0;
+            let frequency = 0.005;
+            let totalAmplitude = 0;
+            
+            for (let octave = 0; octave < 4; octave++) {
+                height += noise.noise(x * frequency, z * frequency) * amplitude;
+                totalAmplitude += amplitude;
+                amplitude *= 0.5;
+                frequency *= 2.0;
+            }
+            
+            height = (height / totalAmplitude) * 50;
+            
+            // Apply height to y-coordinate
+            vertices[i + 1] = height;
+            heightMap.push(height);
+            
+            // Assign colors based on height (grass, rock, snow)
+            let r, g, b;
+            if (height < 10) {
+                // Grass (green)
+                r = 0.1 + Math.random() * 0.2;
+                g = 0.4 + Math.random() * 0.4;
+                b = 0.1 + Math.random() * 0.2;
+            } else if (height < 25) {
+                // Rock (brown/gray)
+                r = 0.4 + Math.random() * 0.3;
+                g = 0.3 + Math.random() * 0.2;
+                b = 0.2 + Math.random() * 0.2;
+            } else {
+                // Snow (white)
+                const snowFactor = (height - 25) / 25;
+                r = 0.8 + snowFactor * 0.2;
+                g = 0.8 + snowFactor * 0.2;
+                b = 0.9 + snowFactor * 0.1;
+            }
+            
+            colors.push(r, g, b);
+        }
+        
+        // Apply colors to geometry
+        terrainGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        terrainGeometry.computeVertexNormals();
+        
+        // Create terrain mesh
+        const terrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+        terrain.rotation.x = -Math.PI / 2; // Rotate to face up
+        scene.add(terrain);
+        
+        // Add lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(100, 100, 50);
+        scene.add(directionalLight);
+        
+        // Position camera
+        camera.position.set(0, 100, 200);
+        camera.lookAt(0, 0, 0);
+        
+        // Keyboard controls
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+        
+        document.addEventListener('keydown', (event) => {
+            switch(event.key.toLowerCase()) {
+                case 'w': keys.w = true; break;
+                case 'a': keys.a = true; break;
+                case 's': keys.s = true; break;
+                case 'd': keys.d = true; break;
+            }
+        });
+        
+        document.addEventListener('keyup', (event) => {
+            switch(event.key.toLowerCase()) {
+                case 'w': keys.w = false; break;
+                case 'a': keys.a = false; break;
+                case 's': keys.s = false; break;
+                case 'd': keys.d = false; break;
+            }
+        });
+        
+        // Mouse controls for camera rotation
+        let mouseX = 0, mouseY = 0;
+        let targetRotationX = 0, targetRotationY = 0;
+        
+        document.addEventListener('mousemove', (event) => {
+            if (event.buttons === 1) { // Left mouse button
+                mouseX = (event.clientX - window.innerWidth / 2) * 0.002;
+                mouseY = (event.clientY - window.innerHeight / 2) * 0.002;
+            }
+        });
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update camera rotation based on mouse
+            targetRotationX += mouseX * 0.05;
+            targetRotationY += mouseY * 0.05;
+            
+            // Clamp vertical rotation
+            targetRotationY = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, targetRotationY));
+            
+            // Apply rotation to camera
+            const moveSpeed = 2;
+            const moveVector = new THREE.Vector3();
+            
+            if (keys.w) {
+                moveVector.z = -moveSpeed;
+            }
+            if (keys.s) {
+                moveVector.z = moveSpeed;
+            }
+            if (keys.a) {
+                moveVector.x = -moveSpeed;
+            }
+            if (keys.d) {
+                moveVector.x = moveSpeed;
+            }
+            
+            // Rotate movement vector based on camera rotation
+            moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), camera.rotation.y);
+            
+            // Apply movement
+            camera.position.x += moveVector.x;
+            camera.position.z += moveVector.z;
+            camera.position.y += moveVector.y || 0;
+            
+            // Apply rotation
+            camera.rotation.y = targetRotationX;
+            camera.rotation.x = targetRotationY;
+            
+            // Look in the direction of movement
+            if (moveVector.length() > 0) {
+                const direction = moveVector.clone().normalize();
+                camera.lookAt(
+                    camera.position.x + direction.x,
+                    camera.position.y + direction.y,
+                    camera.position.z + direction.z
+                );
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Product Configurator - Office Chair (Three.js)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #0e0f13; color: #eee; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif; }
+    #app { position: fixed; inset: 0; display: grid; grid-template-columns: 320px 1fr; grid-template-rows: 100%; }
+    #ui {
+      background: linear-gradient(180deg, rgba(18,19,24,0.95), rgba(10,11,14,0.95));
+      backdrop-filter: blur(8px);
+      border-right: 1px solid rgba(255,255,255,0.07);
+      padding: 14px 16px 14px 16px;
+      overflow: auto;
+    }
+    #viewport { position: relative; }
+    #canvas { width: 100%; height: 100%; display: block; }
+    h1 { font-size: 16px; margin: 6px 0 12px; letter-spacing: 0.4px; color: #f5f6f8; }
+    h2 { font-size: 12px; margin: 16px 0 8px; text-transform: uppercase; color: #b9c0cc; letter-spacing: 0.12em; }
+    .row { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+    .row label { width: 120px; font-size: 12px; color: #c9d1dd; }
+    .row input[type="color"] { width: 44px; height: 28px; padding: 0; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; background: transparent; }
+    .row select, .row input[type="range"], .row input[type="number"], .row button, .row input[type="checkbox"] {
+      flex: 1; font-size: 13px; padding: 8px; border-radius: 8px;
+      background: #171a21; color: #e7ecf4; border: 1px solid rgba(255,255,255,0.12);
+    }
+    .row input[type="checkbox"] { flex: 0 0 auto; width: 18px; height: 18px; margin: 0 8px 0 0; }
+    .row button { cursor: pointer; }
+    .row span.value { width: 48px; text-align: right; color: #9aa6b2; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .muted { color: #9aa6b2; font-size: 12px; }
+    .footer { position: sticky; bottom: 0; padding-top: 10px; background: linear-gradient(180deg, transparent, rgba(0,0,0,0.24) 50%, rgba(0,0,0,0.5)); }
+    .pill {
+      display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 999px; background: rgba(255,255,255,0.06);
+      font-size: 12px; color: #c5cfdb; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .bookmark-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .bookmark-buttons button { padding: 8px; }
+    .export-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .badge { font-size: 11px; color: #7ea0ff; background: rgba(126,160,255,0.12); border: 1px solid rgba(126,160,255,0.25); border-radius: 6px; padding: 2px 6px; }
+    .small { font-size: 11px; color: #aeb8c4; }
+    a { color: #9dc1ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="ui">
+    <h1>3D Product Configurator <span class="badge">Office Chair</span></h1>
+
+    <h2>Upholstery</h2>
+    <div class="row">
+      <label for="upholsteryColor">Color</label>
+      <input id="upholsteryColor" type="color" value="#3b82f6" />
+    </div>
+    <div class="row">
+      <label for="upholsteryMaterial">Material</label>
+      <select id="upholsteryMaterial">
+        <option value="leather">Leather (gloss)</option>
+        <option value="fabric" selected>Fabric (matte)</option>
+        <option value="suede">Suede (soft)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="upholsteryPattern">Pattern</label>
+      <select id="upholsteryPattern">
+        <option value="none">None</option>
+        <option value="checker">Checker</option>
+        <option value="stripes">Stripes</option>
+        <option value="noise">Noise</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="patternScale">Pattern Scale</label>
+      <input id="patternScale" type="range" min="0.5" max="6" step="0.5" value="2" />
+      <span class="value" id="patternScaleValue">2.0x</span>
+    </div>
+
+    <h2>Base & Frame</h2>
+    <div class="row">
+      <label for="baseFinish">Finish</label>
+      <select id="baseFinish">
+        <option value="chrome">Chrome</option>
+        <option value="black" selected>Black</option>
+        <option value="white">White</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="metalRoughness">Roughness</label>
+      <input id="metalRoughness" type="range" min="0" max="1" step="0.01" value="0.35" />
+      <span class="value" id="metalRoughnessValue">0.35</span>
+    </div>
+    <div class="row">
+      <label for="envIntensity">Env. Reflections</label>
+      <input id="envIntensity" type="range" min="0" max="3" step="0.01" value="1.0" />
+      <span class="value" id="envIntensityValue">1.00</span>
+    </div>
+
+    <h2>Parts</h2>
+    <div class="row">
+      <input id="toggleArmrests" type="checkbox" checked />
+      <label for="toggleArmrests">Armrests</label>
+    </div>
+    <div class="row">
+      <input id="toggleHeadrest" type="checkbox" />
+      <label for="toggleHeadrest">Headrest</label>
+    </div>
+    <div class="row">
+      <input id="toggleCasters" type="checkbox" checked />
+      <label for="toggleCasters">Casters</label>
+    </div>
+
+    <h2>Camera</h2>
+    <div class="bookmark-buttons">
+      <button data-bookmark="overview">Overview</button>
+      <button data-bookmark="front">Front</button>
+      <button data-bookmark="left">Left</button>
+      <button data-bookmark="right">Right</button>
+      <button data-bookmark="closeup">Close-up</button>
+      <button data-bookmark="top">Top</button>
+    </div>
+
+    <h2>Export</h2>
+    <div class="export-buttons">
+      <button id="exportJSON">Export JSON</button>
+      <button id="snapshotPNG">Snapshot PNG</button>
+    </div>
+    <div class="row">
+      <button id="reset" title="Reset to defaults">Reset</button>
+      <button id="randomize" title="Randomize">Randomize</button>
+    </div>
+
+    <div class="footer">
+      <div class="pill" style="margin-top: 10px;">
+        <span>Tip: Hold left mouse to orbit, right to pan, scroll to zoom.</span>
+      </div>
+      <div class="muted" style="margin-top: 10px;">
+        Soft shadows, environment reflections, camera bookmarks, JSON export and PNG snapshot included. All geometry and textures are procedural; Three.js loaded from CDN.
+      </div>
+    </div>
+  </div>
+  <div id="viewport">
+    <canvas id="canvas"></canvas>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.160.1/build/three.module.js';
+import { OrbitControls } from 'https://unpkg.com/three@0.160.1/examples/jsm/controls/OrbitControls.js';
+import { RoomEnvironment } from 'https://unpkg.com/three@0.160.1/examples/jsm/environments/RoomEnvironment.js';
+
+const state = {
+  upholsteryColor: '#3b82f6',
+  upholsteryMaterial: 'fabric', // leather | fabric | suede
+  upholsteryPattern: 'none', // none | checker | stripes | noise
+  patternScale: 2,
+  baseFinish: 'black', // chrome | black | white
+  metalRoughness: 0.35,
+  envIntensity: 1.0,
+  parts: { armrests: true, headrest: false, casters: true },
+  cameraBookmark: 'overview'
+};
+
+const ui = {
+  upholsteryColor: document.getElementById('upholsteryColor'),
+  upholsteryMaterial: document.getElementById('upholsteryMaterial'),
+  upholsteryPattern: document.getElementById('upholsteryPattern'),
+  patternScale: document.getElementById('patternScale'),
+  patternScaleValue: document.getElementById('patternScaleValue'),
+  baseFinish: document.getElementById('baseFinish'),
+  metalRoughness: document.getElementById('metalRoughness'),
+  metalRoughnessValue: document.getElementById('metalRoughnessValue'),
+  envIntensity: document.getElementById('envIntensity'),
+  envIntensityValue: document.getElementById('envIntensityValue'),
+  toggleArmrests: document.getElementById('toggleArmrests'),
+  toggleHeadrest: document.getElementById('toggleHeadrest'),
+  toggleCasters: document.getElementById('toggleCasters'),
+  exportJSON: document.getElementById('exportJSON'),
+  snapshotPNG: document.getElementById('snapshotPNG'),
+  reset: document.getElementById('reset'),
+  randomize: document.getElementById('randomize'),
+  bookmarkButtons: Array.from(document.querySelectorAll('.bookmark-buttons button'))
+};
+
+const canvas = document.getElementById('canvas');
+
+// Renderer
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: false,
+  preserveDrawingBuffer: true // enables toDataURL for snapshots
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth - 320, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+// Scene
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e0f13);
+
+// Environment Reflection
+const pmrem = new THREE.PMREMGenerator(renderer);
+const env = new RoomEnvironment(renderer);
+const envRT = pmrem.fromScene(env, 0.04);
+scene.environment = envRT.texture;
+
+// Camera & Controls
+const camera = new THREE.PerspectiveCamera(50, (window.innerWidth-320)/window.innerHeight, 0.1, 100);
+camera.position.set(3.2, 2.2, 4.0);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 1.0;
+controls.maxDistance = 12.0;
+controls.maxPolarAngle = Math.PI * 0.495;
+
+// Lights
+const hemi = new THREE.HemisphereLight(0xbfd3ff, 0x232428, 0.6);
+scene.add(hemi);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(4, 7, 5);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.left = -6;
+dirLight.shadow.camera.right = 6;
+dirLight.shadow.camera.top = 6;
+dirLight.shadow.camera.bottom = -6;
+dirLight.shadow.camera.near = 1;
+dirLight.shadow.camera.far = 20;
+dirLight.shadow.bias = -0.0005;
+scene.add(dirLight);
+
+const fillLight = new THREE.SpotLight(0x88aaff, 0.15, 0, Math.PI/5, 0.4, 1.2);
+fillLight.position.set(-6, 4, -4);
+fillLight.target.position.set(0, 1, 0);
+fillLight.castShadow = false;
+scene.add(fillLight);
+scene.add(fillLight.target);
+
+// Ground
+const groundGeo = new THREE.CircleGeometry(7.5, 64);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x0c0d11, roughness: 0.9, metalness: 0.0 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = 0;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Chair model container
+const chairGroup = new THREE.Group();
+chairGroup.position.y = 0;
+scene.add(chairGroup);
+
+// Materials
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+const matRefs = {
+  upholstery: new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(state.upholsteryColor),
+    roughness: 0.7,
+    metalness: 0.0,
+    clearcoat: 0.0,
+    clearcoatRoughness: 0.0,
+    sheen: 1.0,
+    sheenRoughness: 0.8,
+    sheenColor: new THREE.Color(0xffffff),
+    envMapIntensity: state.envIntensity
+  }),
+  baseMetal: new THREE.MeshStandardMaterial({
+    color: 0x101217,
+    roughness: state.metalRoughness,
+    metalness: 1.0,
+    envMapIntensity: state.envIntensity
+  }),
+  plastic: new THREE.MeshStandardMaterial({
+    color: 0x1a1f27,
+    roughness: 0.6,
+    metalness: 0.0,
+    envMapIntensity: state.envIntensity
+  })
+};
+
+// Pattern textures (procedural)
+function makeCanvasTexture(drawFn, size = 1024, repeat = 1) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  drawFn(ctx, size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = maxAniso;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.repeat.set(repeat, repeat);
+  return tex;
+}
+function patternChecker(ctx, size) {
+  const colors = ['#ffffff', '#d7dbe6'];
+  const n = 8;
+  const cell = size / n;
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      ctx.fillStyle = colors[(x + y) % 2];
+      ctx.fillRect(x * cell, y * cell, cell, cell);
+    }
+  }
+}
+function patternStripes(ctx, size) {
+  const bands = 16;
+  const bandSize = size / bands;
+  for (let i = 0; i < bands; i++) {
+    ctx.fillStyle = i % 2 ? '#e9ecf4' : '#ffffff';
+    ctx.fillRect(0, i * bandSize, size, bandSize);
+  }
+  // subtle diagonal overlay
+  ctx.strokeStyle = 'rgba(0,0,0,0.03)';
+  ctx.lineWidth = 1;
+  for (let i = -size; i < size*2; i += 12) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i - size, size);
+    ctx.stroke();
+  }
+}
+function patternNoise(ctx, size) {
+  const img = ctx.createImageData(size, size);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = 235 + (Math.random() * 20)|0;
+    img.data[i] = img.data[i+1] = img.data[i+2] = n;
+    img.data[i+3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalAlpha = 1;
+}
+function patternBrushedMetal(ctx, size) {
+  ctx.fillStyle = '#e6e8ef';
+  ctx.fillRect(0, 0, size, size);
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = '#c6cbd6';
+  for (let y = 0; y < size; y++) {
+    const w = (Math.random() * size * 0.1) | 0;
+    ctx.fillRect((Math.random() * size)|0, y, w, 1);
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Build Chair (procedural)
+const chair = buildChair();
+chairGroup.add(chair.group);
+
+function buildChair() {
+  const group = new THREE.Group();
+
+  // Base column
+  const columnGeo = new THREE.CylinderGeometry(0.08, 0.12, 0.55, 24);
+  const column = new THREE.Mesh(columnGeo, matRefs.baseMetal);
+  column.position.set(0, 0.55/2, 0);
+  column.castShadow = true; column.receiveShadow = true;
+  group.add(column);
+
+  // Height adjust collar (detail)
+  const collarGeo = new THREE.TorusGeometry(0.12, 0.02, 16, 64);
+  const collar = new THREE.Mesh(collarGeo, matRefs.baseMetal);
+  collar.rotation.x = Math.PI/2;
+  collar.position.y = 0.18;
+  collar.castShadow = true; collar.receiveShadow = true;
+  group.add(collar);
+
+  // Star base
+  const star = new THREE.Group();
+  const spokeLen = 0.9;
+  const spokeGeo = new THREE.BoxGeometry(spokeLen, 0.06, 0.12);
+  for (let i = 0; i < 5; i++) {
+    const spoke = new THREE.Mesh(spokeGeo, matRefs.baseMetal);
+    spoke.position.set(Math.cos(i*2*Math.PI/5) * spokeLen/2, 0.03, Math.sin(i*2*Math.PI/5) * spokeLen/2);
+    spoke.rotation.y = i*2*Math.PI/5;
+    spoke.castShadow = true; spoke.receiveShadow = true;
+    star.add(spoke);
+
+    // Caster (wheel)
+    const caster = new THREE.Group();
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.03, 16, 32), matRefs.plastic);
+    wheel.rotation.x = Math.PI/2;
+    wheel.castShadow = true; wheel.receiveShadow = true;
+    caster.add(wheel);
+
+    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.1, 12), matRefs.baseMetal);
+    fork.position.y = 0.12;
+    fork.castShadow = true; fork.receiveShadow = true;
+    caster.add(fork);
+
+    caster.position.copy(spoke.position).add(new THREE.Vector3(Math.cos(spoke.rotation.y) * (spokeLen/2+0.1), 0.09, Math.sin(spoke.rotation.y) * (spokeLen/2+0.1)));
+    caster.name = 'caster';
+    star.add(caster);
+  }
+  group.add(star);
+
+  // Seat support
+  const seatPole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.25, 24), matRefs.baseMetal);
+  seatPole.position.y = 0.55 + 0.125;
+  seatPole.castShadow = true; seatPole.receiveShadow = true;
+  group.add(seatPole);
+
+  // Seat cushion (box)
+  const seatGeo = new THREE.BoxGeometry(0.55, 0.09, 0.5);
+  const seat = new THREE.Mesh(seatGeo, matRefs.upholstery);
+  seat.position.set(0, 0.55 + 0.25 + 0.045, 0);
+  seat.castShadow = true; seat.receiveShadow = false;
+  seat.name = 'seat';
+  group.add(seat);
+
+  // Backrest support
+  const backBar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.6, 16), matRefs.baseMetal);
+  backBar.position.set(0, seat.position.y + 0.03, -0.22);
+  backBar.position.y += 0.3;
+  backBar.castShadow = true; backBar.receiveShadow = true;
+  group.add(backBar);
+
+  // Backrest
+  const backGeo = new THREE.BoxGeometry(0.5, 0.65, 0.06);
+  const back = new THREE.Mesh(backGeo, matRefs.upholstery);
+  back.position.set(0, seat.position.y + 0.36, -0.18);
+  back.rotation.x = -0.08;
+  back.castShadow = true; back.receiveShadow = false;
+  back.name = 'back';
+  group.add(back);
+
+  // Armrests
+  const armGroup = new THREE.Group();
+  armGroup.name = 'armrests';
+
+  const armSupportGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.22, 12);
+  const armPadGeo = new THREE.CapsuleGeometry(0.08, 0.24, 8, 16);
+
+  const armL = new THREE.Group();
+  const armLSupport = new THREE.Mesh(armSupportGeo, matRefs.baseMetal);
+  armLSupport.position.set(-0.32, seat.position.y + 0.14, 0.06);
+  armLSupport.rotation.z = 0.06;
+  armLSupport.castShadow = true; armLSupport.receiveShadow = true;
+  const armLPad = new THREE.Mesh(armPadGeo, matRefs.plastic);
+  armLPad.rotation.z = Math.PI/2;
+  armLPad.position.set(-0.32, seat.position.y + 0.24, 0.06);
+  armLPad.castShadow = true;
+  armL.add(armLSupport, armLPad);
+
+  const armR = armL.clone(true);
+  armR.children[0].position.x *= -1;
+  armR.children[1].position.x *= -1;
+
+  armGroup.add(armL, armR);
+  group.add(armGroup);
+
+  // Headrest
+  const headGroup = new THREE.Group();
+  headGroup.name = 'headrest';
+  const headSupport = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.22, 12), matRefs.baseMetal);
+  headSupport.position.set(0, back.position.y + 0.28, -0.18);
+  headSupport.castShadow = true; headSupport.receiveShadow = true;
+  const headPad = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.18, 8, 16), matRefs.upholstery);
+  headPad.position.set(0, back.position.y + 0.38, -0.12);
+  headPad.rotation.x = -0.25;
+  headPad.castShadow = true; headPad.receiveShadow = false;
+  headGroup.add(headSupport, headPad);
+  group.add(headGroup);
+
+  // Slight tilt on entire chair for visual interest
+  group.rotation.y = 0.2;
+
+  return {
+    group,
+    parts: {
+      seat,
+      back,
+      armrests: armGroup,
+      headrest: headGroup,
+      casters: star.children.filter(o => o.name === 'caster')
+    }
+  };
+}
+
+// Camera bookmarks
+const bookmarks = {
+  overview: { pos: new THREE.Vector3(3.2, 2.2, 4.0), target: new THREE.Vector3(0, 0.9, 0) },
+  front:    { pos: new THREE.Vector3(0.0, 1.6, 4.2), target: new THREE.Vector3(0, 1.0, 0) },
+  left:     { pos: new THREE.Vector3(-4.0, 1.4, 0.2), target: new THREE.Vector3(0, 1.0, 0) },
+  right:    { pos: new THREE.Vector3(4.0, 1.4, 0.2), target: new THREE.Vector3(0, 1.0, 0) },
+  closeup:  { pos: new THREE.Vector3(0.8, 1.2, 0.6), target: new THREE.Vector3(0, 1.0, 0) },
+  top:      { pos: new THREE.Vector3(0.5, 6.0, 0.5), target: new THREE.Vector3(0, 0.7, 0) }
+};
+let camAnim = null;
+function gotoBookmark(name, duration = 800) {
+  const bm = bookmarks[name];
+  if (!bm) return;
+  state.cameraBookmark = name;
+  const from = { pos: camera.position.clone(), target: controls.target.clone() };
+  const to = { pos: bm.pos.clone(), target: bm.target.clone() };
+  const t0 = performance.now();
+  camAnim = { t0, duration, from, to };
+}
+
+ui.bookmarkButtons.forEach(btn => btn.addEventListener('click', () => gotoBookmark(btn.dataset.bookmark)));
+
+// UI events
+ui.upholsteryColor.addEventListener('input', () => {
+  state.upholsteryColor = ui.upholsteryColor.value;
+  updateUpholsteryMaterial();
+});
+ui.upholsteryMaterial.addEventListener('change', () => {
+  state.upholsteryMaterial = ui.upholsteryMaterial.value;
+  updateUpholsteryMaterial();
+});
+ui.upholsteryPattern.addEventListener('change', () => {
+  state.upholsteryPattern = ui.upholsteryPattern.value;
+  updateUpholsteryPattern();
+});
+ui.patternScale.addEventListener('input', () => {
+  state.patternScale = parseFloat(ui.patternScale.value);
+  ui.patternScaleValue.textContent = state.patternScale.toFixed(1) + 'x';
+  updateUpholsteryPattern();
+});
+ui.baseFinish.addEventListener('change', () => {
+  state.baseFinish = ui.baseFinish.value;
+  updateBaseMaterial();
+});
+ui.metalRoughness.addEventListener('input', () => {
+  state.metalRoughness = parseFloat(ui.metalRoughness.value);
+  ui.metalRoughnessValue.textContent = state.metalRoughness.toFixed(2);
+  updateBaseMaterial();
+});
+ui.envIntensity.addEventListener('input', () => {
+  state.envIntensity = parseFloat(ui.envIntensity.value);
+  ui.envIntensityValue.textContent = state.envIntensity.toFixed(2);
+  updateEnvIntensity();
+});
+ui.toggleArmrests.addEventListener('change', () => setPartVisibility('armrests', ui.toggleArmrests.checked));
+ui.toggleHeadrest.addEventListener('change', () => setPartVisibility('headrest', ui.toggleHeadrest.checked));
+ui.toggleCasters.addEventListener('change', () => setCastersVisibility(ui.toggleCasters.checked));
+
+ui.exportJSON.addEventListener('click', exportJSON);
+ui.snapshotPNG.addEventListener('click', snapshotPNG);
+ui.reset.addEventListener('click', () => { loadState(defaultState()); });
+ui.randomize.addEventListener('click', () => { randomizeState(); });
+
+// Helper: apply environment intensity to all PBR materials
+function updateEnvIntensity() {
+  const intensity = state.envIntensity;
+  [matRefs.upholstery, matRefs.baseMetal, matRefs.plastic].forEach(m => {
+    m.envMapIntensity = intensity;
+    m.needsUpdate = true;
+  });
+  renderer.toneMappingExposure = 0.95 + intensity * 0.05;
+}
+
+// Update upholstery material (color, shading model)
+function updateUpholsteryMaterial() {
+  const c = new THREE.Color(state.upholsteryColor);
+  matRefs.upholstery.color.copy(c);
+
+  // Adjust material parameters based on material type
+  if (state.upholsteryMaterial === 'leather') {
+    matRefs.upholstery.roughness = 0.35;
+    matRefs.upholstery.clearcoat = 0.8;
+    matRefs.upholstery.clearcoatRoughness = 0.2;
+    matRefs.upholstery.sheen = 0.7;
+    matRefs.upholstery.sheenRoughness = 0.5;
+  } else if (state.upholsteryMaterial === 'fabric') {
+    matRefs.upholstery.roughness = 0.75;
+    matRefs.upholstery.clearcoat = 0.0;
+    matRefs.upholstery.clearcoatRoughness = 0.0;
+    matRefs.upholstery.sheen = 1.0;
+    matRefs.upholstery.sheenRoughness = 0.85;
+  } else if (state.upholsteryMaterial === 'suede') {
+    matRefs.upholstery.roughness = 0.95;
+    matRefs.upholstery.clearcoat = 0.0;
+    matRefs.upholstery.clearcoatRoughness = 0.0;
+    matRefs.upholstery.sheen = 1.0;
+    matRefs.upholstery.sheenRoughness = 0.95;
+  }
+
+  updateUpholsteryPattern();
+}
+
+// Update pattern texture
+function updateUpholsteryPattern() {
+  const scale = state.patternScale;
+  let tex = null;
+  if (state.upholsteryPattern === 'checker') {
+    tex = makeCanvasTexture(patternChecker, 1024, scale);
+  } else if (state.upholsteryPattern === 'stripes') {
+    tex = makeCanvasTexture(patternStripes, 1024, scale);
+  } else if (state.upholsteryPattern === 'noise') {
+    tex = makeCanvasTexture(patternNoise, 512, scale * 2);
+  }
+  matRefs.upholstery.map = tex;
+  if (tex) {
+    tex.needsUpdate = true;
+    matRefs.upholstery.map = tex;
+  }
+  matRefs.upholstery.needsUpdate = true;
+}
+
+// Update base/frame material (finish and roughness)
+function updateBaseMaterial() {
+  const finish = state.baseFinish;
+  if (finish === 'chrome') {
+    matRefs.baseMetal.color.set(0xffffff);
+    matRefs.baseMetal.metalness = 1.0;
+    matRefs.baseMetal.roughness = state.metalRoughness * 0.5;
+    matRefs.baseMetal.map = makeCanvasTexture(patternBrushedMetal, 1024, 2);
+  } else if (finish === 'black') {
+    matRefs.baseMetal.color.set(0x12161d);
+    matRefs.baseMetal.metalness = 0.8;
+    matRefs.baseMetal.roughness = state.metalRoughness;
+    matRefs.baseMetal.map = null;
+  } else if (finish === 'white') {
+    matRefs.baseMetal.color.set(0xf3f5f9);
+    matRefs.baseMetal.metalness = 0.2;
+    matRefs.baseMetal.roughness = Math.max(0.25, state.metalRoughness);
+    matRefs.baseMetal.map = null;
+  }
+  matRefs.baseMetal.needsUpdate = true;
+}
+
+// Part visibility
+function setPartVisibility(partName, visible) {
+  if (partName === 'armrests') {
+    chair.parts.armrests.visible = visible;
+    state.parts.armrests = visible;
+  } else if (partName === 'headrest') {
+    chair.parts.headrest.visible = visible;
+    state.parts.headrest = visible;
+  }
+}
+function setCastersVisibility(visible) {
+  chair.parts.casters.forEach(c => c.visible = visible);
+  state.parts.casters = visible;
+}
+
+// Export JSON
+function exportJSON() {
+  const config = {
+    upholsteryColor: state.upholsteryColor,
+    upholsteryMaterial: state.upholsteryMaterial,
+    upholsteryPattern: state.upholsteryPattern,
+    patternScale: state.patternScale,
+    baseFinish: state.baseFinish,
+    metalRoughness: state.metalRoughness,
+    envIntensity: state.envIntensity,
+    parts: { ...state.parts },
+    camera: {
+      position: camera.position.toArray(),
+      target: controls.target.toArray(),
+      bookmark: state.cameraBookmark
+    },
+    timestamp: new Date().toISOString(),
+    product: 'Office Chair'
+  };
+  const str = JSON.stringify(config, null, 2);
+  downloadBlob(str, 'chair_config.json', 'application/json');
+}
+
+// Snapshot PNG
+function snapshotPNG() {
+  // temporarily hide UI background to avoid reflection changes (not necessary, just snapshot canvas)
+  renderer.render(scene, camera); // ensure latest frame
+  const dataURL = renderer.domElement.toDataURL('image/png');
+  downloadDataURL(dataURL, 'chair_snapshot.png');
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function downloadDataURL(dataURL, filename) {
+  const a = document.createElement('a');
+  a.href = dataURL; a.download = filename; a.click();
+}
+
+// Randomize
+function randomizeState() {
+  const colors = ['#f43f5e','#f59e0b','#22c55e','#06b6d4','#3b82f6','#8b5cf6','#ec4899','#a3a3a3','#111827'];
+  state.upholsteryColor = colors[(Math.random()*colors.length)|0];
+  state.upholsteryMaterial = ['leather','fabric','suede'][(Math.random()*3)|0];
+  state.upholsteryPattern = ['none','checker','stripes','noise'][(Math.random()*4)|0];
+  state.patternScale = +(Math.random()*5.5 + 0.5).toFixed(1);
+  state.baseFinish = ['chrome','black','white'][(Math.random()*3)|0];
+  state.metalRoughness = +(Math.random()).toFixed(2);
+  state.envIntensity = +(Math.random()*2.5 + 0.3).toFixed(2);
+  state.parts.armrests = Math.random() > 0.2;
+  state.parts.headrest = Math.random() > 0.6;
+  state.parts.casters = Math.random() > 0.05;
+  applyStateToUI();
+  applyStateToScene();
+}
+
+// Defaults and load
+function defaultState() {
+  return JSON.parse(JSON.stringify({
+    upholsteryColor: '#3b82f6',
+    upholsteryMaterial: 'fabric',
+    upholsteryPattern: 'none',
+    patternScale: 2,
+    baseFinish: 'black',
+    metalRoughness: 0.35,
+    envIntensity: 1.0,
+    parts: { armrests: true, headrest: false, casters: true },
+    cameraBookmark: 'overview'
+  }));
+}
+function loadState(s) {
+  Object.assign(state, defaultState(), s || {});
+  applyStateToUI();
+  applyStateToScene();
+  gotoBookmark(state.cameraBookmark, 600);
+}
+function applyStateToUI() {
+  ui.upholsteryColor.value = state.upholsteryColor;
+  ui.upholsteryMaterial.value = state.upholsteryMaterial;
+  ui.upholsteryPattern.value = state.upholsteryPattern;
+  ui.patternScale.value = state.patternScale;
+  ui.patternScaleValue.textContent = state.patternScale.toFixed(1) + 'x';
+  ui.baseFinish.value = state.baseFinish;
+  ui.metalRoughness.value = state.metalRoughness;
+  ui.metalRoughnessValue.textContent = state.metalRoughness.toFixed(2);
+  ui.envIntensity.value = state.envIntensity;
+  ui.envIntensityValue.textContent = state.envIntensity.toFixed(2);
+  ui.toggleArmrests.checked = state.parts.armrests;
+  ui.toggleHeadrest.checked = state.parts.headrest;
+  ui.toggleCasters.checked = state.parts.casters;
+}
+function applyStateToScene() {
+  updateEnvIntensity();
+  updateUpholsteryMaterial();
+  updateBaseMaterial();
+  setPartVisibility('armrests', state.parts.armrests);
+  setPartVisibility('headrest', state.parts.headrest);
+  setCastersVisibility(state.parts.casters);
+}
+
+// Resize
+function onResize() {
+  const w = window.innerWidth - 320;
+  const h = window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+
+// Animate
+const clock = new THREE.Clock();
+function animate() {
+  const dt = clock.getDelta();
+  // Camera tween
+  if (camAnim) {
+    const t = (performance.now() - camAnim.t0) / camAnim.duration;
+    const k = t >= 1 ? 1 : smoothstep(0, 1, t);
+    const pos = camAnim.from.pos.clone().lerp(camAnim.to.pos, k);
+    const tgt = camAnim.from.target.clone().lerp(camAnim.to.target, k);
+    camera.position.copy(pos);
+    controls.target.copy(tgt);
+    if (t >= 1) camAnim = null;
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+}
+function smoothstep(a, b, t) {
+  const x = Math.min(1, Math.max(0, (t - a) / (b - a)));
+  return x * x * (3 - 2 * x);
+}
+
+// Kickoff
+applyGroundGradient();
+loadState(state);
+gotoBookmark('overview', 0);
+animate();
+
+// Subtle radial gradient on ground for aesthetics
+function applyGroundGradient() {
+  const size = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createRadialGradient(size/2, size/2, size*0.15, size/2, size/2, size*0.5);
+  grad.addColorStop(0, '#12141a');
+  grad.addColorStop(1, '#0a0b0f');
+  ctx.fillStyle = grad; ctx.fillRect(0,0,size,size);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  ground.material.map = tex;
+  ground.material.needsUpdate = true;
+}
+
+// Ensure all meshes cast/receive shadows appropriately
+scene.traverse(obj => {
+  if (obj.isMesh) {
+    obj.castShadow = obj.castShadow || true;
+    if (obj === ground) obj.receiveShadow = true;
+  }
+});
+
+// Expose for potential debugging
+window.scene = scene; window.camera = camera; window.chair = chairGroup;
+
+</script>
+</body>
+</html>

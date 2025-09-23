@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrain Flight Simulator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+            max-width: 250px;
+        }
+        
+        .control-section {
+            margin-bottom: 10px;
+        }
+        
+        .control-section h4 {
+            margin: 0 0 5px 0;
+            color: #4CAF50;
+        }
+        
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 999;
+        }
+        
+        #crosshair::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 4px;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="crosshair"></div>
+        <div id="controls">
+            <div class="control-section">
+                <h4>Flight Controls</h4>
+                <div>W/S: Pitch Up/Down</div>
+                <div>A/D: Roll Left/Right</div>
+                <div>Q/E: Yaw Left/Right</div>
+                <div>↑/↓: Throttle</div>
+                <div>Shift: Boost</div>
+                <div>Space: Level Flight</div>
+            </div>
+            <div class="control-section">
+                <h4>Stats</h4>
+                <div>Speed: <span id="speed">0</span></div>
+                <div>Altitude: <span id="altitude">0</span></div>
+                <div>FPS: <span id="fps">0</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Perlin Noise Implementation
+        class PerlinNoise {
+            constructor() {
+                this.p = [];
+                for (let i = 0; i < 256; i++) {
+                    this.p[i] = Math.floor(Math.random() * 256);
+                }
+                for (let i = 0; i < 256; i++) {
+                    this.p[256 + i] = this.p[i];
+                }
+            }
+
+            fade(t) {
+                return t * t * t * (t * (t * 6 - 15) + 10);
+            }
+
+            lerp(t, a, b) {
+                return a + t * (b - a);
+            }
+
+            grad(hash, x, y, z) {
+                const h = hash & 15;
+                const u = h < 8 ? x : y;
+                const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+                return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+            }
+
+            noise(x, y, z) {
+                const X = Math.floor(x) & 255;
+                const Y = Math.floor(y) & 255;
+                const Z = Math.floor(z) & 255;
+                
+                x -= Math.floor(x);
+                y -= Math.floor(y);
+                z -= Math.floor(z);
+                
+                const u = this.fade(x);
+                const v = this.fade(y);
+                const w = this.fade(z);
+                
+                const A = this.p[X] + Y;
+                const AA = this.p[A] + Z;
+                const AB = this.p[A + 1] + Z;
+                const B = this.p[X + 1] + Y;
+                const BA = this.p[B] + Z;
+                const BB = this.p[B + 1] + Z;
+
+                return this.lerp(w, 
+                    this.lerp(v, 
+                        this.lerp(u, this.grad(this.p[AA], x, y, z), 
+                                     this.grad(this.p[BA], x - 1, y, z)),
+                        this.lerp(u, this.grad(this.p[AB], x, y - 1, z), 
+                                     this.grad(this.p[BB], x - 1, y - 1, z))),
+                    this.lerp(v, 
+                        this.lerp(u, this.grad(this.p[AA + 1], x, y, z - 1), 
+                                     this.grad(this.p[BA + 1], x - 1, y, z - 1)),
+                        this.lerp(u, this.grad(this.p[AB + 1], x, y - 1, z - 1), 
+                                     this.grad(this.p[BB + 1], x - 1, y - 1, z - 1))));
+            }
+
+            octaveNoise(x, y, z, octaves, persistence) {
+                let total = 0;
+                let frequency = 1;
+                let amplitude = 1;
+                let maxValue = 0;
+
+                for (let i = 0; i < octaves; i++) {
+                    total += this.noise(x * frequency, y * frequency, z * frequency) * amplitude;
+                    maxValue += amplitude;
+                    amplitude *= persistence;
+                    frequency *= 2;
+                }
+
+                return total / maxValue;
+            }
+        }
+
+        // Global variables
+        let scene, camera, renderer, controls;
+        let terrain, trees, rivers;
+        let drone, droneBody, droneProps = [];
+        let noise;
+        let keys = {};
+        let mouseX = 0, mouseY = 0;
+        let velocity = new THREE.Vector3(0, 0, 0);
+        let angularVelocity = new THREE.Vector3(0, 0, 0);
+        let throttle = 0.5;
+        let frameCount = 0;
+        let lastTime = 0;
+
+        // Terrain parameters
+        const TERRAIN_SIZE = 2000;
+        const TERRAIN_SEGMENTS = 200;
+        const HEIGHT_SCALE = 100;
+        const TREE_COUNT = 5000;
+
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 100, 1500);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.set(0, 100, 0);
+
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x87CEEB);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Initialize Perlin noise
+            noise = new PerlinNoise();
+
+            // Create lighting
+            createLighting();
+
+            // Generate terrain
+            generateTerrain();
+
+            // Create drone
+            createDrone();
+
+            // Create trees
+            createTrees();
+
+            // Create rivers
+            createRivers();
+
+            // Add event listeners
+            addEventListeners();
+
+            // Start animation loop
+            animate();
+        }
+
+        function createLighting() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+
+            // Directional light (sun)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 200, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 1000;
+            directionalLight.shadow.camera.left = -500;
+            directionalLight.shadow.camera.right = 500;
+            directionalLight.shadow.camera.top = 500;
+            directionalLight.shadow.camera.bottom = -500;
+            scene.add(directionalLight);
+        }
+
+        function generateTerrain() {
+            const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
+            
+            // Generate height data using Perlin noise
+            const vertices = geometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 2];
+                
+                // Multiple octaves of noise for realistic terrain
+                let height = 0;
+                height += noise.octaveNoise(x * 0.001, z * 0.001, 0, 4, 0.5) * HEIGHT_SCALE;
+                height += noise.octaveNoise(x * 0.005, z * 0.005, 0, 2, 0.3) * 20;
+                
+                vertices[i + 1] = height;
+            }
+
+            geometry.computeVertexNormals();
+
+            // Create terrain material with color based on height
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    minHeight: { value: -HEIGHT_SCALE },
+                    maxHeight: { value: HEIGHT_SCALE },
+                    grassColor: { value: new THREE.Color(0x4a5d23) },
+                    rockColor: { value: new THREE.Color(0x8b7355) },
+                    snowColor: { value: new THREE.Color(0xffffff) }
+                },
+                vertexShader: `
+                    varying vec3 vPosition;
+                    varying vec3 vNormal;
+                    void main() {
+                        vPosition = position;
+                        vNormal = normal;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float minHeight;
+                    uniform float maxHeight;
+                    uniform vec3 grassColor;
+                    uniform vec3 rockColor;
+                    uniform vec3 snowColor;
+                    varying vec3 vPosition;
+                    varying vec3 vNormal;
+                    
+                    void main() {
+                        float height = vPosition.y;
+                        float normalizedHeight = (height - minHeight) / (maxHeight - minHeight);
+                        
+                        vec3 color = grassColor;
+                        if (normalizedHeight > 0.7) {
+                            color = mix(rockColor, snowColor, (normalizedHeight - 0.7) / 0.3);
+                        } else if (normalizedHeight > 0.3) {
+                            color = mix(grassColor, rockColor, (normalizedHeight - 0.3) / 0.4);
+                        }
+                        
+                        // Simple lighting
+                        float lighting = dot(vNormal, normalize(vec3(1.0, 1.0, 0.5))) * 0.5 + 0.5;
+                        color *= lighting;
+                        
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `
+            });
+
+            terrain = new THREE.Mesh(geometry, material);
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+        }
+
+        function createDrone() {
+            drone = new THREE.Group();
+            
+            // Drone body
+            const bodyGeometry = new THREE.BoxGeometry(2, 0.5, 4);
+            const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+            droneBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            droneBody.castShadow = true;
+            drone.add(droneBody);
+
+            // Propellers
+            const propGeometry = new THREE.CylinderGeometry(1.5, 1.5, 0.1, 8);
+            const propMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
+            
+            const propPositions = [
+                [-1.5, 0.5, -1.5],
+                [1.5, 0.5, -1.5],
+                [-1.5, 0.5, 1.5],
+                [1.5, 0.5, 1.5]
+            ];
+
+            propPositions.forEach(pos => {
+                const prop = new THREE.Mesh(propGeometry, propMaterial);
+                prop.position.set(pos[0], pos[1], pos[2]);
+                droneProps.push(prop);
+                drone.add(prop);
+            });
+
+            drone.position.set(0, 50, 0);
+            scene.add(drone);
+
+            // Attach camera to drone
+            drone.add(camera);
+            camera.position.set(0, 2, 8);
+            camera.lookAt(0, 0, 0);
+        }
+
+        function createTrees() {
+            const treeGeometry = new THREE.ConeGeometry(2, 8, 8);
+            const treeMaterial = new THREE.MeshLambertMaterial({ color: 0x2d4a1e });
+            
+            const trunkGeometry = new THREE.CylinderGeometry(0.3, 0.5, 3, 8);
+            const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+
+            trees = new THREE.Group();
+
+            for (let i = 0; i < TREE_COUNT; i++) {
+                const x = (Math.random() - 0.5) * TERRAIN_SIZE * 0.8;
+                const z = (Math.random() - 0.5) * TERRAIN_SIZE * 0.8;
+                
+                // Get terrain height at this position
+                const height = getTerrainHeight(x, z);
+                
+                // Only place trees on suitable terrain (not too steep, not underwater)
+                if (height > 5 && height < HEIGHT_SCALE * 0.7) {
+                    const tree = new THREE.Group();
+                    
+                    const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+                    trunk.position.y = 1.5;
+                    trunk.castShadow = true;
+                    tree.add(trunk);
+                    
+                    const leaves = new THREE.Mesh(treeGeometry, treeMaterial);
+                    leaves.position.y = 5;
+                    leaves.castShadow = true;
+                    tree.add(leaves);
+                    
+                    tree.position.set(x, height, z);
+                    tree.scale.setScalar(0.5 + Math.random() * 0.5);
+                    trees.add(tree);
+                }
+            }
+            
+            scene.add(trees);
+        }
+
+        function createRivers() {
+            rivers = new THREE.Group();
+            
+            // Create a simple river using a curved path
+            const riverPath = new THREE.CatmullRomCurve3([
+                new THREE.Vector3(-500, 1, -300),
+                new THREE.Vector3(-200, 1, -100),
+                new THREE.Vector3(0, 1, 50),
+                new THREE.Vector3(200, 1, 100),
+                new THREE.Vector3(400, 1, -50),
+                new THREE.Vector3(600, 1, -200)
+            ]);
+
+            const riverGeometry = new THREE.TubeGeometry(riverPath, 50, 8, 8, false);
+            const riverMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x4682B4,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const river = new THREE.Mesh(riverGeometry, riverMaterial);
+            rivers.add(river);
+            
+            scene.add(rivers);
+        }
+
+        function getTerrainHeight(x, z) {
+            // Calculate height using the same noise function as terrain generation
+            let height = 0;
+            height += noise.octaveNoise(x * 0.001, z * 0.001, 0, 4, 0.5) * HEIGHT_SCALE;
+            height += noise.octaveNoise(x * 0.005, z * 0.005, 0, 2, 0.3) * 20;
+            return height;
+        }
+
+        function addEventListeners() {
+            // Keyboard events
+            window.addEventListener('keydown', (event) => {
+                keys[event.code] = true;
+            });
+
+            window.addEventListener('keyup', (event) => {
+                keys[event.code] = false;
+            });
+
+            // Mouse events
+            document.addEventListener('mousemove', (event) => {
+                mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+                mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function updateDrone() {
+            const deltaTime = 0.016; // Assuming 60fps
+            const sensitivity = 0.02;
+            const maxSpeed = 50;
+            const acceleration = 20;
+
+            // Handle input
+            if (keys['KeyW']) angularVelocity.x += sensitivity; // Pitch down
+            if (keys['KeyS']) angularVelocity.x -= sensitivity; // Pitch up
+            if (keys['KeyA']) angularVelocity.z += sensitivity; // Roll left
+            if (keys['KeyD']) angularVelocity.z -= sensitivity; // Roll right
+            if (keys['KeyQ']) angularVelocity.y += sensitivity; // Yaw left
+            if (keys['KeyE']) angularVelocity.y -= sensitivity; // Yaw right
+
+            // Throttle control
+            if (keys['ArrowUp']) throttle = Math.min(throttle + 0.02, 1);
+            if (keys['ArrowDown']) throttle = Math.max(throttle - 0.02, 0);
+
+            // Speed boost
+            const boost = keys['ShiftLeft'] ? 2 : 1;
+
+            // Level flight
+            if (keys['Space']) {
+                angularVelocity.multiplyScalar(0.9);
+                drone.rotation.x *= 0.9;
+                drone.rotation.z *= 0.9;
+            }
+
+            // Apply angular velocity with damping
+            angularVelocity.multiplyScalar(0.95);
+            drone.rotation.x = THREE.MathUtils.clamp(drone.rotation.x + angularVelocity.x, -Math.PI/3, Math.PI/3);
+            drone.rotation.y += angularVelocity.y;
+            drone.rotation.z = THREE.MathUtils.clamp(drone.rotation.z + angularVelocity.z, -Math.PI/3, Math.PI/3);
+
+            // Calculate forward vector based on drone's rotation
+            const forward = new THREE.Vector3(0, 0, -1);
+            forward.applyQuaternion(drone.quaternion);
+
+            // Apply thrust
+            const thrust = throttle * acceleration * boost;
+            velocity.add(forward.multiplyScalar(thrust * deltaTime));
+            velocity.multiplyScalar(0.98); // Air resistance
+
+            // Limit speed
+            if (velocity.length() > maxSpeed * boost) {
+                velocity.normalize().multiplyScalar(maxSpeed * boost);
+            }
+
+            // Update position
+            drone.position.add(velocity.clone().multiplyScalar(deltaTime));
+
+            // Collision detection with terrain
+            const terrainHeight = getTerrainHeight(drone.position.x, drone.position.z);
+            const minAltitude = terrainHeight + 5;
+            if (drone.position.y < minAltitude) {
+                drone.position.y = minAltitude;
+                velocity.y = Math.max(velocity.y, 0); // Stop downward velocity
+            }
+
+            // Animate propellers
+            droneProps.forEach(prop => {
+                prop.rotation.y += throttle * 0.5 + 0.2;
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('speed').textContent = velocity.length().toFixed(1);
+            document.getElementById('altitude').textContent = (drone.position.y - getTerrainHeight(drone.position.x, drone.position.z)).toFixed(1);
+            
+            // FPS calculation
+            frameCount++;
+            const currentTime = Date.now();
+            if (currentTime - lastTime >= 1000) {
+                document.getElementById('fps').textContent = frameCount;
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updateDrone();
+            updateStats();
+
+            renderer.render(scene, camera);
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

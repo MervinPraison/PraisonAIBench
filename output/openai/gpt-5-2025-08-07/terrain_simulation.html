@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Three.js Terrain Landscape (WASD Fly)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #87a7d1; }
+    canvas { display: block; }
+    #ui {
+      position: fixed;
+      top: 12px; left: 12px;
+      background: rgba(0,0,0,0.45);
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.35;
+      user-select: none;
+      z-index: 10;
+      max-width: 320px;
+    }
+    #ui b { color: #aee2ff; }
+    #ui .title { font-weight: 700; font-size: 16px; color: #fff; }
+    #ui .hr { height: 1px; background: rgba(255,255,255,0.15); margin: 8px 0; }
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.5), rgba(0,0,0,0.85));
+      color: #e6f2ff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      z-index: 20;
+    }
+    #loading .inner {
+      text-align: center;
+      padding: 22px 26px;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      background: rgba(0,0,0,0.25);
+      max-width: 420px;
+    }
+    #loading .inner h1 { margin: 0 0 8px 0; font-size: 18px; font-weight: 700; }
+    #loading .inner p { margin: 6px 0; font-size: 14px; color: #d6e8ff; }
+    #loading .hint { opacity: 0.8; font-size: 13px; }
+    a { color: #aee2ff; text-decoration: none; border-bottom: 1px dotted rgba(174,226,255,0.6); }
+    a:hover { border-bottom-color: rgba(174,226,255,1); }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div class="title">3D Terrain Landscape</div>
+    <div class="hr"></div>
+    Controls:
+    <ul style="margin:6px 0 0 16px;padding:0;">
+      <li><b>W/A/S/D</b> move forward/left/back/right</li>
+      <li><b>R / F</b> move up / down</li>
+      <li><b>Mouse</b> drag to look around</li>
+      <li><b>Shift</b> hold to boost speed</li>
+    </ul>
+  </div>
+
+  <div id="loading">
+    <div class="inner">
+      <h1>Generating terrain...</h1>
+      <p>This may take a moment on first load.</p>
+      <p class="hint">Tip: Use WASD to fly, drag the mouse to look. R/F to go up/down.</p>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
+    import { FlyControls } from 'https://unpkg.com/three@0.165.0/examples/jsm/controls/FlyControls.js';
+    import { ImprovedNoise } from 'https://unpkg.com/three@0.165.0/examples/jsm/math/ImprovedNoise.js';
+
+    let renderer, scene, camera, controls;
+    let terrain;
+    const clock = new THREE.Clock();
+
+    init();
+    animate();
+
+    function init() {
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      document.body.appendChild(renderer.domElement);
+
+      // Scene and fog
+      const skyColor = new THREE.Color(0x87a7d1); // soft blue
+      scene = new THREE.Scene();
+      scene.background = skyColor;
+      scene.fog = new THREE.FogExp2(skyColor.getHex(), 0.00038);
+
+      // Camera
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 8000);
+      camera.position.set(0, 180, 400);
+
+      // Lights
+      const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x3f3a2a, 0.7);
+      scene.add(hemi);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.85);
+      dirLight.position.set(1200, 1500, 700);
+      scene.add(dirLight);
+
+      // Terrain
+      terrain = createTerrain({
+        worldSize: 4000,
+        segments: 256,
+        heightScale: 260
+      });
+      scene.add(terrain);
+
+      // Controls (FlyControls)
+      controls = new FlyControls(camera, renderer.domElement);
+      controls.dragToLook = true;        // left-mouse drag to look
+      controls.movementSpeed = 160;      // base speed
+      controls.rollSpeed = Math.PI / 20; // not used much; enables Q/E roll if desired
+      controls.autoForward = false;
+
+      // Optional: shift to boost
+      let boosting = false;
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+          if (!boosting) {
+            controls.movementSpeed *= 2.5;
+            boosting = true;
+          }
+        }
+      });
+      window.addEventListener('keyup', (e) => {
+        if (boosting && (e.code === 'ShiftLeft' || e.code === 'ShiftRight')) {
+          controls.movementSpeed /= 2.5;
+          boosting = false;
+        }
+      });
+
+      // Window resize
+      window.addEventListener('resize', onWindowResize);
+
+      // Remove loading overlay after a tick
+      setTimeout(() => {
+        const loading = document.getElementById('loading');
+        if (loading) loading.style.display = 'none';
+      }, 100);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      controls.update(dt);
+      renderer.render(scene, camera);
+    }
+
+    function createTerrain({ worldSize = 4000, segments = 256, heightScale = 200 } = {}) {
+      // Build plane
+      const geometry = new THREE.PlaneGeometry(worldSize, worldSize, segments, segments);
+      geometry.rotateX(-Math.PI / 2);
+
+      // Heights with multi-octave Perlin (ImprovedNoise)
+      const cols = segments + 1;
+      const rows = segments + 1;
+      const heights = generateHeight(cols, rows);
+      const pos = geometry.attributes.position;
+      const vCount = pos.count;
+
+      // Displace vertices
+      let minY = Infinity, maxY = -Infinity;
+      for (let i = 0; i < vCount; i++) {
+        const ix = i % cols;
+        const iz = (i / cols) | 0;
+        const h = heights[iz * cols + ix]; // -1..1
+        const y = h * heightScale;
+        pos.setY(i, y);
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+
+      // Normals
+      geometry.computeVertexNormals();
+
+      // Color the terrain based on elevation and slope (procedural "texturing")
+      const normal = geometry.attributes.normal;
+      const colors = new Float32Array(vCount * 3);
+
+      const colorGrass = new THREE.Color(0x3a7d3a); // rich green
+      const colorDirt  = new THREE.Color(0x6b4f2a); // earthy brown
+      const colorRock  = new THREE.Color(0x888a8c); // gray rock
+      const colorSnow  = new THREE.Color(0xf3f7fb); // snow
+
+      // Helper: smoothstep
+      const smoothstep = (edge0, edge1, x) => {
+        const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+
+      for (let i = 0; i < vCount; i++) {
+        const y = pos.getY(i);
+        const hN = THREE.MathUtils.clamp((y - minY) / (maxY - minY), 0, 1); // 0..1
+        const ny = normal.getY(i);
+        const slope = THREE.MathUtils.clamp(1 - ny, 0, 1); // 0 flat, 1 steep
+
+        // Base weights using height and slope
+        const snowW = smoothstep(0.78, 0.92, hN);
+        const rockW = Math.max(
+          smoothstep(0.55, 0.82, hN) * smoothstep(0.15, 0.55, slope),
+          smoothstep(0.65, 0.85, hN) * 0.6
+        );
+        const grassW = (1 - slope) * smoothstep(0.15, 0.65, 1.0 - Math.abs(hN - 0.45) * 1.5);
+        const dirtW = 0.35 * smoothstep(0.0, 0.2, 1.0 - hN) * (1 - slope * 0.5);
+
+        // Normalize weights
+        let wSum = snowW + rockW + grassW + dirtW;
+        if (wSum < 1e-5) wSum = 1;
+        const wSnow  = snowW / wSum;
+        const wRock  = rockW / wSum;
+        const wGrass = grassW / wSum;
+        const wDirt  = dirtW / wSum;
+
+        // Slight color variation based on world position to break uniformity
+        const ix = i % cols;
+        const iz = (i / cols) | 0;
+        const varHash = (Math.sin(ix * 12.9898 + iz * 78.233) * 43758.5453) % 1;
+        const variation = 0.92 + (varHash - Math.floor(varHash)) * 0.16; // 0.92..1.08
+
+        const c = new THREE.Color(0, 0, 0);
+        c.addScaledVector(colorSnow,  wSnow);
+        c.addScaledVector(colorRock,  wRock);
+        c.addScaledVector(colorGrass, wGrass);
+        c.addScaledVector(colorDirt,  wDirt);
+        c.multiplyScalar(variation);
+
+        colors[i * 3 + 0] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+      }
+
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      // Material with vertex colors and subtle sheen
+      const material = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.95,
+        metalness: 0.0,
+        fog: true
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.receiveShadow = false;
+      mesh.castShadow = false;
+
+      // Add a gentle horizon skydome for better depth (optional visual)
+      const skyGeo = new THREE.SphereGeometry(worldSize * 3, 32, 16);
+      const skyMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+          topColor:    { value: new THREE.Color(0xa8c7ff) },
+          bottomColor: { value: new THREE.Color(0xe6f1ff) },
+          offset:      { value: 400 },
+          exponent:    { value: 0.6 }
+        },
+        vertexShader: `
+          varying vec3 vWorldPosition;
+          void main() {
+            vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * viewMatrix * worldPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 topColor;
+          uniform vec3 bottomColor;
+          uniform float offset;
+          uniform float exponent;
+          varying vec3 vWorldPosition;
+          void main() {
+            float h = normalize(vWorldPosition + vec3(0.0, offset, 0.0)).y;
+            float f = max(pow(max(h, 0.0), exponent), 0.0);
+            gl_FragColor = vec4(mix(bottomColor, topColor, f), 1.0);
+          }
+        `,
+        fog: false
+      });
+      const sky = new THREE.Mesh(skyGeo, skyMat);
+      mesh.add(sky);
+
+      return mesh;
+    }
+
+    function generateHeight(width, height) {
+      const size = width * height;
+      const data = new Float32Array(size);
+      const perlin = new ImprovedNoise();
+      const z = Math.random() * 100;
+
+      // Multi-octave noise
+      let amplitude = 1.0;
+      let frequency = 1.0;
+      let totalAmp = 0.0;
+
+      for (let octave = 0; octave < 6; octave++) {
+        for (let i = 0; i < size; i++) {
+          const x = i % width;
+          const y = (i / width) | 0;
+          // noise returns roughly -1..1
+          const n = perlin.noise(
+            (x / width) * 8.0 * frequency,
+            (y / height) * 8.0 * frequency,
+            z
+          );
+          data[i] += n * amplitude;
+        }
+        totalAmp += amplitude;
+        amplitude *= 0.5;   // persistence
+        frequency *= 2.0;   // lacunarity
+      }
+
+      // Normalize to -1..1
+      for (let i = 0; i < size; i++) {
+        data[i] /= totalAmp;
+        // Add a broad, gentle mountain shape by blending radial falloff
+        const x = (i % width) / (width - 1) * 2 - 1;  // -1..1
+        const y = ((i / width) | 0) / (height - 1) * 2 - 1; // -1..1
+        const r = Math.sqrt(x * x + y * y);
+        const falloff = THREE.MathUtils.clamp(1.0 - r * 0.6, 0.0, 1.0);
+        data[i] = data[i] * 0.8 + (falloff - 0.5) * 0.35;
+      }
+
+      return data; // -1..1
+    }
+  </script>
+</body>
+</html>

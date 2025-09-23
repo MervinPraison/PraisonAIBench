@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Shooter</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            color: white;
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            font-size: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+        }
+        
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 200;
+            background: rgba(0,0,0,0.8);
+            padding: 30px;
+            border-radius: 10px;
+            display: none;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            font-size: 14px;
+            text-align: right;
+        }
+        
+        .mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+        }
+        
+        .touch-button {
+            background: rgba(255,255,255,0.2);
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            margin: 10px;
+            display: inline-block;
+            text-align: center;
+            line-height: 56px;
+            font-size: 20px;
+            color: white;
+            user-select: none;
+            touch-action: none;
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-controls {
+                display: block;
+            }
+            #controls {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div>Health: <span id="health">100</span></div>
+            <div>Score: <span id="score">0</span></div>
+            <div>Wave: <span id="wave">1</span></div>
+        </div>
+        
+        <div id="gameOver">
+            <h2>Game Over</h2>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <button onclick="restartGame()" style="padding: 10px 20px; font-size: 16px; background: #333; color: white; border: none; border-radius: 5px; cursor: pointer;">Restart</button>
+        </div>
+        
+        <div id="controls">
+            <div>WASD/Arrow Keys: Move</div>
+            <div>Space/Click: Shoot</div>
+        </div>
+        
+        <div class="mobile-controls">
+            <div class="touch-button" id="shootBtn">🚀</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/postprocessing/RenderPass.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/postprocessing/UnrealBloomPass.js"></script>
+    
+    <script>
+        // Game variables
+        let scene, camera, renderer, composer;
+        let player, enemies, lasers, particles;
+        let gameState = {
+            health: 100,
+            score: 0,
+            wave: 1,
+            enemiesKilled: 0,
+            gameOver: false,
+            difficulty: 1
+        };
+        
+        // Input handling
+        const keys = {};
+        let mousePos = { x: 0, y: 0 };
+        let isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        // Game arrays
+        const enemyPool = [];
+        const laserPool = [];
+        const particlePool = [];
+        
+        // Initialize the game
+        function init() {
+            setupScene();
+            createPlayer();
+            createStarfield();
+            createEnemies();
+            createParticleSystem();
+            setupPostProcessing();
+            setupEventListeners();
+            animate();
+            spawnEnemyWave();
+        }
+        
+        function setupScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x000000);
+            document.getElementById('gameContainer').appendChild(renderer.domElement);
+            
+            camera.position.z = 10;
+        }
+        
+        function createPlayer() {
+            const geometry = new THREE.ConeGeometry(0.3, 1, 6);
+            const material = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+            player = new THREE.Mesh(geometry, material);
+            player.rotation.x = Math.PI / 2;
+            scene.add(player);
+        }
+        
+        function createStarfield() {
+            const starGeometry = new THREE.BufferGeometry();
+            const starCount = 2000;
+            const positions = new Float32Array(starCount * 3);
+            
+            for (let i = 0; i < starCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 200;
+                positions[i + 1] = (Math.random() - 0.5) * 200;
+                positions[i + 2] = (Math.random() - 0.5) * 200;
+            }
+            
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            
+            const starMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 2,
+                sizeAttenuation: false
+            });
+            
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+        }
+        
+        function createEnemies() {
+            enemies = new THREE.Group();
+            scene.add(enemies);
+            
+            // Create enemy pool
+            for (let i = 0; i < 50; i++) {
+                const geometry = new THREE.OctahedronGeometry(0.5);
+                const material = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+                const enemy = new THREE.Mesh(geometry, material);
+                enemy.userData = {
+                    active: false,
+                    health: 1,
+                    speed: 0.05,
+                    rotationSpeed: 0.02
+                };
+                enemyPool.push(enemy);
+                enemies.add(enemy);
+            }
+        }
+        
+        function createParticleSystem() {
+            particles = new THREE.Group();
+            scene.add(particles);
+            
+            // Create particle pool
+            for (let i = 0; i < 100; i++) {
+                const geometry = new THREE.SphereGeometry(0.05, 4, 4);
+                const material = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+                const particle = new THREE.Mesh(geometry, material);
+                particle.userData = {
+                    active: false,
+                    velocity: new THREE.Vector3(),
+                    life: 0,
+                    maxLife: 60
+                };
+                particlePool.push(particle);
+                particles.add(particle);
+            }
+        }
+        
+        function setupPostProcessing() {
+            composer = new THREE.EffectComposer(renderer);
+            
+            const renderPass = new THREE.RenderPass(scene, camera);
+            composer.addPass(renderPass);
+            
+            const bloomPass = new THREE.UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5, 0.4, 0.85
+            );
+            bloomPass.threshold = 0.1;
+            bloomPass.strength = 0.5;
+            bloomPass.radius = 0.3;
+            composer.addPass(bloomPass);
+        }
+        
+        function setupEventListeners() {
+            // Keyboard events
+            document.addEventListener('keydown', (event) => {
+                keys[event.code] = true;
+                if (event.code === 'Space') {
+                    event.preventDefault();
+                    shoot();
+                }
+            });
+            
+            document.addEventListener('keyup', (event) => {
+                keys[event.code] = false;
+            });
+            
+            // Mouse events
+            document.addEventListener('mousemove', (event) => {
+                mousePos.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mousePos.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            });
+            
+            document.addEventListener('click', () => {
+                if (!gameState.gameOver) shoot();
+            });
+            
+            // Touch events for mobile
+            if (isMobile) {
+                let touchStartX, touchStartY;
+                
+                document.addEventListener('touchstart', (event) => {
+                    const touch = event.touches[0];
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    event.preventDefault();
+                });
+                
+                document.addEventListener('touchmove', (event) => {
+                    if (gameState.gameOver) return;
+                    
+                    const touch = event.touches[0];
+                    const deltaX = touch.clientX - touchStartX;
+                    const deltaY = touch.clientY - touchStartY;
+                    
+                    player.position.x += deltaX * 0.01;
+                    player.position.y -= deltaY * 0.01;
+                    
+                    // Clamp player position
+                    player.position.x = Math.max(-8, Math.min(8, player.position.x));
+                    player.position.y = Math.max(-5, Math.min(5, player.position.y));
+                    
+                    touchStartX = touch.clientX;
+                    touchStartY = touch.clientY;
+                    event.preventDefault();
+                });
+                
+                document.getElementById('shootBtn').addEventListener('touchstart', (event) => {
+                    if (!gameState.gameOver) shoot();
+                    event.preventDefault();
+                });
+            }
+            
+            // Window resize
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+        
+        function updatePlayer() {
+            if (gameState.gameOver) return;
+            
+            const speed = 0.15;
+            
+            if (!isMobile) {
+                // Keyboard movement
+                if (keys['KeyW'] || keys['ArrowUp']) player.position.y += speed;
+                if (keys['KeyS'] || keys['ArrowDown']) player.position.y -= speed;
+                if (keys['KeyA'] || keys['ArrowLeft']) player.position.x -= speed;
+                if (keys['KeyD'] || keys['ArrowRight']) player.position.x += speed;
+                
+                // Mouse movement (optional)
+                // player.position.x = mousePos.x * 5;
+                // player.position.y = mousePos.y * 3;
+            }
+            
+            // Clamp player position
+            player.position.x = Math.max(-8, Math.min(8, player.position.x));
+            player.position.y = Math.max(-5, Math.min(5, player.position.y));
+        }
+        
+        function shoot() {
+            // Find available laser from pool
+            let laser = laserPool.find(l => !l.userData.active);
+            
+            if (!laser) {
+                // Create new laser if pool is full
+                const geometry = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 6);
+                const material = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+                laser = new THREE.Mesh(geometry, material);
+                laser.userData = { active: false };
+                laserPool.push(laser);
+                scene.add(laser);
+            }
+            
+            laser.position.copy(player.position);
+            laser.position.z += 0.5;
+            laser.userData.active = true;
+        }
+        
+        function updateLasers() {
+            laserPool.forEach(laser => {
+                if (!laser.userData.active) return;
+                
+                laser.position.z += 0.3;
+                
+                if (laser.position.z > 15) {
+                    laser.userData.active = false;
+                }
+            });
+        }
+        
+        function spawnEnemyWave() {
+            const enemiesInWave = 5 + Math.floor(gameState.wave * 0.5);
+            let spawnedCount = 0;
+            
+            const spawnInterval = setInterval(() => {
+                spawnEnemy();
+                spawnedCount++;
+                
+                if (spawnedCount >= enemiesInWave) {
+                    clearInterval(spawnInterval);
+                }
+            }, 1000 / gameState.difficulty);
+        }
+        
+        function spawnEnemy() {
+            // Find available enemy from pool
+            const enemy = enemyPool.find(e => !e.userData.active);
+            if (!enemy) return;
+            
+            enemy.position.set(
+                (Math.random() - 0.5) * 16,
+                (Math.random() - 0.5) * 10,
+                -20
+            );
+            
+            enemy.userData.active = true;
+            enemy.userData.health = Math.floor(1 + gameState.wave * 0.3);
+            enemy.userData.speed = 0.05 + gameState.difficulty * 0.01;
+        }
+        
+        function updateEnemies() {
+            let activeEnemies = 0;
+            
+            enemyPool.forEach(enemy => {
+                if (!enemy.userData.active) return;
+                
+                activeEnemies++;
+                
+                // Move enemy forward
+                enemy.position.z += enemy.userData.speed;
+                enemy.rotation.x += enemy.userData.rotationSpeed;
+                enemy.rotation.y += enemy.userData.rotationSpeed;
+                
+                // Remove enemy if it goes past player
+                if (enemy.position.z > 15) {
+                    enemy.userData.active = false;
+                    gameState.health -= 10;
+                    updateUI();
+                    
+                    if (gameState.health <= 0) {
+                        endGame();
+                    }
+                }
+                
+                // Check collision with player
+                if (enemy.position.distanceTo(player.position) < 1) {
+                    enemy.userData.active = false;
+                    gameState.health -= 20;
+                    createExplosion(enemy.position);
+                    updateUI();
+                    
+                    if (gameState.health <= 0) {
+                        endGame();
+                    }
+                }
+            });
+            
+            // Spawn new wave if no enemies left
+            if (activeEnemies === 0 && !gameState.gameOver) {
+                gameState.wave++;
+                gameState.difficulty += 0.1;
+                updateUI();
+                setTimeout(() => spawnEnemyWave(), 2000);
+            }
+        }
+        
+        function checkCollisions() {
+            laserPool.forEach(laser => {
+                if (!laser.userData.active) return;
+                
+                enemyPool.forEach(enemy => {
+                    if (!enemy.userData.active) return;
+                    
+                    if (laser.position.distanceTo(enemy.position) < 0.8) {
+                        laser.userData.active = false;
+                        enemy.userData.health--;
+                        
+                        createExplosion(enemy.position);
+                        
+                        if (enemy.userData.health <= 0) {
+                            enemy.userData.active = false;
+                            gameState.score += 100 * gameState.difficulty;
+                            gameState.enemiesKilled++;
+                            updateUI();
+                        }
+                    }
+                });
+            });
+        }
+        
+        function createExplosion(position) {
+            for (let i = 0; i < 5; i++) {
+                const particle = particlePool.find(p => !p.userData.active);
+                if (!particle) continue;
+                
+                particle.position.copy(position);
+                particle.userData.active = true;
+                particle.userData.life = particle.userData.maxLife;
+                particle.userData.velocity.set(
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.2
+                );
+            }
+        }
+        
+        function updateParticles() {
+            particlePool.forEach(particle => {
+                if (!particle.userData.active) return;
+                
+                particle.position.add(particle.userData.velocity);
+                particle.userData.life--;
+                
+                const alpha = particle.userData.life / particle.userData.maxLife;
+                particle.material.opacity = alpha;
+                particle.material.transparent = true;
+                
+                if (particle.userData.life <= 0) {
+                    particle.userData.active = false;
+                }
+            });
+        }
+        
+        function updateUI() {
+            document.getElementById('health').textContent = Math.max(0, gameState.health);
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('wave').textContent = gameState.wave;
+        }
+        
+        function endGame() {
+            gameState.gameOver = true;
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        
+        function restartGame() {
+            // Reset game state
+            gameState = {
+                health: 100,
+                score: 0,
+                wave: 1,
+                enemiesKilled: 0,
+                gameOver: false,
+                difficulty: 1
+            };
+            
+            // Reset player position
+            player.position.set(0, 0, 0);
+            
+            // Deactivate all objects
+            enemyPool.forEach(enemy => enemy.userData.active = false);
+            laserPool.forEach(laser => laser.userData.active = false);
+            particlePool.forEach(particle => particle.userData.active = false);
+            
+            // Hide game over screen
+            document.getElementById('gameOver').style.display = 'none';
+            
+            // Update UI and restart
+            updateUI();
+            spawnEnemyWave();
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (!gameState.gameOver) {
+                updatePlayer();
+                updateLasers();
+                updateEnemies();
+                updateParticles();
+                checkCollisions();
+            }
+            
+            composer.render();
+        }
+        
+        // Start the game
+        init();
+    </script>
+</body>
+</html>

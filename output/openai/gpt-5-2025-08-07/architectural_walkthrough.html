@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Procedural Architectural Walkthrough - Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #0b0e11;
+      color: #eaeaea;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.75), rgba(0,0,0,0.95));
+      text-align: center;
+      cursor: pointer;
+      user-select: none;
+      z-index: 10;
+    }
+    #overlay .panel {
+      max-width: 800px;
+      line-height: 1.4;
+      background: rgba(20,22,28,0.8);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 22px 28px;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+    }
+    #overlay h1 {
+      font-weight: 700;
+      margin: 0 0 8px;
+      font-size: 22px;
+      color: #fff;
+    }
+    #overlay p {
+      margin: 6px 0;
+      color: #cfd6df;
+      font-size: 14px;
+    }
+    #overlay kbd {
+      background: #11151a;
+      color: #dfe7f0;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-bottom-color: rgba(0,0,0,0.7);
+      border-radius: 6px;
+      padding: 2px 6px;
+      box-shadow: inset 0 -1px 0 rgba(0,0,0,0.3);
+      font-weight: 700;
+      font-size: 12px;
+    }
+    #hud {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: rgba(10,12,16,0.6);
+      border: 1px solid rgba(255,255,255,0.1);
+      font-size: 12px;
+      color: #cfd6df;
+      user-select: none;
+      pointer-events: none;
+      z-index: 1;
+      white-space: pre;
+    }
+    #crosshair {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 14px; height: 14px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      box-shadow:
+        0 0 0 2px rgba(255,255,255,0.1) inset,
+        0 0 10px rgba(0,0,0,0.7);
+      background: radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.15) 35%, rgba(255,255,255,0.0) 60%);
+      opacity: 0.65;
+      pointer-events: none;
+      z-index: 2;
+    }
+    #label {
+      position: absolute;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(20,22,28,0.7);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #dfe7f0;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+      white-space: nowrap;
+      z-index: 2;
+    }
+    #minimapFrame {
+      position: absolute;
+      right: 12px;
+      bottom: 12px;
+      width: 240px;
+      height: 240px;
+      border-radius: 10px;
+      background: rgba(12,16,22,0.7);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(0,0,0,0.3);
+      pointer-events: none;
+      z-index: 1;
+    }
+    #minimapTitle {
+      position: absolute;
+      right: 18px; bottom: 18px;
+      color: #a6b2bf;
+      font-size: 11px;
+      z-index: 2;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div class="panel">
+      <h1>Procedural House Walkthrough</h1>
+      <p>Click to start and lock pointer. Explore a procedurally generated multi-room house with lighting, light probes, culling, collisions, hotspots, and a minimap.</p>
+      <p>
+        Movement: <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp; | &nbsp;
+        Sprint: <kbd>Shift</kbd> &nbsp; | &nbsp;
+        Jump: <kbd>Space</kbd> &nbsp; | &nbsp;
+        Interact: <kbd>E</kbd> (aim at hotspot)
+      </p>
+      <p>
+        Toggle minimap: <kbd>V</kbd> &nbsp; | &nbsp;
+        Toggle probe helpers: <kbd>H</kbd> &nbsp; | &nbsp;
+        Toggle hotspot labels: <kbd>L</kbd>
+      </p>
+      <p style="opacity:0.7">Tip: Rooms render with room-based culling. Move through doorways to load adjacent rooms.</p>
+      <p style="margin-top: 10px; opacity:0.8"><small>Environment IBL + Light Probes + fake baked lightmaps</small></p>
+      <p style="margin:10px 0 0; opacity:0.8"><small>Seeded by URL param ?seed=123</small></p>
+    </div>
+  </div>
+  <div id="hud"></div>
+  <div id="crosshair"></div>
+  <div id="label">Hotspot: Press E</div>
+  <div id="minimapFrame"></div>
+  <div id="minimapTitle">Minimap</div>
+
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+    import { RGBELoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/RGBELoader.js';
+    import { LightProbeGenerator } from 'https://unpkg.com/three@0.160.0/examples/jsm/lights/LightProbeGenerator.js';
+    import { LightProbeHelper } from 'https://unpkg.com/three@0.160.0/examples/jsm/helpers/LightProbeHelper.js';
+
+    // Globals
+    let renderer, scene, camera, minimapCamera, controls;
+    const clock = new THREE.Clock();
+    const hud = document.getElementById('hud');
+    const overlay = document.getElementById('overlay');
+    const label = document.getElementById('label');
+    const minimapFrame = document.getElementById('minimapFrame');
+    const minimapTitle = document.getElementById('minimapTitle');
+
+    // State
+    const world = {
+      rooms: [],
+      roomLayerStart: 1,
+      colliders: [],
+      hotspots: [],
+      furniture: [],
+      doorLayerLinks: new Map(), // roomIndex -> Set(layer indexes)
+      probeHelpers: [],
+      currentRoomIndex: -1,
+      extents: new THREE.Box2(new THREE.Vector2(0,0), new THREE.Vector2(0,0))
+    };
+
+    const params = {
+      seed: getSeedFromURL() ?? Math.floor(Math.random() * 1e9),
+      playerHeight: 1.65,
+      speed: 2.6,
+      sprint: 4.5,
+      gravity: 18,
+      jump: 5.2,
+      radius: 0.28,
+      wallHeight: 2.7,
+      wallThickness: 0.2,
+      doorWidth: 1.0,
+      doorHeight: 2.1,
+      showMinimap: true,
+      showLabel: true,
+      showProbeHelpers: false,
+    };
+
+    // Movement state
+    const move = { forward: false, backward: false, left: false, right: false, running: false, canJump: true, velocityY: 0 };
+
+    // Layers:
+    //  - 0: unused here (we'll not rely on default layer)
+    //  - 1..N: rooms geometry and hotspots
+    //  - 31: minimap arrow only
+    const LAYER_MINIMAP_ONLY = 31;
+
+    // RNG
+    const rng = mulberry32(params.seed);
+
+    // Set up renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = false;
+    renderer.setScissorTest(true);
+    document.body.appendChild(renderer.domElement);
+
+    // Scene and cameras
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0e11);
+
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 200);
+    camera.position.set(0, params.playerHeight, 0);
+
+    minimapCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 200);
+    minimapCamera.rotation.order = 'YXZ';
+    minimapCamera.rotation.x = -Math.PI / 2;
+    minimapCamera.layers.enableAll(); // see everything
+    camera.layers.disableAll(); // we'll enable current/adjacent room layers dynamically
+
+    // Player arrow for minimap
+    const arrow = new THREE.Mesh(
+      new THREE.ConeGeometry(0.25, 0.8, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff5555, depthTest: true })
+    );
+    arrow.rotation.x = Math.PI / 2;
+    arrow.position.y = params.wallHeight + 0.02;
+    arrow.layers.disableAll();
+    arrow.layers.enable(LAYER_MINIMAP_ONLY);
+    scene.add(arrow);
+
+    // Controls
+    controls = new PointerLockControls(camera, renderer.domElement);
+    controls.getObject().position.y = params.playerHeight;
+    scene.add(controls.getObject());
+
+    overlay.addEventListener('click', () => {
+      controls.lock();
+    });
+
+    controls.addEventListener('lock', () => {
+      overlay.style.display = 'none';
+    });
+    controls.addEventListener('unlock', () => {
+      overlay.style.display = '';
+    });
+
+    // Lighting: IBL + light probes + gentle fill
+    const hemi = new THREE.HemisphereLight(0xddeeff, 0x111118, 0.08);
+    scene.add(hemi);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+
+    // Load an HDR environment for IBL
+    new RGBELoader()
+      .setDataType(THREE.HalfFloatType)
+      .load('https://unpkg.com/three@0.160.0/examples/textures/equirectangular/royal_esplanade_1k.hdr', (hdr) => {
+        const rt = pmrem.fromEquirectangular(hdr);
+        hdr.dispose();
+        scene.environment = rt.texture;
+
+        // Global light probe
+        const lightProbe = LightProbeGenerator.fromCubeRenderTarget(renderer, rt);
+        lightProbe.intensity = 1.0;
+        scene.add(lightProbe);
+
+        // Build the world after environment is ready (so materials can reflect)
+        buildWorld();
+        animate();
+      });
+
+    // Baked lightmap texture (fake radial AO)
+    const bakedLightMap = generateRadialLightMap(256);
+
+    // Materials factory
+    const Mats = materialFactory();
+
+    // Build procedural house
+    function buildWorld() {
+      const house = generateHouseLayout();
+      buildRooms(house);
+      addFurnitureAndHotspots();
+      finalizeMinimap(house);
+
+      // Set initial camera position in the first room
+      const r0 = world.rooms[0];
+      controls.getObject().position.set(r0.cx, params.playerHeight, r0.cz);
+      updateCurrentRoom();
+
+      // HUD
+      hud.textContent = `Seed: ${params.seed}
+Rooms: ${world.rooms.length}
+Controls: WASD move, Shift sprint, E interact, H probes, V minimap, L labels
+`;
+    }
+
+    // Layout generation
+    function generateHouseLayout() {
+      // Start with a base room at origin
+      const baseW = randRange(5.0, 7.0);
+      const baseH = randRange(4.0, 6.0);
+      const rooms = [];
+      const rects = []; // For overlap tests
+
+      function addRoom(cx, cz, w, h, name) {
+        const idx = rooms.length;
+        const room = {
+          index: idx,
+          name,
+          cx, cz, w, h,
+          x0: cx - w / 2,
+          x1: cx + w / 2,
+          z0: cz - h / 2,
+          z1: cz + h / 2,
+          neighbors: [],
+          doors: [], // { side, x, z }
+          layer: world.roomLayerStart + idx,
+          group: new THREE.Group()
+        };
+        rooms.push(room);
+        rects.push(room);
+        return room;
+      }
+
+      addRoom(0, 0, baseW, baseH, 'Living');
+
+      // Add up to 3 more rooms adjacent to existing ones
+      const names = ['Kitchen', 'Bedroom', 'Office', 'Hall', 'Bath', 'Dining'];
+      for (let i = 0; i < 3; i++) {
+        const target = rooms[Math.floor(rng() * rooms.length)];
+        const side = ['N', 'E', 'S', 'W'][Math.floor(rng() * 4)];
+        const w = randRange(3.6, 5.5);
+        const h = randRange(3.4, 5.0);
+        let cx = target.cx, cz = target.cz;
+        const gap = params.wallThickness; // adjacency wall thickness
+
+        if (side === 'N') { cx = target.cx; cz = target.z1 + h / 2 + gap; }
+        if (side === 'S') { cx = target.cx; cz = target.z0 - h / 2 - gap; }
+        if (side === 'E') { cz = target.cz; cx = target.x1 + w / 2 + gap; }
+        if (side === 'W') { cz = target.cz; cx = target.x0 - w / 2 - gap; }
+
+        const candidate = { x0: cx - w / 2, x1: cx + w / 2, z0: cz - h / 2, z1: cz + h / 2 };
+        let overlaps = false;
+        for (const r of rects) {
+          const sep = candidate.x1 <= r.x0 || candidate.x0 >= r.x1 || candidate.z1 <= r.z0 || candidate.z0 >= r.z1;
+          if (!sep) { overlaps = true; break; }
+        }
+        if (overlaps) { i--; continue; } // retry
+
+        const name = names.length ? names.splice(Math.floor(rng() * names.length), 1)[0] : `Room ${rooms.length}`;
+        const newRoom = addRoom(cx, cz, w, h, name);
+
+        // Connect them with a door on the shared wall
+        connectRoomsWithDoor(target, newRoom);
+      }
+
+      // compute extents
+      const min = new THREE.Vector2(Infinity, Infinity);
+      const max = new THREE.Vector2(-Infinity, -Infinity);
+      for (const r of rooms) {
+        min.x = Math.min(min.x, r.x0);
+        min.y = Math.min(min.y, r.z0);
+        max.x = Math.max(max.x, r.x1);
+        max.y = Math.max(max.y, r.z1);
+      }
+      world.extents.set(min, max);
+
+      return rooms;
+    }
+
+    function connectRoomsWithDoor(a, b) {
+      // Determine which side they touch (axis-aligned)
+      // They are placed exactly adjacent.
+      const overlapX = Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0));
+      const overlapZ = Math.max(0, Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0));
+      let sideA = null, sideB = null;
+      let x = 0, z = 0;
+
+      if (overlapX > 0) {
+        // stacked in Z
+        if (a.z1 <= b.z0) { sideA = 'N'; sideB = 'S'; z = a.z1; x = clamp((Math.max(a.x0, b.x0) + Math.min(a.x1, b.x1)) / 2, Math.max(a.x0, b.x0) + 0.8, Math.min(a.x1, b.x1) - 0.8); }
+        else if (b.z1 <= a.z0) { sideA = 'S'; sideB = 'N'; z = a.z0; x = clamp((Math.max(a.x0, b.x0) + Math.min(a.x1, b.x1)) / 2, Math.max(a.x0, b.x0) + 0.8, Math.min(a.x1, b.x1) - 0.8); }
+      } else if (overlapZ > 0) {
+        // stacked in X
+        if (a.x1 <= b.x0) { sideA = 'E'; sideB = 'W'; x = a.x1; z = clamp((Math.max(a.z0, b.z0) + Math.min(a.z1, b.z1)) / 2, Math.max(a.z0, b.z0) + 0.8, Math.min(a.z1, b.z1) - 0.8); }
+        else if (b.x1 <= a.x0) { sideA = 'W'; sideB = 'E'; x = a.x0; z = clamp((Math.max(a.z0, b.z0) + Math.min(a.z1, b.z1)) / 2, Math.max(a.z0, b.z0) + 0.8, Math.min(a.z1, b.z1) - 0.8); }
+      }
+
+      if (sideA && sideB) {
+        a.neighbors.push(b.index);
+        b.neighbors.push(a.index);
+        a.doors.push({ side: sideA, x, z });
+        b.doors.push({ side: sideB, x, z });
+      }
+    }
+
+    function buildRooms(rooms) {
+      for (const r of rooms) {
+        const group = r.group;
+        scene.add(group);
+
+        // Layers
+        group.traverse(o => { o.layers.enable(r.layer); });
+        group.layers.enable(r.layer);
+
+        // Floor
+        const floorGeo = new THREE.PlaneGeometry(r.w, r.h);
+        ensureUv2(floorGeo);
+        const floorMat = Mats.floor();
+        floorMat.lightMap = bakedLightMap;
+        floorMat.lightMapIntensity = 0.9;
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.set(r.cx, 0, r.cz);
+        floor.receiveShadow = false;
+        group.add(floor);
+
+        // Ceiling
+        const ceilGeo = new THREE.PlaneGeometry(r.w, r.h);
+        ensureUv2(ceilGeo);
+        const ceilMat = Mats.ceiling();
+        ceilMat.lightMap = bakedLightMap;
+        ceilMat.lightMapIntensity = 0.6;
+        const ceiling = new THREE.Mesh(ceilGeo, ceilMat);
+        ceiling.rotation.x = Math.PI / 2;
+        ceiling.position.set(r.cx, params.wallHeight, r.cz);
+        group.add(ceiling);
+
+        // Walls with door gaps
+        const T = params.wallThickness;
+        const H = params.wallHeight;
+        const DW = params.doorWidth;
+        const DH = params.doorHeight;
+
+        // Helper: make wall segments for one side
+        const doorsBySide = new Map();
+        for (const d of r.doors) {
+          const key = d.side;
+          if (!doorsBySide.has(key)) doorsBySide.set(key, []);
+          doorsBySide.get(key).push(d);
+        }
+
+        function addWallSide(side) {
+          let length = (side === 'N' || side === 'S') ? r.w : r.h;
+          let along = length;
+          let segments = [];
+
+          const doorList = (doorsBySide.get(side) || []);
+          if (doorList.length === 0) {
+            // full wall
+            segments.push({ offset: 0, len: length, hasDoor: false });
+          } else {
+            // Only support one door per side for simplicity
+            const d = doorList[0];
+            const centerAlong = (side === 'N' || side === 'S') ? (d.x - (r.cx - r.w/2)) : (d.z - (r.cz - r.h/2));
+            const leftLen = Math.max(0, centerAlong - DW/2);
+            const rightLen = Math.max(0, length - (centerAlong + DW/2));
+            if (leftLen > 0) segments.push({ offset: 0, len: leftLen, hasDoor: false });
+            if (rightLen > 0) segments.push({ offset: centerAlong + DW/2, len: rightLen, hasDoor: false });
+            // header above door
+            segments.push({ offset: centerAlong - DW/2, len: DW, hasDoor: true });
+          }
+
+          for (const seg of segments) {
+            if (!seg.hasDoor) {
+              const wallGeo = new THREE.BoxGeometry(seg.len, H, T);
+              ensureUv2(wallGeo);
+              const wallMat = Mats.wall();
+              wallMat.lightMap = bakedLightMap;
+              wallMat.lightMapIntensity = 0.7;
+
+              const wall = new THREE.Mesh(wallGeo, wallMat);
+              wall.castShadow = false;
+              wall.receiveShadow = false;
+
+              // position
+              let x = r.cx, y = H / 2, z = r.cz;
+              if (side === 'N') {
+                x = (r.cx - r.w/2) + (seg.offset + seg.len/2);
+                z = r.z1 + T/2;
+              } else if (side === 'S') {
+                x = (r.cx - r.w/2) + (seg.offset + seg.len/2);
+                z = r.z0 - T/2;
+              } else if (side === 'E') {
+                const wallRot = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+                wall.geometry.applyMatrix4(wallRot);
+                x = r.x1 + T/2;
+                z = (r.cz - r.h/2) + (seg.offset + seg.len/2);
+              } else if (side === 'W') {
+                const wallRot = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+                wall.geometry.applyMatrix4(wallRot);
+                x = r.x0 - T/2;
+                z = (r.cz - r.h/2) + (seg.offset + seg.len/2);
+              }
+              wall.position.set(x, y, z);
+              group.add(wall);
+
+              // Collider
+              const col = wall.clone();
+              col.material = null;
+              col.visible = false;
+              scene.add(col);
+              world.colliders.push(col);
+            } else {
+              // header above door
+              const headerGeo = new THREE.BoxGeometry(seg.len, H - DH, T);
+              ensureUv2(headerGeo);
+              const headerMat = Mats.wall();
+              headerMat.lightMap = bakedLightMap;
+              headerMat.lightMapIntensity = 0.7;
+
+              const header = new THREE.Mesh(headerGeo, headerMat);
+              let x = r.cx, y = DH + (H - DH)/2, z = r.cz;
+              if (side === 'N') {
+                x = (r.cx - r.w/2) + (seg.offset + seg.len/2);
+                z = r.z1 + T/2;
+              } else if (side === 'S') {
+                x = (r.cx - r.w/2) + (seg.offset + seg.len/2);
+                z = r.z0 - T/2;
+              } else if (side === 'E') {
+                const rot = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+                header.geometry.applyMatrix4(rot);
+                x = r.x1 + T/2;
+                z = (r.cz - r.h/2) + (seg.offset + seg.len/2);
+              } else if (side === 'W') {
+                const rot = new THREE.Matrix4().makeRotationY(Math.PI / 2);
+                header.geometry.applyMatrix4(rot);
+                x = r.x0 - T/2;
+                z = (r.cz - r.h/2) + (seg.offset + seg.len/2);
+              }
+              header.position.set(x, y, z);
+              group.add(header);
+
+              // Collider for header
+              const col = header.clone();
+              col.material = null;
+              col.visible = false;
+              scene.add(col);
+              world.colliders.push(col);
+
+              // Door frame visuals (thin)
+              const frameMat = Mats.woodDark();
+              const frameThickness = 0.06;
+              const frameDepth = T + 0.02;
+              const stilesGeo = new THREE.BoxGeometry(frameThickness, DH, frameDepth);
+              const headerGeo2 = new THREE.BoxGeometry(seg.len, frameThickness, frameDepth);
+
+              const frames = [];
+
+              if (side === 'N' || side === 'S') {
+                const sign = side === 'N' ? 1 : -1;
+                const zf = (side === 'N') ? (r.z1 + frameDepth/2) : (r.z0 - frameDepth/2);
+
+                const sx = (r.cx - r.w/2) + (seg.offset);
+                const ex = (r.cx - r.w/2) + (seg.offset + seg.len);
+
+                const left = new THREE.Mesh(stilesGeo, frameMat);
+                left.position.set(sx + frameThickness/2, DH/2, zf);
+                const right = new THREE.Mesh(stilesGeo, frameMat);
+                right.position.set(ex - frameThickness/2, DH/2, zf);
+
+                const head = new THREE.Mesh(headerGeo2, frameMat);
+                head.position.set((sx + ex)/2, DH + frameThickness/2, zf);
+
+                frames.push(left, right, head);
+              } else {
+                const xf = (side === 'E') ? (r.x1 + frameDepth/2) : (r.x0 - frameDepth/2);
+
+                const sz = (r.cz - r.h/2) + (seg.offset);
+                const ez = (r.cz - r.h/2) + (seg.offset + seg.len);
+
+                const stilesGeoRot = stilesGeo.clone();
+                stilesGeoRot.rotateY(Math.PI/2);
+                const headerGeoRot = headerGeo2.clone();
+                headerGeoRot.rotateY(Math.PI/2);
+
+                const left = new THREE.Mesh(stilesGeoRot, frameMat);
+                left.position.set(xf, DH/2, sz + frameThickness/2);
+                const right = new THREE.Mesh(stilesGeoRot, frameMat);
+                right.position.set(xf, DH/2, ez - frameThickness/2);
+
+                const head = new THREE.Mesh(headerGeoRot, frameMat);
+                head.position.set(xf, DH + frameThickness/2, (sz + ez)/2);
+
+                frames.push(left, right, head);
+              }
+
+              for (const f of frames) {
+                group.add(f);
+              }
+            }
+          }
+        }
+
+        addWallSide('N');
+        addWallSide('S');
+        addWallSide('E');
+        addWallSide('W');
+
+        // Light probe per room (for demo, reuse same SH from env by cloning)
+        // Create a dummy probe, copy coefficients
+        const roomProbe = new THREE.LightProbe();
+        // copy coefficients from global light probe if exists
+        for (const obj of scene.children) {
+          if (obj.isLightProbe) {
+            roomProbe.sh.copy(obj.sh);
+            break;
+          }
+        }
+        roomProbe.intensity = 1.0;
+        roomProbe.position.set(r.cx, H * 0.7, r.cz);
+        scene.add(roomProbe);
+
+        const helper = new LightProbeHelper(roomProbe, 0.3);
+        helper.visible = params.showProbeHelpers;
+        helper.layers.enable(r.layer);
+        scene.add(helper);
+        world.probeHelpers.push(helper);
+
+        // Layer tagging for all room contents
+        group.traverse(obj => {
+          obj.layers.disableAll();
+          obj.layers.enable(r.layer);
+        });
+      }
+
+      world.rooms = rooms;
+
+      // Build adjacency layer links map
+      for (const r of rooms) {
+        const set = new Set([r.layer]);
+        for (const n of r.neighbors) set.add(world.rooms[n].layer);
+        world.doorLayerLinks.set(r.index, set);
+      }
+    }
+
+    function addFurnitureAndHotspots() {
+      // Each room gets a furniture set and a hotspot to toggle something
+      for (const r of world.rooms) {
+        const items = [];
+
+        // Choose type by name
+        if (/living/i.test(r.name)) {
+          items.push(createSofa(r.cx - r.w*0.2, r.cz, r.layer));
+          items.push(createCoffeeTable(r.cx + r.w*0.05, r.cz, r.layer));
+          const spot = createHotspot(r.cx, 0.0, r.cz - r.h*0.25, r.layer, 'Toggle Sofa', () => {
+            items[0].visible = !items[0].visible;
+          });
+          world.hotspots.push(spot);
+        } else if (/kitchen/i.test(r.name)) {
+          items.push(createKitchenBlock(r.cx - r.w*0.25, r.cz + r.h*0.2, r.layer));
+          items.push(createDiningTable(r.cx + r.w*0.15, r.cz, r.layer));
+          const spot = createHotspot(r.cx, 0.0, r.cz - r.h*0.2, r.layer, 'Countertop: wood/marble', () => {
+            toggleKitchenCountertop(items[0]);
+          });
+          world.hotspots.push(spot);
+        } else if (/bed/i.test(r.name)) {
+          items.push(createBed(r.cx, r.cz, r.layer));
+          const spot = createHotspot(r.cx, 0.0, r.cz + r.h*0.2, r.layer, 'Swap Bedspread', () => {
+            swapBedspread(items[0]);
+          });
+          world.hotspots.push(spot);
+        } else {
+          // Office/Hall/Other
+          items.push(createCabinet(r.cx - r.w*0.25, r.cz - r.h*0.2, r.layer));
+          items.push(createChair(r.cx + r.w*0.1, r.cz, r.layer));
+          const spot = createHotspot(r.cx, 0.0, r.cz + r.h*0.25, r.layer, 'Toggle Chair', () => {
+            items[1].visible = !items[1].visible;
+          });
+          world.hotspots.push(spot);
+        }
+
+        // Make floors togglable: add a hotspot to cycle floor materials
+        const floorSpot = createHotspot(r.cx + r.w*0.3 - 0.2, 0, r.cz + r.h*0.3 - 0.2, r.layer, 'Cycle Floor Material', () => {
+          const floors = [];
+          r.group.traverse(o => { if (o.isMesh && o.geometry.type === 'PlaneGeometry' && Math.abs(o.rotation.x + Math.PI/2) < 1e-3) floors.push(o); });
+          for (const f of floors) {
+            cycleFloorMaterial(f);
+          }
+        });
+        world.hotspots.push(floorSpot);
+      }
+    }
+
+    // Furniture
+    function createSofa(x, z, layer) {
+      const g = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.35, 0.7), Mats.fabric(0x51647a, 0.8));
+      base.position.set(0, 0.18, 0);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 0.2), Mats.fabric(0x51647a, 0.85));
+      back.position.set(0, 0.55, -0.25);
+      const armL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.45, 0.7), Mats.fabric(0x445363, 0.85));
+      armL.position.set(-0.8, 0.36, 0);
+      const armR = armL.clone();
+      armR.position.x = 0.8;
+      g.add(base, back, armL, armR);
+      g.position.set(x, 0, z);
+      g.traverse(o => { if (o.isMesh) { o.castShadow = false; } });
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function createCoffeeTable(x,z,layer) {
+      const g = new THREE.Group();
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.06, 0.5), Mats.woodMid());
+      top.position.y = 0.35;
+      const legGeo = new THREE.BoxGeometry(0.06, 0.35, 0.06);
+      const legMat = Mats.woodDark();
+      const l1 = new THREE.Mesh(legGeo, legMat); l1.position.set(0.4, 0.175, 0.22);
+      const l2 = l1.clone(); l2.position.x = -0.4;
+      const l3 = l1.clone(); l3.position.z = -0.22;
+      const l4 = l2.clone(); l4.position.z = -0.22;
+      g.add(top,l1,l2,l3,l4);
+      g.position.set(x,0,z);
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function createDiningTable(x, z, layer) {
+      const g = new THREE.Group();
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.05, 24), Mats.woodMid());
+      top.position.y = 0.78;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.75, 16), Mats.metalDark());
+      leg.position.y = 0.38;
+      g.add(top, leg);
+      // add some chairs
+      for (let i = 0; i < 3; i++) {
+        const c = createChair(0,0,layer,true);
+        const ang = i * (Math.PI*2/3);
+        c.position.set(Math.cos(ang)*0.9, 0, Math.sin(ang)*0.9);
+        c.rotation.y = -ang + Math.PI;
+        g.add(c);
+      }
+      g.position.set(x, 0, z);
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function createChair(x, z, layer, standalone=false) {
+      const g = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.45), Mats.fabric(0x6a5f56, 0.7));
+      seat.position.y = 0.45;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.05), Mats.woodDark());
+      back.position.set(0, 0.675, -0.2);
+      const legGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.45, 10);
+      const legMat = Mats.metalDark();
+      const l1 = new THREE.Mesh(legGeo, legMat); l1.position.set( 0.18, 0.225,  0.18);
+      const l2 = new THREE.Mesh(legGeo, legMat); l2.position.set(-0.18, 0.225,  0.18);
+      const l3 = new THREE.Mesh(legGeo, legMat); l3.position.set( 0.18, 0.225, -0.18);
+      const l4 = new THREE.Mesh(legGeo, legMat); l4.position.set(-0.18, 0.225, -0.18);
+      g.add(seat, back, l1, l2, l3, l4);
+      if (standalone) return g;
+      g.position.set(x, 0, z);
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function createBed(x, z, layer) {
+      const g = new THREE.Group();
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.25, 1.4), Mats.woodDark());
+      frame.position.y = 0.125;
+      const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.16, 1.3), Mats.fabric(0xe5e3df, 0.3));
+      mattress.position.set(0, 0.33, 0);
+      mattress.name = 'mattress';
+      const blanket = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.04, 1.3), Mats.fabric(0x6a86ad, 0.85));
+      blanket.position.set(0, 0.41, 0);
+      blanket.name = 'blanket';
+      const headboard = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.7, 0.07), Mats.woodMid());
+      headboard.position.set(0, 0.6, -0.7/2);
+      g.add(frame, mattress, blanket, headboard);
+      g.position.set(x, 0, z);
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function swapBedspread(bedGroup) {
+      const blanket = bedGroup.getObjectByName('blanket');
+      if (blanket) {
+        const current = blanket.material.color.getHex();
+        const colors = [0x6a86ad, 0xb86c5c, 0x5ea67a, 0xbbb3a8];
+        const idx = (colors.indexOf(current) + 1) % colors.length;
+        blanket.material = Mats.fabric(colors[idx], 0.85);
+      }
+    }
+
+    function createKitchenBlock(x, z, layer) {
+      const g = new THREE.Group();
+      // cabinets
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.8, 0.6), Mats.woodMid());
+      base.position.set(0, 0.4, 0);
+      base.name = 'cabinet';
+      // countertop
+      const top = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.05, 0.62), Mats.marble());
+      top.position.set(0, 0.825, 0);
+      top.name = 'countertop';
+      g.add(base, top);
+      g.position.set(x, 0, z);
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function toggleKitchenCountertop(kitchenGroup) {
+      const top = kitchenGroup.getObjectByName('countertop');
+      if (!top) return;
+      const marbleish = (top.material.userData.kind !== 'wood');
+      top.material = marbleish ? Mats.woodDark() : Mats.marble();
+      top.material.userData.kind = marbleish ? 'wood' : 'marble';
+    }
+
+    function createCabinet(x, z, layer) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.35), Mats.woodMid());
+      body.position.y = 0.55;
+      const doors = new THREE.Mesh(new THREE.BoxGeometry(0.88, 1.08, 0.02), Mats.paint(0xeae6de, 0.2));
+      doors.position.set(0, 0.55, 0.185);
+      g.add(body, doors);
+      g.position.set(x, 0, z);
+      g.layers.disableAll(); g.layers.enable(layer);
+      scene.add(g);
+      return g;
+    }
+
+    function createHotspot(x, y, z, layer, text, action) {
+      const s = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 16), new THREE.MeshStandardMaterial({
+        color: 0x2ba8ff, emissive: 0x0b3e66, emissiveIntensity: 1.2, metalness: 0.0, roughness: 0.2
+      }));
+      s.position.set(x, Math.max(0.08, y) + 0.08, z);
+      s.userData = { isHotspot: true, action, text, layer };
+      s.layers.disableAll(); s.layers.enable(layer);
+      scene.add(s);
+      return s;
+    }
+
+    function cycleFloorMaterial(floorMesh) {
+      const key = floorMesh.userData.floorIndex = (floorMesh.userData.floorIndex || 0) + 1;
+      const i = key % 3;
+      if (i === 0) floorMesh.material = Mats.floor();
+      else if (i === 1) floorMesh.material = Mats.floorWood();
+      else floorMesh.material = Mats.floorCarpet();
+      floorMesh.material.lightMap = bakedLightMap;
+      floorMesh.material.lightMapIntensity = 0.9;
+    }
+
+    // Minimap
+    function finalizeMinimap(rooms) {
+      // Compute orthographic extents with padding
+      const ext = world.extents.clone();
+      const pad = 2.0;
+      const w = (ext.max.x - ext.min.x) + pad * 2;
+      const h = (ext.max.y - ext.min.y) + pad * 2;
+      minimapCamera.left = -w/2; minimapCamera.right = w/2;
+      minimapCamera.bottom = -h/2; minimapCamera.top = h/2;
+      minimapCamera.updateProjectionMatrix();
+      const cx = (ext.min.x + ext.max.x)/2;
+      const cz = (ext.min.y + ext.max.y)/2;
+      minimapCamera.position.set(cx, 50, cz);
+      minimapCamera.lookAt(cx, 0, cz);
+      minimapCamera.layers.enableAll(); // render all rooms
+      minimapCamera.layers.enable(LAYER_MINIMAP_ONLY);
+      camera.layers.disable(LAYER_MINIMAP_ONLY);
+    }
+
+    // Interactions
+    function tryInteract() {
+      // Raycast from camera forward to hotspot within 3m
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const ray = new THREE.Raycaster(camera.position, dir, 0.01, 3.0);
+      // enable layers of current room and neighbors already active on camera
+      const intersects = ray.intersectObjects(world.hotspots, false);
+      if (intersects.length) {
+        const obj = intersects[0].object;
+        if (obj.userData && obj.userData.isHotspot) {
+          obj.userData.action?.();
+        }
+      }
+    }
+
+    // Update current room layers
+    function updateCurrentRoom() {
+      const pos = controls.getObject().position;
+      let idx = -1;
+      for (const r of world.rooms) {
+        if (pos.x >= r.x0 && pos.x <= r.x1 && pos.z >= r.z0 && pos.z <= r.z1) {
+          idx = r.index; break;
+        }
+      }
+      if (idx === -1) return;
+
+      if (idx !== world.currentRoomIndex) {
+        world.currentRoomIndex = idx;
+        // Enable layers for current and adjacent rooms on main camera
+        camera.layers.disableAll();
+        const set = world.doorLayerLinks.get(idx);
+        set.forEach(layer => camera.layers.enable(layer));
+        // Do not show minimap-only arrow in main camera
+        camera.layers.disable(LAYER_MINIMAP_ONLY);
+      }
+    }
+
+    // Collision detection
+    function applyCollisions(from, to) {
+      // Simple axis separation: try X then Z
+      const radius = params.radius;
+      const tryPos = from.clone();
+
+      // Move X
+      tryPos.x = to.x;
+      if (collides(tryPos, radius)) {
+        to.x = from.x;
+      }
+
+      // Move Z
+      tryPos.x = to.x;
+      tryPos.z = to.z;
+      if (collides(tryPos, radius)) {
+        to.z = from.z;
+      }
+
+      // Y not used for navigation (optional jump)
+      return to;
+    }
+
+    function collides(p, radius) {
+      // Test against each collider's AABB
+      const tmpBox = new THREE.Box3();
+      for (const c of world.colliders) {
+        tmpBox.setFromObject(c);
+        // expand by radius (in XZ)
+        tmpBox.min.x -= radius; tmpBox.max.x += radius;
+        tmpBox.min.z -= radius; tmpBox.max.z += radius;
+        tmpBox.min.y = -Infinity; tmpBox.max.y = Infinity;
+        if (tmpBox.containsPoint(p)) return true;
+      }
+      return false;
+    }
+
+    // Movement handling
+    document.addEventListener('keydown', (e) => {
+      switch (e.code) {
+        case 'KeyW': move.forward = true; break;
+        case 'KeyS': move.backward = true; break;
+        case 'KeyA': move.left = true; break;
+        case 'KeyD': move.right = true; break;
+        case 'ShiftLeft':
+        case 'ShiftRight': move.running = true; break;
+        case 'Space':
+          if (move.canJump) { move.velocityY = params.jump; move.canJump = false; }
+          break;
+        case 'KeyE': tryInteract(); break;
+        case 'KeyH':
+          params.showProbeHelpers = !params.showProbeHelpers;
+          for (const h of world.probeHelpers) h.visible = params.showProbeHelpers;
+          break;
+        case 'KeyV':
+          params.showMinimap = !params.showMinimap;
+          minimapFrame.style.display = params.showMinimap ? '' : 'none';
+          minimapTitle.style.display = params.showMinimap ? '' : 'none';
+          break;
+        case 'KeyL':
+          params.showLabel = !params.showLabel;
+          label.style.display = params.showLabel ? '' : 'none';
+          break;
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      switch (e.code) {
+        case 'KeyW': move.forward = false; break;
+        case 'KeyS': move.backward = false; break;
+        case 'KeyA': move.left = false; break;
+        case 'KeyD': move.right = false; break;
+        case 'ShiftLeft':
+        case 'ShiftRight': move.running = false; break;
+      }
+    });
+
+    // Hover label update
+    function updateHotspotLabel() {
+      if (!params.showLabel) { label.style.opacity = 0; return; }
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      const ray = new THREE.Raycaster(camera.position, dir, 0.01, 3.0);
+      const intersects = ray.intersectObjects(world.hotspots, false);
+      if (intersects.length) {
+        const hs = intersects[0].object;
+        label.textContent = `Hotspot: ${hs.userData.text} (E)`;
+        label.style.opacity = 1;
+      } else {
+        label.style.opacity = 0;
+      }
+    }
+
+    // Animate loop
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.045, clock.getDelta());
+
+      // Movement
+      if (controls.isLocked) {
+        const speed = move.running ? params.sprint : params.speed;
+        const vel = new THREE.Vector3();
+        const forward = new THREE.Vector3();
+        camera.getWorldDirection(forward);
+        forward.y = 0; forward.normalize();
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
+
+        if (move.forward) vel.add(forward);
+        if (move.backward) vel.sub(forward);
+        if (move.left) vel.sub(right);
+        if (move.right) vel.add(right);
+
+        if (vel.lengthSq() > 0) vel.normalize().multiplyScalar(speed * dt);
+
+        // Gravity and jump (optional)
+        move.velocityY -= params.gravity * dt;
+        const pos = controls.getObject().position.clone();
+        let next = pos.clone().add(vel);
+        next.y += move.velocityY * dt;
+
+        // floor
+        if (next.y <= params.playerHeight) {
+          next.y = params.playerHeight;
+          move.velocityY = 0;
+          move.canJump = true;
+        }
+
+        // Collisions
+        next = applyCollisions(pos, next);
+
+        controls.getObject().position.copy(next);
+        updateCurrentRoom();
+      }
+
+      updateHotspotLabel();
+
+      // Update player arrow for minimap
+      arrow.position.set(camera.position.x, params.wallHeight + 0.02, camera.position.z);
+      // yaw from camera quaternion
+      const euler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+      arrow.rotation.z = -euler.y; // rotate in minimap plane
+
+      render();
+    }
+
+    // Render both main view and minimap
+    function render() {
+      const w = renderer.domElement.clientWidth;
+      const h = renderer.domElement.clientHeight;
+
+      // Main view
+      renderer.setViewport(0, 0, w, h);
+      renderer.setScissor(0, 0, w, h);
+      renderer.setClearColor(0x0b0e11, 1);
+      renderer.render(scene, camera);
+
+      // Minimap view
+      if (params.showMinimap) {
+        const frame = minimapFrame.getBoundingClientRect();
+        const x = Math.floor(frame.left);
+        const y = Math.floor(window.innerHeight - frame.bottom);
+        const mw = Math.floor(frame.width);
+        const mh = Math.floor(frame.height);
+
+        renderer.setViewport(x, y, mw, mh);
+        renderer.setScissor(x, y, mw, mh);
+        renderer.setClearColor(0x0a0c10, 1);
+        renderer.render(scene, minimapCamera);
+      }
+    }
+
+    // Utils
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function randRange(a, b) { return a + (b - a) * rng(); }
+    function mulberry32(a) {
+      return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      }
+    }
+    function getSeedFromURL() {
+      const m = /[?&]seed=([0-9]+)/.exec(location.search);
+      return m ? parseInt(m[1]) : null;
+    }
+
+    function ensureUv2(geo) {
+      if (!geo.attributes.uv) return;
+      geo.setAttribute('uv2', new THREE.BufferAttribute(geo.attributes.uv.array, 2));
+    }
+
+    function generateRadialLightMap(size=256) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      g.addColorStop(0.0, '#ffffff');
+      g.addColorStop(0.5, '#dddddd');
+      g.addColorStop(1.0, '#9aa0a8');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,size,size);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.anisotropy = renderer.capabilities.getMaxAnisotropy?.() ?? 8;
+      return tex;
+    }
+
+    function materialFactory() {
+      return {
+        wall: () => new THREE.MeshStandardMaterial({ color: 0xdeddd9, roughness: 0.9, metalness: 0.0 }),
+        ceiling: () => new THREE.MeshStandardMaterial({ color: 0xf3f3f0, roughness: 0.95, metalness: 0.0 }),
+        floor: () => new THREE.MeshStandardMaterial({ color: 0xcfc7bb, roughness: 0.8, metalness: 0.0 }),
+        floorWood: () => {
+          const mat = new THREE.MeshStandardMaterial({ color: 0x7d5a36, roughness: 0.6, metalness: 0.02 });
+          return mat;
+        },
+        floorCarpet: () => new THREE.MeshStandardMaterial({ color: 0x57606a, roughness: 1.0, metalness: 0.0 }),
+        woodMid: () => new THREE.MeshStandardMaterial({ color: 0x9a7b58, roughness: 0.65, metalness: 0.05 }),
+        woodDark: () => new THREE.MeshStandardMaterial({ color: 0x5c4a34, roughness: 0.7, metalness: 0.03 }),
+        fabric: (hex, rough=0.9) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0.0 }),
+        metalDark: () => new THREE.MeshStandardMaterial({ color: 0x3a3a40, roughness: 0.4, metalness: 0.8 }),
+        paint: (hex, rough=0.9) => new THREE.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0 }),
+        marble: () => {
+          // simple procedural marble-like material using color only
+          const m = new THREE.MeshStandardMaterial({ color: 0xe7e4de, roughness: 0.4, metalness: 0.0 });
+          m.userData.kind = 'marble';
+          return m;
+        }
+      };
+    }
+
+    // Responsive
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

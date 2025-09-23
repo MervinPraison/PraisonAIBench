@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Landscape</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <script>
+        // Simple Perlin-like noise function for height map
+        function noise2D(x, y) {
+            // Simple fractal noise based on sin/cos for hills and valleys
+            let value = 0;
+            let amplitude = 1;
+            let frequency = 0.01;
+            for (let i = 0; i < 4; i++) {
+                value += amplitude * Math.sin(x * frequency) * Math.cos(y * frequency);
+                amplitude *= 0.5;
+                frequency *= 2;
+            }
+            return value;
+        }
+
+        // Create scene
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x87CEEB, 50, 200); // Fog for depth
+
+        // Camera
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 10, 0);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // Terrain generation
+        const width = 100; // Terrain width in units
+        const height = 100; // Terrain height in units
+        const segments = 100; // Number of segments
+        const geometry = new THREE.PlaneGeometry(width, height, segments, segments);
+        const vertices = geometry.attributes.position.array;
+
+        // Displace vertices for hills and valleys
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const z = vertices[i + 2];
+            vertices[i + 1] = noise2D(x, z) * 10; // Height scale
+        }
+        geometry.attributes.position.needsUpdate = true;
+        geometry.computeVertexNormals(); // For shading
+
+        // Texturing: Vertex colors based on height (green for grass, brown for rock)
+        const colors = [];
+        for (let i = 0; i < vertices.length; i += 3) {
+            const y = vertices[i + 1];
+            if (y < 2) {
+                colors.push(0.2, 0.8, 0.2); // Green (grass)
+            } else if (y < 6) {
+                colors.push(0.5, 0.4, 0.3); // Brown (dirt)
+            } else {
+                colors.push(0.6, 0.6, 0.6); // Gray (rock)
+            }
+        }
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+        const terrain = new THREE.Mesh(geometry, material);
+        terrain.rotation.x = -Math.PI / 2; // Rotate to horizontal
+        scene.add(terrain);
+
+        // Lighting
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(50, 50, 50);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        // Controls
+        const keys = { w: false, a: false, s: false, d: false };
+        window.addEventListener('keydown', (e) => {
+            switch (e.code) {
+                case 'KeyW': keys.w = true; break;
+                case 'KeyA': keys.a = true; break;
+                case 'KeyS': keys.s = true; break;
+                case 'KeyD': keys.d = true; break;
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            switch (e.code) {
+                case 'KeyW': keys.w = false; break;
+                case 'KeyA': keys.a = false; break;
+                case 'KeyS': keys.s = false; break;
+                case 'KeyD': keys.d = false; break;
+            }
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Movement controls
+            const speed = 0.5;
+            if (keys.w) camera.position.z -= speed;
+            if (keys.s) camera.position.z += speed;
+            if (keys.a) camera.position.x -= speed;
+            if (keys.d) camera.position.x += speed;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

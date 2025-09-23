@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Solar System</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: black;
+            color: white;
+            overflow: hidden;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+        }
+        #fact-display {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 300px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container">
+        <div id="controls">
+            <label for="time-speed">Time Speed:</label>
+            <input type="range" id="time-speed" min="0.1" max="5" step="0.1" value="1">
+            <span id="speed-value">1x</span>
+        </div>
+        <div id="fact-display">
+            <h3 id="fact-title"></h3>
+            <p id="fact-text"></p>
+        </div>
+    </div>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
+        scene.add(ambientLight);
+        const sunLight = new THREE.PointLight(0xffffff, 1, 1000);
+        sunLight.castShadow = true;
+        scene.add(sunLight);
+
+        // Camera controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        camera.position.set(0, 10, 50);
+        controls.update();
+
+        // Planet facts
+        const facts = {
+            sun: {
+                title: "Sun",
+                text: "The Sun is a star at the center of the Solar System. It contains 99.86% of the system's known mass and is responsible for providing light and heat."
+            },
+            mercury: {
+                title: "Mercury",
+                text: "Mercury is the smallest planet in the Solar System and the closest to the Sun. It has no atmosphere and extreme temperature variations."
+            },
+            venus: {
+                title: "Venus",
+                text: "Venus is the hottest planet due to its thick atmosphere trapping heat. It's often called Earth's twin because of its similar size."
+            },
+            earth: {
+                title: "Earth",
+                text: "Earth is the third planet from the Sun and the only known planet to harbor life. It has one moon and a diverse biosphere."
+            },
+            mars: {
+                title: "Mars",
+                text: "Mars is known as the Red Planet. It has the largest volcano in the Solar System and evidence of past water."
+            },
+            jupiter: {
+                title: "Jupiter",
+                text: "Jupiter is the largest planet. It's a gas giant with a Great Red Spot storm that's been raging for centuries."
+            },
+            saturn: {
+                title: "Saturn",
+                text: "Saturn is famous for its prominent ring system made of ice and rock particles. It's the second-largest planet."
+            },
+            uranus: {
+                title: "Uranus",
+                text: "Uranus is an ice giant that rotates on its side, possibly due to a massive collision in its past."
+            },
+            neptune: {
+                title: "Neptune",
+                text: "Neptune is the windiest planet with speeds up to 1,200 mph. It's a blue gas giant with faint rings."
+            }
+        };
+
+        // Procedural textures (using canvas for simple colors)
+        function createPlanetMaterial(color) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, 256, 256);
+            // Add simple gradient for texture
+            const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(1, color);
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 256, 256);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            return new THREE.MeshPhongMaterial({ map: texture });
+        }
+
+        // Sun material (emissive)
+        const sunMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffff00,
+            emissive: 0xffaa00,
+            emissiveIntensity: 0.5
+        });
+
+        // Planets data (name, radius, color, distance, orbit speed, rotation speed)
+        const planetsData = [
+            { name: 'mercury', radius: 0.4, color: '#8c7853', distance: 10, speed: 0.02, rotSpeed: 0.01 },
+            { name: 'venus', radius: 0.95, color: '#ffa500', distance: 15, speed: 0.015, rotSpeed: 0.008 },
+            { name: 'earth', radius: 1, color: '#6b93d6', distance: 20, speed: 0.01, rotSpeed: 0.02 },
+            { name: 'mars', radius: 0.5, color: '#cd5c5c', distance: 25, speed: 0.008, rotSpeed: 0.018 },
+            { name: 'jupiter', radius: 5, color: '#d2691e', distance: 35, speed: 0.005, rotSpeed: 0.04 },
+            { name: 'saturn', radius: 4, color: '#f0e68c', distance: 45, speed: 0.004, rotSpeed: 0.038 },
+            { name: 'uranus', radius: 2, color: '#4fd0e6', distance: 55, speed: 0.003, rotSpeed: 0.03 },
+            { name: 'neptune', radius: 2, color: '#4b0082', distance: 65, speed: 0.002, rotSpeed: 0.032 }
+        ];
+
+        // Sun
+        const sunGeometry = new THREE.SphereGeometry(3, 32, 32);
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+        sunLight.position.copy(sun.position);
+
+        // Planets and orbits
+        const planets = [];
+        const orbitLines = [];
+        planetsData.forEach(data => {
+            const geometry = new THREE.SphereGeometry(data.radius, 16, 16);
+            const material = createPlanetMaterial(data.color);
+            const planet = new THREE.Mesh(geometry, material);
+            planet.userData = { name: data.name };
+            scene.add(planet);
+            planets.push({ mesh: planet, ...data });
+
+            // Orbit line (elliptical for simplicity, using circle)
+            const orbitGeometry = new THREE.RingGeometry(data.distance - 0.05, data.distance + 0.05, 64);
+            const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, side: THREE.DoubleSide });
+            const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+            orbit.rotation.x = -Math.PI / 2; // Align to xy plane
+            scene.add(orbit);
+            orbitLines.push(orbit);
+        });
+
+        // Animation
+        let time = 0;
+        const speedSlider = document.getElementById('time-speed');
+        const speedValue = document.getElementById('speed-value');
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const speed = parseFloat(speedSlider.value);
+            speedValue.textContent = speed + 'x';
+            time += 0.01 * speed;
+
+            // Update sun light position
+            sunLight.position.copy(sun.position);
+
+            // Update planets
+            planets.forEach(planet => {
+                // Elliptical orbit (simplified as scaled circle)
+                const x = Math.cos(time * planet.speed) * planet.distance;
+                const z = Math.sin(time * planet.speed) * (planet.distance * 0.9); // Slight ellipse
+                planet.mesh.position.set(x, 0, z);
+
+                // Axial rotation
+                planet.mesh.rotation.y += planet.rotSpeed;
+            });
+
+            // Update controls
+            controls.update();
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Mouse click for facts
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const factDisplay = document.getElementById('fact-display');
+        const factTitle = document.getElementById('fact-title');
+        const factText = document.getElementById('fact-text');
+
+        renderer.domElement.addEventListener('click', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(planets.map(p => p.mesh).concat([sun]));
+
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                const name = object.userData.name || 'sun';
+                const fact = facts[name];
+                if (fact) {
+                    factTitle.textContent = fact.title;
+                    factText.textContent = fact.text;
+                    factDisplay.style.display = 'block';
+                }
+            } else {
+                factDisplay.style.display = 'none';
+            }
+        });
+
+        animate();
+    </script>
+</body>
+</html>

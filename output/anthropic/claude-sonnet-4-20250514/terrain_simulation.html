@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Landscape</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #87CEEB;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        #controls h3 {
+            margin: 0 0 10px 0;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Terrain...</div>
+    <div id="container"></div>
+    <div id="controls">
+        <h3>Controls</h3>
+        <p>W/A/S/D - Move around</p>
+        <p>Mouse - Look around</p>
+        <p>Shift - Move faster</p>
+        <p>Space - Move up</p>
+        <p>C - Move down</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        let scene, camera, renderer, terrain;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, moveUp = false, moveDown = false;
+        let canJump = false;
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+        let prevTime = performance.now();
+        let controls = {};
+        
+        // Movement settings
+        const moveSpeed = 100.0;
+        const fastMoveSpeed = 200.0;
+        
+        init();
+        animate();
+        
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 100, 1000);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 50, 0);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x87CEEB);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Add lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -200;
+            directionalLight.shadow.camera.right = 200;
+            directionalLight.shadow.camera.top = 200;
+            directionalLight.shadow.camera.bottom = -200;
+            scene.add(directionalLight);
+            
+            // Create sky
+            createSky();
+            
+            // Create terrain
+            createTerrain();
+            
+            // Add some decorative elements
+            addTrees();
+            addClouds();
+            
+            // Setup controls
+            setupControls();
+            
+            // Hide loading screen
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        function createSky() {
+            const skyGeometry = new THREE.SphereGeometry(1500, 32, 32);
+            const skyMaterial = new THREE.MeshBasicMaterial({
+                color: 0x87CEEB,
+                side: THREE.BackSide
+            });
+            const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+            scene.add(sky);
+        }
+        
+        function createTerrain() {
+            const width = 256;
+            const height = 256;
+            const widthSegments = width - 1;
+            const heightSegments = height - 1;
+            
+            const geometry = new THREE.PlaneGeometry(800, 800, widthSegments, heightSegments);
+            geometry.rotateX(-Math.PI / 2);
+            
+            // Generate height map using noise
+            const vertices = geometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 2];
+                
+                // Create multiple layers of noise for more interesting terrain
+                let height = 0;
+                height += noise(x * 0.01, z * 0.01) * 50;
+                height += noise(x * 0.02, z * 0.02) * 25;
+                height += noise(x * 0.05, z * 0.05) * 10;
+                height += noise(x * 0.1, z * 0.1) * 5;
+                
+                vertices[i + 1] = height;
+            }
+            
+            geometry.computeVertexNormals();
+            
+            // Create terrain material with multiple textures
+            const textureLoader = new THREE.TextureLoader();
+            
+            // Create procedural textures
+            const grassTexture = createGrassTexture();
+            const rockTexture = createRockTexture();
+            const dirtTexture = createDirtTexture();
+            
+            grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+            grassTexture.repeat.set(32, 32);
+            
+            rockTexture.wrapS = rockTexture.wrapT = THREE.RepeatWrapping;
+            rockTexture.repeat.set(16, 16);
+            
+            dirtTexture.wrapS = dirtTexture.wrapT = THREE.RepeatWrapping;
+            dirtTexture.repeat.set(24, 24);
+            
+            // Vertex shader for terrain blending
+            const vertexShader = `
+                varying vec3 vPosition;
+                varying vec3 vNormal;
+                varying vec2 vUv;
+                
+                void main() {
+                    vPosition = position;
+                    vNormal = normal;
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `;
+            
+            // Fragment shader for terrain blending
+            const fragmentShader = `
+                uniform sampler2D grassTexture;
+                uniform sampler2D rockTexture;
+                uniform sampler2D dirtTexture;
+                varying vec3 vPosition;
+                varying vec3 vNormal;
+                varying vec2 vUv;
+                
+                void main() {
+                    vec3 grass = texture2D(grassTexture, vUv * 32.0).rgb;
+                    vec3 rock = texture2D(rockTexture, vUv * 16.0).rgb;
+                    vec3 dirt = texture2D(dirtTexture, vUv * 24.0).rgb;
+                    
+                    float slope = 1.0 - vNormal.y;
+                    float height = vPosition.y;
+                    
+                    vec3 color = grass;
+                    
+                    // Blend rock on steep slopes
+                    if (slope > 0.3) {
+                        color = mix(color, rock, (slope - 0.3) * 2.0);
+                    }
+                    
+                    // Blend dirt at lower elevations
+                    if (height < 10.0) {
+                        color = mix(dirt, color, height / 10.0);
+                    }
+                    
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `;
+            
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    grassTexture: { value: grassTexture },
+                    rockTexture: { value: rockTexture },
+                    dirtTexture: { value: dirtTexture }
+                },
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader
+            });
+            
+            terrain = new THREE.Mesh(geometry, material);
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+        }
+        
+        function createGrassTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+            
+            // Create grass pattern
+            context.fillStyle = '#4a7c59';
+            context.fillRect(0, 0, 256, 256);
+            
+            for (let i = 0; i < 1000; i++) {
+                context.fillStyle = `hsl(${90 + Math.random() * 20}, 60%, ${30 + Math.random() * 20}%)`;
+                context.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+        
+        function createRockTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+            
+            // Create rock pattern
+            context.fillStyle = '#666666';
+            context.fillRect(0, 0, 256, 256);
+            
+            for (let i = 0; i < 500; i++) {
+                context.fillStyle = `hsl(0, 0%, ${40 + Math.random() * 30}%)`;
+                context.fillRect(Math.random() * 256, Math.random() * 256, 3, 3);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+        
+        function createDirtTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+            
+            // Create dirt pattern
+            context.fillStyle = '#8B4513';
+            context.fillRect(0, 0, 256, 256);
+            
+            for (let i = 0; i < 800; i++) {
+                context.fillStyle = `hsl(${30 + Math.random() * 20}, 50%, ${25 + Math.random() * 15}%)`;
+                context.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+        
+        function addTrees() {
+            const treeGroup = new THREE.Group();
+            
+            for (let i = 0; i < 100; i++) {
+                const tree = createTree();
+                const x = (Math.random() - 0.5) * 700;
+                const z = (Math.random() - 0.5) * 700;
+                const y = getTerrainHeight(x, z);
+                
+                tree.position.set(x, y, z);
+                tree.scale.set(
+                    0.5 + Math.random() * 0.5,
+                    0.5 + Math.random() * 0.5,
+                    0.5 + Math.random() * 0.5
+                );
+                tree.rotation.y = Math.random() * Math.PI * 2;
+                
+                treeGroup.add(tree);
+            }
+            
+            scene.add(treeGroup);
+        }
+        
+        function createTree() {
+            const tree = new THREE.Group();
+            
+            // Trunk
+            const trunkGeometry = new THREE.CylinderGeometry(1, 2, 15, 8);
+            const trunkMaterial = new THREE.MeshLambertMaterial({ color: 0x4a4a4a });
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.y = 7.5;
+            trunk.castShadow = true;
+            tree.add(trunk);
+            
+            // Leaves
+            const leavesGeometry = new THREE.ConeGeometry(8, 20, 8);
+            const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+            const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+            leaves.position.y = 20;
+            leaves.castShadow = true;
+            tree.add(leaves);
+            
+            return tree;
+        }
+        
+        function addClouds() {
+            const cloudGroup = new THREE.Group();
+            
+            for (let i = 0; i < 20; i++) {
+                const cloud = createCloud();
+                cloud.position.set(
+                    (Math.random() - 0.5) * 1000,
+                    100 + Math.random() * 50,
+                    (Math.random() - 0.5) * 1000
+                );
+                cloud.scale.set(
+                    0.5 + Math.random() * 1.5,
+                    0.5 + Math.random() * 1.5,
+                    0.5 + Math.random() * 1.5
+                );
+                cloudGroup.add(cloud);
+            }
+            
+            scene.add(cloudGroup);
+        }
+        
+        function createCloud() {
+            const cloud = new THREE.Group();
+            const cloudMaterial = new THREE.MeshLambertMaterial({ 
+                color: 0xffffff,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            for (let i = 0; i < 5; i++) {
+                const cloudGeometry = new THREE.SphereGeometry(10 + Math.random() * 10, 8, 8);
+                const cloudPart = new THREE.Mesh(cloudGeometry, cloudMaterial);
+                cloudPart.position.set(
+                    (Math.random() - 0.5) * 20,
+                    (Math.random() - 0.5) * 5,
+                    (Math.random() - 0.5) * 20
+                );
+                cloud.add(cloudPart);
+            }
+            
+            return cloud;
+        }
+        
+        function getTerrainHeight(x, z) {
+            let height = 0;
+            height += noise(x * 0.01, z * 0.01) * 50;
+            height += noise(x * 0.02, z * 0.02) * 25;
+            height += noise(x * 0.05, z * 0.05) * 10;
+            height += noise(x * 0.1, z * 0.1) * 5;
+            return height;
+        }
+        
+        // Simple noise function
+        function noise(x, y) {
+            const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            return (n - Math.floor(n)) * 2 - 1;
+        }
+        
+        function setupControls() {
+            // Mouse controls
+            let isLocked = false;
+            let euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            
+            renderer.domElement.addEventListener('click', () => {
+                renderer.domElement.requestPointerLock();
+            });
+            
+            document.addEventListener('pointerlockchange', () => {
+                isLocked = document.pointerLockElement === renderer.domElement;
+            });
+            
+            document.addEventListener('mousemove', (event) => {
+                if (!isLocked) return;
+                
+                euler.setFromQuaternion(camera.quaternion);
+                euler.y -= event.movementX * 0.002;
+                euler.x -= event.movementY * 0.002;
+                euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+                camera.quaternion.setFromEuler(euler);
+            });
+            
+            // Keyboard controls
+            document.addEventListener('keydown', (event) => {
+                switch (event.code) {
+                    case 'KeyW':
+                        moveForward = true;
+                        break;
+                    case 'KeyA':
+                        moveLeft = true;
+                        break;
+                    case 'KeyS':
+                        moveBackward = true;
+                        break;
+                    case 'KeyD':
+                        moveRight = true;
+                        break;
+                    case 'Space':
+                        moveUp = true;
+                        break;
+                    case 'KeyC':
+                        moveDown = true;
+                        break;
+                }
+            });
+            
+            document.addEventListener('keyup', (event) => {
+                switch (event.code) {
+                    case 'KeyW':
+                        moveForward = false;
+                        break;
+                    case 'KeyA':
+                        moveLeft = false;
+                        break;
+                    case 'KeyS':
+                        moveBackward = false;
+                        break;
+                    case 'KeyD':
+                        moveRight = false;
+                        break;
+                    case 'Space':
+                        moveUp = false;
+                        break;
+                    case 'KeyC':
+                        moveDown = false;
+                        break;
+                }
+            });
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            
+            velocity.x -= velocity.x * 10.0 * delta;
+            velocity.z -= velocity.z * 10.0 * delta;
+            velocity.y -= velocity.y * 10.0 * delta;
+            
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.y = Number(moveUp) - Number(moveDown);
+            direction.normalize();
+            
+            const currentMoveSpeed = event && event.shiftKey ? fastMoveSpeed : moveSpeed;
+            
+            if (moveForward || moveBackward) velocity.z -= direction.z * currentMoveSpeed * delta;
+            if (moveLeft || moveRight) velocity.x -= direction.x * currentMoveSpeed * delta;
+            if (moveUp || moveDown) velocity.y += direction.y * currentMoveSpeed * delta;
+            
+            camera.translateX(velocity.x * delta);
+            camera.translateZ(velocity.z * delta);
+            camera.position.y += velocity.y * delta;
+            
+            // Keep camera above terrain
+            const terrainHeight = getTerrainHeight(camera.position.x, camera.position.z);
+            if (camera.position.y < terrainHeight + 5) {
+                camera.position.y = terrainHeight + 5;
+            }
+            
+            prevTime = time;
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

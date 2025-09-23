@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural 3D City</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #minimap {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 200px;
+            height: 200px;
+            background: rgba(0,0,0,0.7);
+            border: 2px solid #333;
+            z-index: 100;
+        }
+        #minimapCanvas {
+            width: 100%;
+            height: 100%;
+        }
+        input, button {
+            margin: 5px 0;
+            padding: 5px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+        }
+        label {
+            display: block;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="controls">
+            <h3>Procedural City Generator</h3>
+            <label for="seedInput">Seed:</label>
+            <input type="text" id="seedInput" value="12345">
+            <button id="generateBtn">Generate City</button>
+            <div>
+                <label>Time of Day: <span id="timeDisplay">12:00</span></label>
+                <input type="range" id="timeSlider" min="0" max="24" step="0.1" value="12">
+            </div>
+            <div>
+                Camera Controls: WASD + Mouse
+            </div>
+        </div>
+        <div id="minimap">
+            <canvas id="minimapCanvas"></canvas>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    
+    <script>
+        // Pseudo-random number generator with seed
+        class SeededRandom {
+            constructor(seed) {
+                this.seed = seed;
+            }
+            
+            random() {
+                const x = Math.sin(this.seed++) * 10000;
+                return x - Math.floor(x);
+            }
+            
+            range(min, max) {
+                return min + this.random() * (max - min);
+            }
+            
+            integer(min, max) {
+                return Math.floor(this.range(min, max + 1));
+            }
+            
+            choice(array) {
+                return array[this.integer(0, array.length - 1)];
+            }
+        }
+
+        // Main application
+        class ProceduralCity {
+            constructor() {
+                this.seed = 12345;
+                this.rng = new SeededRandom(this.seed);
+                
+                this.citySize = 1000;
+                this.blockSize = 100;
+                this.roadWidth = 10;
+                
+                this.timeOfDay = 12.0; // 0-24 hours
+                this.dayNightCycle = 0.5; // 0=night, 1=day
+                
+                this.buildings = [];
+                this.trafficLights = [];
+                
+                this.init();
+            }
+            
+            init() {
+                this.createScene();
+                this.createCamera();
+                this.createRenderer();
+                this.createControls();
+                this.createLights();
+                this.loadSky();
+                this.createGround();
+                this.generateCity();
+                this.createMinimap();
+                
+                this.setupEventListeners();
+                this.animate();
+            }
+            
+            createScene() {
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x87CEEB);
+                this.scene.fog = new THREE.FogExp2(0x87CEEB, 0.002);
+            }
+            
+            createCamera() {
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+                this.camera.position.set(100, 50, 100);
+                this.camera.lookAt(0, 0, 0);
+            }
+            
+            createRenderer() {
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(window.devicePixelRatio);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
+                document.getElementById('container').appendChild(this.renderer.domElement);
+            }
+            
+            createControls() {
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.screenSpacePanning = false;
+                this.controls.minDistance = 10;
+                this.controls.maxDistance = 500;
+                this.controls.maxPolarAngle = Math.PI / 2;
+                
+                // Add free-fly controls
+                this.setupFlyControls();
+            }
+            
+            setupFlyControls() {
+                this.moveForward = false;
+                this.moveBackward = false;
+                this.moveLeft = false;
+                this.moveRight = false;
+                this.moveUp = false;
+                this.moveDown = false;
+                
+                this.velocity = new THREE.Vector3();
+                this.direction = new THREE.Vector3();
+                
+                document.addEventListener('keydown', (event) => {
+                    switch (event.code) {
+                        case 'KeyW': this.moveForward = true; break;
+                        case 'KeyA': this.moveLeft = true; break;
+                        case 'KeyS': this.moveBackward = true; break;
+                        case 'KeyD': this.moveRight = true; break;
+                        case 'Space': this.moveUp = true; break;
+                        case 'KeyC': this.moveDown = true; break;
+                    }
+                });
+                
+                document.addEventListener('keyup', (event) => {
+                    switch (event.code) {
+                        case 'KeyW': this.moveForward = false; break;
+                        case 'KeyA': this.moveLeft = false; break;
+                        case 'KeyS': this.moveBackward = false; break;
+                        case 'KeyD': this.moveRight = false; break;
+                        case 'Space': this.moveUp = false; break;
+                        case 'KeyC': this.moveDown = false; break;
+                    }
+                });
+            }
+            
+            createLights() {
+                // Ambient light
+                this.ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+                this.scene.add(this.ambientLight);
+                
+                // Directional light (sun)
+                this.sunLight = new THREE.DirectionalLight(0xffffff, 1);
+                this.sunLight.position.set(100, 100, 50);
+                this.sunLight.castShadow = true;
+                this.sunLight.shadow.mapSize.width = 2048;
+                this.sunLight.shadow.mapSize.height = 2048;
+                this.sunLight.shadow.camera.left = -500;
+                this.sunLight.shadow.camera.right = 500;
+                this.sunLight.shadow.camera.top = 500;
+                this.sunLight.shadow.camera.bottom = -500;
+                this.sunLight.shadow.camera.near = 0.5;
+                this.sunLight.shadow.camera.far = 1000;
+                this.scene.add(this.sunLight);
+                
+                // Street lights will be added with buildings
+            }
+            
+            loadSky() {
+                // Create a simple gradient sky for day/night cycle
+                // In a full implementation, you'd load an HDRI
+                this.skyDome = new THREE.Mesh(
+                    new THREE.SphereGeometry(500, 32, 15),
+                    new THREE.ShaderMaterial({
+                        uniforms: {
+                            time: { value: 0.0 },
+                            dayNight: { value: 0.5 }
+                        },
+                        vertexShader: `
+                            varying vec3 vWorldPosition;
+                            void main() {
+                                vec3 worldPosition = normalize(position) * 100.0;
+                                vWorldPosition = worldPosition;
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform float dayNight;
+                            varying vec3 vWorldPosition;
+                            
+                            void main() {
+                                float up = normalize(vWorldPosition).y;
+                                vec3 dayColor = vec3(0.4, 0.6, 1.0);
+                                vec3 nightColor = vec3(0.02, 0.05, 0.15);
+                                vec3 sunColor = vec3(1.0, 0.7, 0.3);
+                                vec3 horizonColor = vec3(1.0, 0.6, 0.3);
+                                
+                                float sunPos = up * 2.0 - 1.0;
+                                float sunIntensity = smoothstep(-0.1, 0.1, sunPos);
+                                vec3 finalColor = mix(nightColor, dayColor, dayNight);
+                                finalColor = mix(finalColor, horizonColor, smoothstep(-0.2, 0.0, sunPos) * dayNight);
+                                finalColor += sunColor * sunIntensity * dayNight * 2.0;
+                                
+                                gl_FragColor = vec4(finalColor, 1.0);
+                            }
+                        `,
+                        side: THREE.BackSide
+                    })
+                );
+                this.scene.add(this.skyDome);
+            }
+            
+            createGround() {
+                const groundGeometry = new THREE.PlaneGeometry(this.citySize, this.citySize);
+                
+                // Create a simple road texture with canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024;
+                canvas.height = 1024;
+                const ctx = canvas.getContext('2d');
+                
+                // Fill with asphalt color
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Add some noise for texture
+                for (let i = 0; i < 10000; i++) {
+                    const x = Math.random() * canvas.width;
+                    const y = Math.random() * canvas.height;
+                    const gray = 50 + Math.random() * 20;
+                    ctx.fillStyle = `rgb(${gray}, ${gray}, ${gray})`;
+                    ctx.fillRect(x, y, 2, 2);
+                }
+                
+                const groundTexture = new THREE.CanvasTexture(canvas);
+                groundTexture.wrapS = THREE.RepeatWrapping;
+                groundTexture.wrapT = THREE.RepeatWrapping;
+                groundTexture.repeat.set(this.citySize / 20, this.citySize / 20);
+                
+                const groundMaterial = new THREE.MeshStandardMaterial({
+                    map: groundTexture,
+                    roughness: 0.8,
+                    metalness: 0.1
+                });
+                
+                this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
+                this.ground.rotation.x = -Math.PI / 2;
+                this.ground.receiveShadow = true;
+                this.scene.add(this.ground);
+                
+                // Add grid lines for roads
+                this.drawRoadGrid();
+            }
+            
+            drawRoadGrid() {
+                const blocksX = Math.floor(this.citySize / this.blockSize);
+                const blocksZ = Math.floor(this.citySize / this.blockSize);
+                
+                const roadMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+                
+                // Create road grid lines
+                for (let i = 0; i <= blocksX; i++) {
+                    const x = i * this.blockSize - this.citySize / 2;
+                    
+                    const roadGeometry = new THREE.BufferGeometry();
+                    const vertices = new Float32Array([
+                        x, 0, -this.citySize / 2,
+                        x, 0, this.citySize / 2
+                    ]);
+                    roadGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                    
+                    const roadLine = new THREE.Line(roadGeometry, roadMaterial);
+                    this.scene.add(roadLine);
+                    
+                    // Add dashed center lines
+                    if (i > 0 && i < blocksX) {
+                        const centerLineMaterial = new THREE.LineDashedMaterial({
+                            color: 0xffff00,
+                            dashSize: 5,
+                            gapSize: 5
+                        });
+                        
+                        const centerLineGeometry = new THREE.BufferGeometry();
+                        const centerVertices = new Float32Array([
+                            x, 0.1, -this.citySize / 2 + this.roadWidth,
+                            x, 0.1, this.citySize / 2 - this.roadWidth
+                        ]);
+                        centerLineGeometry.setAttribute('position', new THREE.BufferAttribute(centerVertices, 3));
+                        
+                        const centerLine = new THREE.Line(centerLineGeometry, centerLineMaterial);
+                        centerLine.computeLineDistances();
+                        this.scene.add(centerLine);
+                    }
+                }
+                
+                for (let i = 0; i <= blocksZ; i++) {
+                    const z = i * this.blockSize - this.citySize / 2;
+                    
+                    const roadGeometry = new THREE.BufferGeometry();
+                    const vertices = new Float32Array([
+                        -this.citySize / 2, 0, z,
+                        this.citySize / 2, 0, z
+                    ]);
+                    roadGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+                    
+                    const roadLine = new THREE.Line(roadGeometry, roadMaterial);
+                    this.scene.add(roadLine);
+                    
+                    // Add dashed center lines
+                    if (i > 0 && i < blocksZ) {
+                        const centerLineMaterial = new THREE.LineDashedMaterial({
+                            color: 0xffff00,
+                            dashSize: 5,
+                            gapSize: 5
+                        });
+                        
+                        const centerLineGeometry = new THREE.BufferGeometry();
+                        const centerVertices = new Float32Array([
+                            -this.citySize / 2 + this.roadWidth, 0.1, z,
+                            this.citySize / 2 - this.roadWidth, 0.1, z
+                        ]);
+                        centerLineGeometry.setAttribute('position', new THREE.BufferAttribute(centerVertices, 3));
+                        
+                        const centerLine = new THREE.Line(centerLineGeometry, centerLineMaterial);
+                        centerLine.computeLineDistances();
+                        this.scene.add(centerLine);
+                    }
+                }
+            }
+            
+            generateCity() {
+                // Clear previous buildings
+                this.buildings.forEach(building => this.scene.remove(building));
+                this.trafficLights.forEach(light => this.scene.remove(light));
+                this.buildings = [];
+                this.trafficLights = [];
+                
+                const blocksX = Math.floor(this.citySize / this.blockSize);
+                const blocksZ = Math.floor(this.citySize / this.blockSize);
+                
+                // Reset random generator with current seed
+                this.rng = new SeededRandom(this.seed);
+                
+                // Generate buildings
+                for (let i = 0; i < blocksX; i++) {
+                    for (let j = 0; j < blocksZ; j++) {
+                        // Skip road areas
+                        if (i === 0 || j === 0 || i === blocksX - 1 || j === blocksZ - 1) continue;
+                        
+                        // Calculate block position
+                        const blockX = i * this.blockSize - this.citySize / 2 + this.roadWidth / 2;
+                        const blockZ = j * this.blockSize - this.citySize / 2 + this.roadWidth / 2;
+                        const blockSizeX = this.blockSize - this.roadWidth;
+                        const blockSizeZ = this.blockSize - this.roadWidth;
+                        
+                        // Generate buildings within the block
+                        this.generateBuildingsInBlock(blockX, blockZ, blockSizeX, blockSizeZ);
+                        
+                        // Add traffic lights at intersections
+                        if (i < blocksX - 1 && j < blocksZ - 1) {
+                            this.addTrafficLight(
+                                blockX + blockSizeX - 5,
+                                0,
+                                blockZ + blockSizeZ - 5
+                            );
+                            this.addTrafficLight(
+                                blockX + blockSizeX - 5,
+                                0,
+                                blockZ - this.roadWidth + 5
+                            );
+                            this.addTrafficLight(
+                                blockX - 5,
+                                0,
+                                blockZ + blockSizeZ - 5
+                            );
+                            this.addTrafficLight(
+                                blockX - 5,
+                                0,
+                                blockZ - this.roadWidth + 5
+                            );
+                        }
+                    }
+                }
+                
+                // Update minimap
+                this.updateMinimap();
+            }
+            
+            generateBuildingsInBlock(blockX, blockZ, blockSizeX, blockSizeZ) {
+                // Number of buildings in this block
+                const numBuildings = this.rng.integer(1, 4);
+                
+                for (let b = 0; b < numBuildings; b++) {
+                    // Random size within the block
+                    const buildingWidth = this.rng.range(blockSizeX * 0.2, blockSizeX * 0.8);
+                    const buildingDepth = this.rng.range(blockSizeZ * 0.2, blockSizeZ * 0.8);
+                    
+                    // Random position within the block
+                    const buildingX = blockX + this.rng.range(0, blockSizeX - buildingWidth);
+                    const buildingZ = blockZ + this.rng.range(0, blockSizeZ - buildingDepth);
+                    
+                    // Random height (floors)
+                    const numFloors = this.rng.integer(2, 20);
+                    const floorHeight = 4;
+                    const buildingHeight = numFloors * floorHeight;
+                    
+                    // Create building
+                    this.createBuilding(buildingX, buildingZ, buildingWidth, buildingDepth, buildingHeight, numFloors);
+                }
+            }
+            
+            createBuilding(x, z, width, depth, height, floors) {
+                // Building material - random color
+                const colors = [0x888888, 0x886644, 0x6688aa, 0xaa8866, 0x66aa88, 0x8866aa];
+                const buildingColor = this.rng.choice(colors);
+                
+                const buildingGeometry = new THREE.BoxGeometry(width, height, depth);
+                const buildingMaterial = new THREE.MeshStandardMaterial({
+                    color: buildingColor,
+                    roughness: 0.7,
+                    metalness: 0.1
+                });
+                
+                const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+                building.position.set(x + width/2, height/2, z + depth/2);
+                building.castShadow = true;
+                building.receiveShadow = true;
+                this.scene.add(building);
+                this.buildings.push(building);
+                
+                // Add windows
+                this.addWindows(building, x, z, width, depth, height, floors);
+                
+                // Add roof
+                this.addRoof(building, x, z, width, depth, height);
+                
+                // 30% chance of having a street light nearby
+                if (this.rng.random() < 0.3) {
+                    this.addStreetLight(x + width + 2, 0, z + depth / 2);
+                }
+            }
+            
+            addWindows(building, x, z, width, depth, height, floors) {
+                const floorHeight = height / floors;
+                
+                // Window material
+                const windowMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xadd8e6,
+                    emissive: 0x88ccff,
+                    emissiveIntensity: this.dayNightCycle < 0.3 ? 0.8 : 0.1, // Brighter at night
+                    transparent: true,
+                    opacity: 0.7
+                });
+                
+                // Create windows for each floor
+                for (let floor = 0; floor < floors; floor++) {
+                    const y = floor * floorHeight + floorHeight / 2;
+                    
+                    // Front windows
+                    const numWindowsFront = Math.max(1, Math.floor(width / 8));
+                    const windowWidth = width / numWindowsFront * 0.6;
+                    const windowHeight = floorHeight * 0.6;
+                    
+                    for (let i = 0; i < numWindowsFront; i++) {
+                        const windowX = x + (i + 0.5) * width / numWindowsFront;
+                        const windowZ = z + depth;
+                        
+                        const windowGeometry = new THREE.BoxGeometry(windowWidth, windowHeight, 0.1);
+                        const windowMesh = new THREE.Mesh(windowGeometry, windowMaterial);
+                        windowMesh.position.set(windowX, y, windowZ + 0.01);
+                        this.scene.add(windowMesh);
+                        this.buildings.push(windowMesh);
+                    }
+                    
+                    // Side windows
+                    const numWindowsSide = Math.max(1, Math.floor(depth / 8));
+                    const windowDepth = depth / numWindowsSide * 0.6;
+                    
+                    for (let i = 0; i < numWindowsSide; i++) {
+                        const windowX = x;
+                        const windowZ = z + (i + 0.5) * depth / numWindowsSide;
+                        
+                        const windowGeometry = new THREE.BoxGeometry(0.1, windowHeight, windowDepth);
+                        const windowMesh = new THREE.Mesh(windowGeometry, windowMaterial);
+                        windowMesh.position.set(windowX - 0.01, y, windowZ);
+                        this.scene.add(windowMesh);
+                        this.buildings.push(windowMesh);
+                        
+                        // Opposite side
+                        const windowMesh2 = new THREE.Mesh(windowGeometry, windowMaterial);
+                        windowMesh2.position.set(x + width + 0.01, y, windowZ);
+                        this.scene.add(windowMesh2);
+                        this.buildings.push(windowMesh2);
+                    }
+                }
+            }
+            
+            addRoof(building, x, z, width, depth, height) {
+                // Simple roof
+                const roofGeometry = new THREE.BoxGeometry(width + 2, 1, depth + 2);
+                const roofMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x444444,
+                    roughness: 0.9,
+                    metalness: 0.3
+                });
+                
+                const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+                roof.position.set(x + width/2, height + 0.5, z + depth/2);
+                roof.castShadow = true;
+                this.scene.add(roof);
+                this.buildings.push(roof);
+            }
+            
+            addStreetLight(x, y, z) {
+                const poleGeometry = new THREE.CylinderGeometry(0.2, 0.2, 8, 8);
+                const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+                const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+                pole.position.set(x, 4, z);
+                pole.castShadow = true;
+                this.scene.add(pole);
+                this.buildings.push(pole);
+                
+                // Light head
+                const headGeometry = new THREE.BoxGeometry(0.6, 0.6, 2);
+                const headMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
+                const head = new THREE.Mesh(headGeometry, headMaterial);
+                head.position.set(x + 1, 7.5, z);
+                this.scene.add(head);
+                this.buildings.push(head);
+                
+                // Street light
+                const streetLight = new THREE.PointLight(0xffffcc, 0.8, 30);
+                streetLight.position.set(x + 1, 7.5, z);
+                streetLight.castShadow = true;
+                streetLight.shadow.mapSize.width = 512;
+                streetLight.shadow.mapSize.height = 512;
+                this.scene.add(streetLight);
+                
+                // Only show light at night
+                streetLight.intensity = this.dayNightCycle < 0.3 ? 0.8 : 0;
+                this.buildings.push(streetLight);
+            }
+            
+            addTrafficLight(x, y, z) {
+                // Pole
+                const poleGeometry = new THREE.CylinderGeometry(0.3, 0.3, 6, 8);
+                const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+                const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+                pole.position.set(x, 3, z);
+                pole.castShadow = true;
+                this.scene.add(pole);
+                this.trafficLights.push(pole);
+                
+                // Traffic light box
+                const boxGeometry = new THREE.BoxGeometry(1, 3, 1);
+                const boxMaterial = new THREE.MeshStandardMaterial({ color: 0x222222 });
+                const box = new THREE.Mesh(boxGeometry, boxMaterial);
+                box.position.set(x, 7, z);
+                this.scene.add(box);
+                this.trafficLights.push(box);
+                
+                // Lights
+                const redLight = new THREE.PointLight(0xff0000, 0, 10);
+                redLight.position.set(x, 8, z);
+                this.scene.add(redLight);
+                
+                const yellowLight = new THREE.PointLight(0xffff00, 0, 10);
+                yellowLight.position.set(x, 7, z);
+                this.scene.add(yellowLight);
+                
+                const greenLight = new THREE.PointLight(0x00ff00, 0, 10);
+                greenLight.position.set(x, 6, z);
+                this.scene.add(greenLight);
+                
+                this.trafficLights.push(redLight, yellowLight, greenLight);
+                
+                // Add to traffic lights list with state

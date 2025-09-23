@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Product Configurator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; }
+        #container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #controls { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; }
+        #controls > * { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="controls">
+        <h3>Product Configurator</h3>
+        
+        <label>Body Color: <input type="color" id="bodyColor" value="#ff0000"></label><br>
+        <label>Body Material: 
+            <select id="bodyMaterial">
+                <option value="0">Matte</option>
+                <option value="1">Metallic</option>
+            </select>
+        </label><br>
+        <label>Screen Color: <input type="color" id="screenColor" value="#000000"></label><br>
+        <label>Toggle Screen: <input type="checkbox" id="toggleScreen" checked></label><br>
+        <label>Toggle Buttons: <input type="checkbox" id="toggleButtons" checked></label><br>
+        
+        <button id="saveBookmark1">Save Camera Bookmark 1</button>
+        <button id="recallBookmark1">Recall Camera Bookmark 1</button><br>
+        <button id="saveBookmark2">Save Camera Bookmark 2</button>
+        <button id="recallBookmark2">Recall Camera Bookmark 2</button><br>
+        
+        <button id="exportJSON">Export Config as JSON</button><br>
+        <button id="snapshot">Take PNG Snapshot</button><br>
+    </div>
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // Environment for reflections
+        const cubeTextureLoader = new THREE.CubeTextureLoader();
+        const environmentTexture = cubeTextureLoader.load([
+            'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/px.jpg', // Placeholder skybox; in self-contained, use generated or embed
+            'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/nx.jpg',
+            'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/py.jpg',
+            'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/ny.jpg',
+            'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/pz.jpg',
+            'https://threejs.org/examples/textures/cube/SwedishRoyalCastle/nz.jpg'
+        ]);
+        scene.background = environmentTexture;
+        scene.environment = environmentTexture; // For reflections
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.1;
+        directionalLight.shadow.camera.far = 50;
+        directionalLight.shadow.camera.left = -10;
+        directionalLight.shadow.camera.right = 10;
+        directionalLight.shadow.camera.top = 10;
+        directionalLight.shadow.camera.bottom = -10;
+        scene.add(directionalLight);
+
+        // Ground plane for shadows
+        const planeGeometry = new THREE.PlaneGeometry(20, 20);
+        const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x808080 });
+        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.rotation.x = -Math.PI / 2;
+        plane.receiveShadow = true;
+        scene.add(plane);
+
+        // Procedural Phone Model
+        const phoneGroup = new THREE.Group();
+        scene.add(phoneGroup);
+
+        // Body
+        const bodyGeometry = new THREE.BoxGeometry(1, 2, 0.1);
+        const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000, envMap: environmentTexture });
+        const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        phoneGroup.add(body);
+
+        // Screen
+        const screenGeometry = new THREE.BoxGeometry(0.8, 1.5, 0.05);
+        const screenMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, envMap: environmentTexture });
+        const screen = new THREE.Mesh(screenGeometry, screenMaterial);
+        screen.position.set(0, 0.25, 0.06);
+        screen.castShadow = true;
+        screen.receiveShadow = true;
+        phoneGroup.add(screen);
+
+        // Buttons
+        const button1Geometry = new THREE.CylinderGeometry(0.05, 0.05, 0.02, 8);
+        const buttonMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc, envMap: environmentTexture });
+        const button1 = new THREE.Mesh(button1Geometry, buttonMaterial);
+        button1.position.set(-0.2, -0.5, 0.06);
+        button1.castShadow = true;
+        phoneGroup.add(button1);
+
+        const button2 = new THREE.Mesh(button1Geometry, buttonMaterial);
+        button2.position.set(0.2, -0.5, 0.06);
+        button2.castShadow = true;
+        phoneGroup.add(button2);
+
+        // Camera position
+        camera.position.set(3, 3, 3);
+        camera.lookAt(0, 0, 0);
+
+        // OrbitControls (optional, for interaction; load from CDN example if needed, but keep simple)
+        let controls; // For camera bookmarks
+        if (THREE.OrbitControls) {
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+        }
+
+        // Config object
+        let config = {
+            bodyColor: '#ff0000',
+            bodyMaterial: 0, // 0: matte, 1: metallic
+            screenColor: '#000000',
+            toggleScreen: true,
+            toggleButtons: true
+        };
+        let bookmarks = { bookmark1: null, bookmark2: null };
+
+        // Update materials function
+        function updateMaterials() {
+            bodyMaterial.color.set(config.bodyColor);
+            if (config.bodyMaterial === 1) {
+                bodyMaterial.metalness = 0.8;
+                bodyMaterial.roughness = 0.2;
+            } else {
+                bodyMaterial.metalness = 0.0;
+                bodyMaterial.roughness = 0.8;
+            }
+            screenMaterial.color.set(config.screenColor);
+            screen.visible = config.toggleScreen;
+            button1.visible = config.toggleButtons;
+            button2.visible = config.toggleButtons;
+        }
+        updateMaterials();
+
+        // Event listeners
+        document.getElementById('bodyColor').addEventListener('input', (e) => {
+            config.bodyColor = e.target.value;
+            updateMaterials();
+        });
+        document.getElementById('bodyMaterial').addEventListener('change', (e) => {
+            config.bodyMaterial = parseInt(e.target.value);
+            updateMaterials();
+        });
+        document.getElementById('screenColor').addEventListener('input', (e) => {
+            config.screenColor = e.target.value;
+            updateMaterials();
+        });
+        document.getElementById('toggleScreen').addEventListener('change', (e) => {
+            config.toggleScreen = e.target.checked;
+            updateMaterials();
+        });
+        document.getElementById('toggleButtons').addEventListener('change', (e) => {
+            config.toggleButtons = e.target.checked;
+            updateMaterials();
+        });
+
+        // Camera bookmarks
+        document.getElementById('saveBookmark1').addEventListener('click', () => {
+            bookmarks.bookmark1 = { position: camera.position.clone(), lookAt: new THREE.Vector3() };
+            camera.getWorldDirection(bookmarks.bookmark1.lookAt).multiplyScalar(-1);
+        });
+        document.getElementById('recallBookmark1').addEventListener('click', () => {
+            if (bookmarks.bookmark1) {
+                camera.position.copy(bookmarks.bookmark1.position);
+                camera.lookAt(bookmarks.bookmark1.lookAt);
+                if (controls) controls.update();
+            }
+        });
+        document.getElementById('saveBookmark2').addEventListener('click', () => {
+            bookmarks.bookmark2 = { position: camera.position.clone(), lookAt: new THREE.Vector3() };
+            camera.getWorldDirection(bookmarks.bookmark2.lookAt).multiplyScalar(-1);
+        });
+        document.getElementById('recallBookmark2').addEventListener('click', () => {
+            if (bookmarks.bookmark2) {
+                camera.position.copy(bookmarks.bookmark2.position);
+                camera.lookAt(bookmarks.bookmark2.lookAt);
+                if (controls) controls.update();
+            }
+        });
+
+        // Export JSON
+        document.getElementById('exportJSON').addEventListener('click', () => {
+            const dataStr = JSON.stringify(config, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'config.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        // PNG Snapshot
+        document.getElementById('snapshot').addEventListener('click', () => {
+            renderer.render(scene, camera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataURL;
+            a.download = 'snapshot.png';
+            a.click();
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            if (controls) controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

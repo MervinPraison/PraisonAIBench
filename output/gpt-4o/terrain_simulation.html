@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Landscape</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+    </style>
+</head>
+<body>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/noisejs/2.0.0/perlin.min.js"></script>
+
+<script>
+    let scene, camera, renderer, terrain, controls, clock;
+    const terrainWidth = 256;
+    const terrainDepth = 256;
+
+    function init() {
+        // Initialize scene
+        scene = new THREE.Scene();
+
+        // Add fog
+        scene.fog = new THREE.Fog(0xcce0ff, 100, 500);
+
+        // Initialize camera
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 50, 100);
+        camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+        // Initialize renderer
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Initialize terrain
+        const geometry = new THREE.PlaneGeometry(terrainWidth, terrainDepth, terrainWidth - 1, terrainDepth - 1);
+        geometry.rotateX(-Math.PI / 2);
+
+        // Apply noise
+        const vertices = geometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const y = vertices[i + 1];
+            const z = vertices[i + 2];
+            vertices[i + 1] = generateHeight(x, z);
+        }
+
+        // Create material with textures
+        const textureLoader = new THREE.TextureLoader();
+        const grassTexture = textureLoader.load('https://threejsfundamentals.org/threejs/resources/images/grasslight-big.jpg');
+        grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.repeat.set(8, 8);
+
+        const material = new THREE.MeshLambertMaterial({
+            map: grassTexture,
+        });
+
+        terrain = new THREE.Mesh(geometry, material);
+        scene.add(terrain);
+
+        // Add lights
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(-1, 1.75, 1);
+        directionalLight.position.multiplyScalar(50);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        // Add controls
+        controls = new THREE.PointerLockControls(camera, document.body);
+
+        document.addEventListener('click', () => {
+            controls.lock();
+        });
+
+        clock = new THREE.Clock();
+
+        // Handle keyboard
+        moveForward = moveBackward = moveLeft = moveRight = false;
+
+        document.addEventListener('keydown', function (event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyD': moveRight = true; break;
+            }
+        });
+
+        document.addEventListener('keyup', function (event) {
+            switch (event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyD': moveRight = false; break;
+            }
+        });
+
+        window.addEventListener('resize', onWindowResize);
+    }
+
+    function generateHeight(x, z) {
+        const heightScale = 10;
+        return (noise.perlin2(x / 50, z / 50) + 0.5) * heightScale;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const delta = clock.getDelta();
+
+        let moveSpeed = 200.0;
+        let moveX = 0, moveZ = 0;
+
+        if (moveForward) moveZ -= moveSpeed * delta;
+        if (moveBackward) moveZ += moveSpeed * delta;
+        if (moveLeft) moveX -= moveSpeed * delta;
+        if (moveRight) moveX += moveSpeed * delta;
+
+        controls.moveRight(-moveX * delta);
+        controls.moveForward(-moveZ * delta);
+
+        renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    init();
+    animate();
+</script>
+
+</body>
+</html>

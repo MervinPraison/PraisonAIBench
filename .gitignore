@@ -1,7 +1,6 @@
 # Output and Results
-output/
-*.json
-*.html
+output/*.json
+output/*.html
 
 # Python
 __pycache__/

@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Solar System</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 300px;
+            display: none;
+            z-index: 100;
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #timeSlider {
+            width: 200px;
+            margin: 10px 0;
+        }
+        .planet-info {
+            padding: 15px;
+            background-color: rgba(20, 20, 40, 0.9);
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+            max-width: 350px;
+        }
+        .planet-name {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ffd700;
+        }
+        .planet-fact {
+            margin: 5px 0;
+            line-height: 1.4;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Solar System...</div>
+    <div id="info"></div>
+    <div id="controls">
+        <h3>Controls</h3>
+        <p>Time Speed: <input type="range" id="timeSlider" min="0.1" max="5" step="0.1" value="1"></p>
+        <p>Current Speed: <span id="speedValue">1.0</span>x</p>
+        <p>Click on a planet to see facts!</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.min.js"></script>
+
+    <script>
+        // Planet facts database
+        const planetFacts = {
+            "Sun": {
+                diameter: "1,392,700 km",
+                mass: "1.989 × 10^30 kg",
+                temperature: "Core: 15 million °C, Surface: 5,500 °C",
+                facts: [
+                    "The Sun accounts for 99.86% of the mass in the solar system.",
+                    "It takes 8 minutes for light to travel from the Sun to Earth.",
+                    "The Sun is a middle-aged star, about 4.5 billion years old."
+                ]
+            },
+            "Mercury": {
+                diameter: "4,879 km",
+                mass: "3.3011 × 10^23 kg",
+                temperature: "-173 to 427 °C",
+                facts: [
+                    "Mercury is the smallest planet in our solar system.",
+                    "It has the most craters of any planet in the solar system.",
+                    "A year on Mercury is just 88 Earth days."
+                ]
+            },
+            "Venus": {
+                diameter: "12,104 km",
+                mass: "4.8675 × 10^24 kg",
+                temperature: "462 °C (hottest planet)",
+                facts: [
+                    "Venus rotates backwards compared to most planets.",
+                    "It has a day longer than its year (243 vs 225 Earth days).",
+                    "Its thick atmosphere creates a strong greenhouse effect."
+                ]
+            },
+            "Earth": {
+                diameter: "12,742 km",
+                mass: "5.972 × 10^24 kg",
+                temperature: "-89 to 58 °C",
+                facts: [
+                    "Earth is the only known planet to support life.",
+                    "70% of Earth's surface is covered with water.",
+                    "Earth has one natural satellite: the Moon."
+                ]
+            },
+            "Mars": {
+                diameter: "6,779 km",
+                mass: "6.4171 × 10^23 kg",
+                temperature: "-153 to 20 °C",
+                facts: [
+                    "Mars has the largest volcano in the solar system: Olympus Mons.",
+                    "It has two small moons: Phobos and Deimos.",
+                    "The red color comes from iron oxide (rust) on its surface."
+                ]
+            },
+            "Jupiter": {
+                diameter: "139,820 km",
+                mass: "1.898 × 10^27 kg",
+                temperature: "-145 °C (cloud tops)",
+                facts: [
+                    "Jupiter is the largest planet in our solar system.",
+                    "It has at least 79 moons, including the four large Galilean moons.",
+                    "The Great Red Spot is a giant storm larger than Earth."
+                ]
+            },
+            "Saturn": {
+                diameter: "116,460 km",
+                mass: "5.683 × 10^26 kg",
+                temperature: "-178 °C",
+                facts: [
+                    "Saturn is the least dense planet - it would float in water.",
+                    "Its rings are made of ice and rock particles.",
+                    "It has 82 confirmed moons, with Titan being the largest."
+                ]
+            },
+            "Uranus": {
+                diameter: "50,724 km",
+                mass: "8.681 × 10^25 kg",
+                temperature: "-224 °C (coldest planet)",
+                facts: [
+                    "Uranus rotates on its side with a 98-degree tilt.",
+                    "It has a pale blue-green color due to methane in its atmosphere.",
+                    "It takes 84 Earth years to orbit the Sun."
+                ]
+            },
+            "Neptune": {
+                diameter: "49,244 km",
+                mass: "1.024 × 10^26 kg",
+                temperature: "-214 °C",
+                facts: [
+                    "Neptune has the strongest winds in the solar system (up to 2,100 km/h).",
+                    "It was the first planet discovered through mathematical predictions.",
+                    "It has 14 known moons, with Triton being the largest."
+                ]
+            }
+        };
+
+        // Initialize Three.js
+        let scene, camera, renderer, controls;
+        let planetObjects = [];
+        let sun;
+        let raycaster, mouse;
+        let timeSpeed = 1.0;
+        let clock = new THREE.Clock();
+        
+        // Orbital parameters [semiMajorAxis, eccentricity, orbitalPeriod, axialTilt, rotationPeriod]
+        const planetData = [
+            { name: "Mercury", radius: 0.38, distance: 5.8, orbitalPeriod: 0.24, axialTilt: 0.03, rotationPeriod: 58.6, color: 0x8a8a8a },
+            { name: "Venus", radius: 0.95, distance: 10.8, orbitalPeriod: 0.62, axialTilt: 177.3, rotationPeriod: -243, color: 0xe39e1c },
+            { name: "Earth", radius: 1.0, distance: 15.0, orbitalPeriod: 1.0, axialTilt: 23.4, rotationPeriod: 1, color: 0x6b93d6 },
+            { name: "Mars", radius: 0.53, distance: 22.8, orbitalPeriod: 1.88, axialTilt: 25.2, rotationPeriod: 1.03, color: 0xc1440e },
+            { name: "Jupiter", radius: 11.2, distance: 77.8, orbitalPeriod: 11.86, axialTilt: 3.1, rotationPeriod: 0.41, color: 0xd8ca9d },
+            { name: "Saturn", radius: 9.45, distance: 143.2, orbitalPeriod: 29.46, axialTilt: 26.7, rotationPeriod: 0.45, color: 0xe3e0c0 },
+            { name: "Uranus", radius: 4.0, distance: 286.7, orbitalPeriod: 84.01, axialTilt: 97.8, rotationPeriod: -0.72, color: 0xa6fff8 },
+            { name: "Neptune", radius: 3.88, distance: 451.5, orbitalPeriod: 164.8, axialTilt: 28.3, rotationPeriod: 0.67, color: 0x5b5ddf }
+        ];
+        
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 30, 50);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+            
+            // Add orbit controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 10;
+            controls.maxDistance = 200;
+            
+            // Create raycaster for planet selection
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // Add event listeners
+            window.addEventListener('resize', onWindowResize, false);
+            renderer.domElement.addEventListener('click', onClick, false);
+            document.getElementById('timeSlider').addEventListener('input', function(e) {
+                timeSpeed = parseFloat(e.target.value);
+                document.getElementById('speedValue').textContent = timeSpeed.toFixed(1);
+            });
+            
+            createSolarSystem();
+            animate();
+        }
+        
+        // Create the solar system
+        function createSolarSystem() {
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x222222);
+            scene.add(ambientLight);
+            
+            // Create sun
+            const sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+            
+            // Create sun material with procedural texture
+            const sunTexture = createSunTexture();
+            const sunMaterial = new THREE.MeshBasicMaterial({ 
+                map: sunTexture,
+                emissive: 0xffff00,
+                emissiveIntensity: 0.5
+            });
+            
+            sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sun);
+            
+            // Add point light at sun's position
+            const sunLight = new THREE.PointLight(0xffffff, 1.5, 500);
+            sunLight.position.set(0, 0, 0);
+            scene.add(sunLight);
+            
+            // Add planets
+            planetData.forEach(planet => {
+                createPlanet(planet);
+            });
+            
+            // Hide loading message
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        // Create sun texture procedurally
+        function createSunTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            
+            // Create radial gradient for sun
+            const gradient = ctx.createRadialGradient(
+                canvas.width/2, canvas.height/2, 0,
+                canvas.width/2, canvas.height/2, canvas.width/2
+            );
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.2, '#ffff99');
+            gradient.addColorStop(0.5, '#ffff00');
+            gradient.addColorStop(0.8, '#ff9900');
+            gradient.addColorStop(1, '#ff3300');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add some noise for sunspots and texture
+            for (let i = 0; i < 5000; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = Math.random() * 3 + 1;
+                
+                ctx.fillStyle = `rgba(${Math.random() * 50 + 200}, ${Math.random() * 50 + 150}, 0, ${Math.random() * 0.3 + 0.1})`;
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+        
+        // Create planet procedurally
+        function createPlanet(data) {
+            const geometry = new THREE.SphereGeometry(data.radius, 32, 32);
+            const material = new THREE.MeshStandardMaterial({
+                color: data.color,
+                roughness: 0.7,
+                metalness: 0.1
+            });
+            
+            // Create different textures for each planet
+            material.map = createPlanetTexture(data.name, data.color);
+            material.normalMap = createNormalMap(data.name);
+            
+            const planet = new THREE.Mesh(geometry, material);
+            planet.name = data.name;
+            
+            // Create orbit line
+            const orbitPoints = [];
+            const segments = 128;
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                // Elliptical orbit: x = a*cos(t), z = b*sin(t)
+                // Using semi-major axis and eccentricity for ellipse
+                const eccentricity = 0.1; // Default eccentricity
+                const a = data.distance; // semi-major axis
+                const b = a * Math.sqrt(1 - eccentricity * eccentricity); // semi-minor axis
+                const x = a * Math.cos(angle);
+                const z = b * Math.sin(angle);
+                orbitPoints.push(new THREE.Vector3(x, 0, z));
+            }
+            
+            const orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+            const orbitMaterial = new THREE.LineBasicMaterial({ 
+                color: 0x444444,
+                transparent: true,
+                opacity: 0.3
+            });
+            const orbit = new THREE.Line(orbitGeometry, orbitMaterial);
+            
+            // Create a container for the planet to handle orbit and rotation
+            const container = new THREE.Object3D();
+            container.add(planet);
+            container.userData = {
+                ...data,
+                planet: planet,
+                originalDistance: data.distance,
+                angle: Math.random() * Math.PI * 2, // Random starting position
+                orbitSpeed: 2 * Math.PI / (data.orbitalPeriod * 365.25), // Convert to radians per day
+                rotationSpeed: 2 * Math.PI / data.rotationPeriod / 24 // radians per hour
+            };
+            
+            scene.add(container);
+            scene.add(orbit);
+            
+            planetObjects.push({
+                container: container,
+                planet: planet,
+                orbit: orbit,
+                data: data
+            });
+        }
+        
+        // Create procedural planet texture
+        function createPlanetTexture(planetName, baseColor) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with base color
+            ctx.fillStyle = '#' + baseColor.toString(16).padStart(6, '0');
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add procedural features based on planet
+            switch(planetName) {
+                case 'Mercury':
+                    // Add craters
+                    for (let i = 0; i < 200; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        const radius = Math.random() * 15 + 2;
+                        ctx.fillStyle = `rgba(100, 100, 100, ${Math.random() * 0.5 + 0.2})`;
+                        ctx.beginPath();
+                        ctx.arc(x, y, radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    break;
+                    
+                case 'Venus':
+                    // Add cloud patterns
+                    for (let i = 0; i < 10; i++) {
+                        ctx.fillStyle = `rgba(230, 200, 150, ${Math.random() * 0.3 + 0.1})`;
+                        ctx.beginPath();
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        ctx.arc(x, y, Math.random() * 80 + 20, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    break;
+                    
+                case 'Earth':
+                    // Add continents
+                    ctx.fillStyle = '#4b73ff'; // Ocean color
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Simple continent shapes
+                    ctx.fillStyle = '#6b93d6';
+                    for (let i = 0; i < 5; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        ctx.beginPath();
+                        ctx.ellipse(x, y, Math.random() * 50 + 30, Math.random() * 30 + 20, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    break;
+                    
+                case 'Mars':
+                    // Add surface variation
+                    for (let i = 0; i < 1000; i++) {
+                        const x = Math.random() * canvas.width;
+                        const y = Math.random() * canvas.height;
+                        ctx.fillStyle = `rgba(220, 100, 50, ${Math.random() * 0.4 + 0.1})`;
+                        ctx.fillRect(x, y, Math.random() * 3 + 1, Math.random() * 3 + 1);
+                    }
+                    break;
+                    
+                case 'Jupiter':
+                    // Add bands
+                    for (let i = 0; i < canvas.height; i += 10) {
+                        const intensity = 0.7 + Math.sin(i * 0.1) * 0.3;
+                        ctx.fillStyle = `rgba(216, 202, 157, ${intensity})`;
+                        ctx.fillRect(0, i, canvas.width, 10);
+                    }
+                    // Add Great Red Spot
+                    ctx.fillStyle = '#aa4444';
+                    ctx.beginPath();
+                    ctx.ellipse(canvas.width * 0.7, canvas.height * 0.5, 40, 25, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+                    
+                case 'Saturn':
+                    // Add bands
+                    for (let i = 0; i < canvas.height; i += 15) {
+                        const intensity = 0.6 + Math.sin(i * 0.08) * 0.4;
+                        ctx.fillStyle = `rgba(227, 224, 192, ${intensity})`;
+                        ctx.fillRect(0, i, canvas.width, 15);
+                    }
+                    break;
+                    
+                case 'Uranus':
+                    // Add subtle bands
+                    ctx.fillStyle = '#a6fff8';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    for (let i = 0; i < canvas.height; i += 20) {
+                        ctx.fillStyle = `rgba(160, 255, 255, 0.2)`;
+                        ctx.fillRect(0, i, canvas.width, 5);
+                    }
+                    break;
+                    
+                case 'Neptune':
+                    // Add dark spots
+                    ctx.fillStyle = '#5b5ddf';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = '#3333aa';
+                    ctx.beginPath();
+                    ctx.ellipse(canvas.width * 0.6, canvas.height * 0.6, 50, 30, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+            }
+            
+            // Add noise to all planets
+            for (let i = 0; i < 2000; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const gray = Math.random() * 50;
+                ctx.fillStyle = `rgba(${gray}, ${gray}, ${gray}, ${Math.random() * 0.4})`;
+                ctx.fillRect(x, y, Math.random() * 2 + 1, Math.random() * 2 + 1);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+        
+        // Create normal map procedurally
+        function createNormalMap(planetName) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with neutral normal color
+            ctx.fillStyle = '#7f7fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Add some bumpiness based on planet
+            const bumps = planetName === 'Earth' || planetName === 'Mars' ? 5000 : 
+                         planetName === 'Mercury' ? 8000 : 
+                         planetName.includes('Jupiter') || planetName.includes('Saturn') ? 2000 : 3000;
+            
+            for (let i = 0; i < bumps; i++) {
+                const x = Math.random() * canvas.width;
+                const y = Math.random() * canvas.height;
+                const size = Math.random() * 3 + 1;
+                const intensity = Math.random() * 30;
+                
+                // Create a bluish/purplish bump (normal map)
+                ctx.fillStyle = `rgba(127, ${127 + intensity}, ${255 - intensity}, ${Math.random() * 0.3})`;
+                ctx.fillRect(x, y, size, size);
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Handle mouse click for planet selection
+        function onClick(event) {
+            // Calculate mouse position in normalized device coordinates
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Update the picking ray with the camera and mouse position
+            raycaster.setFromCamera(mouse, camera);
+            
+            // Create array of planet meshes to check for intersection
+            const planetMeshes = planetObjects.map(obj => obj.planet);
+            // Add sun to clickable objects
+            planetMeshes.push(sun);
+            
+            // Calculate objects intersecting the picking ray
+            const intersects = raycaster.intersectObjects(planetMeshes, true);
+            
+            const infoDiv = document.getElementById('info');
+            
+            if (intersects.length > 0) {
+                // Get the name of the clicked planet
+                let clickedPlanet = intersects[0].object.name || 'Sun';
+                
+                // Display planet facts
+                if (planetFacts[clickedPlanet]) {
+                    const facts = planetFacts[clickedPlanet];
+                    let html = `
+                        <div class="planet-info">
+                            <div class="planet-name">${clickedPlanet}</div>
+                            <div class="planet-fact"><strong>Diameter:</strong> ${facts.diameter}</div>
+                            <div class="planet-fact"><strong>Mass:</strong> ${facts.mass}</div>
+                            <div class="planet-fact"><strong>Temperature:</strong> ${facts.temperature}</div>
+                            <div class="planet-fact"><strong>Interesting Facts:</strong></div>
+                    `;
+                    
+                    facts.facts.forEach(fact => {
+                        html += `<div class="planet-fact">• ${fact}</div>`;
+                    });
+                    
+                    html += `</div>`;
+                    infoDiv.innerHTML = html;
+                    infoDiv.style.display = 'block';
+                    
+                    // Position info box
+                    infoDiv.style.top = (event.clientY + 20) + 'px';
+                    infoDiv.style.left = (event.clientX + 20) + 'px';
+                    
+                    // Make sure it stays within viewport
+                    const rect = infoDiv.getBoundingClientRect();
+                    if (rect.right > window.innerWidth) {
+                        infoDiv.style.left = (window.innerWidth - rect.width - 20) + 'px';
+                    }
+                    if (rect.bottom > window.innerHeight) {
+                        infoDiv.style.top = (window.innerHeight - rect.height - 20) + 'px';
+                    }
+                }
+            } else {
+                // Hide info if clicking on empty space
+                infoDiv.style.display = 'none';
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta() * timeSpeed;
+            
+            // Rotate sun
+            sun.rotation.y += 0.001 * timeSpeed;
+            
+            // Update planets
+            planetObjects.forEach(obj => {
+                const data = obj.container.userData;
+                const container = obj.container;
+                const planet = obj.planet;
+                
+                // Update orbital position (elliptical orbit)
+                data.angle += data.orbitSpeed * delta;
+                
+                // Calculate position on elliptical orbit
+                const eccentricity = 0.1; // Simplified eccentricity
+                const a = data.originalDistance; // semi-major axis
+                const b = a * Math.sqrt(1 - eccentricity * eccentricity); // semi-minor axis
+                const x = a * Math.cos(data.angle);
+                const z = b * Math.sin(data.angle);
+                
+                container.position.set(x, 0, z);
+                
+                // Axial rotation (around planet's own axis)
+                planet.rotation.y += data.rotationSpeed * delta;
+                
+                // Apply axial tilt (except for sun)
+                if (data.axialTilt !== undefined) {
+                    planet.rotation.z = data.axialTilt * Math.PI / 180;
+                }
+            });
+            
+            // Update controls
+            controls.update();
+            
+            // Render scene
+            renderer.render(scene, camera);
+        }
+        
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

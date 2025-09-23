@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Data Analytics Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+        }
+
+        .light-theme {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: #333;
+        }
+
+        .dark-theme {
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%);
+            color: #fff;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .ui-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .dark-theme .ui-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        button {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .view-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1001;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .stats-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            min-width: 200px;
+        }
+
+        .dark-theme .stats-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stat-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+        }
+
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="dark-theme">
+    <div id="container">
+        <div class="ui-panel">
+            <div class="control-group">
+                <label>Visualization Controls</label>
+                <button onclick="generateNewData()">🔄 New Dataset</button>
+                <button onclick="toggleTheme()">🌓 Toggle Theme</button>
+                <button onclick="exportCSV()">📊 Export CSV</button>
+            </div>
+            
+            <div class="control-group">
+                <label>Camera Views</label>
+                <div class="view-controls">
+                    <button onclick="setCameraView('overview')">🔍 Overview</button>
+                    <button onclick="setCameraView('front')">⬆️ Front</button>
+                    <button onclick="setCameraView('side')">↗️ Side</button>
+                    <button onclick="setCameraView('top')">⬇️ Top</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label>Display Options</label>
+                <div class="view-controls">
+                    <button onclick="toggleBars()">📊 Toggle Bars</button>
+                    <button onclick="toggleScatter()">⚫ Toggle Scatter</button>
+                    <button onclick="toggleRibbons()">🎭 Toggle Ribbons</button>
+                    <button onclick="toggleGrid()">📐 Toggle Grid</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-panel">
+            <div class="control-group">
+                <label>Dataset Statistics</label>
+                <div id="stats-content">
+                    <div class="stat-item">Points: <span id="point-count">0</span></div>
+                    <div class="stat-item">Max Value: <span id="max-value">0</span></div>
+                    <div class="stat-item">Min Value: <span id="min-value">0</span></div>
+                    <div class="stat-item">Average: <span id="avg-value">0</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="tooltip"></div>
+    <div id="loading" class="loading">Initializing 3D Dashboard...</div>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, controls;
+        let dataPoints = [];
+        let bars = [], scatterPoints = [], ribbons = [];
+        let gridHelper, axesHelper;
+        let raycaster, mouse;
+        let isLightTheme = false;
+        let showBars = true, showScatter = true, showRibbons = true, showGrid = true;
+        
+        // Animation variables
+        let animationId;
+        let clock = new THREE.Clock();
+
+        // Initialize the scene
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(50, 50, 50);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: true, 
+                alpha: true,
+                powerPreference: "high-performance"
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.setClearColor(0x000000, 0);
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // Add controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxDistance = 200;
+            controls.minDistance = 10;
+            
+            // Setup raycaster for hover effects
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+            
+            // Add lights
+            setupLights();
+            
+            // Create grid and axes
+            createGridAndAxes();
+            
+            // Generate initial data
+            generateNewData();
+            
+            // Add event listeners
+            setupEventListeners();
+            
+            // Start animation loop
+            animate();
+            
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function setupLights() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            // Directional light
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(50, 50, 25);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            scene.add(directionalLight);
+            
+            // Point lights for ambiance
+            const pointLight1 = new THREE.PointLight(0x667eea, 0.5, 100);
+            pointLight1.position.set(-25, 25, 25);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0x764ba2, 0.5, 100);
+            pointLight2.position.set(25, 25, -25);
+            scene.add(pointLight2);
+        }
+
+        function createGridAndAxes() {
+            // Grid helper
+            gridHelper = new THREE.GridHelper(60, 20, 0x666666, 0x444444);
+            gridHelper.position.y = 0;
+            scene.add(gridHelper);
+            
+            // Axes helper
+            axesHelper = new THREE.AxesHelper(35);
+            scene.add(axesHelper);
+        }
+
+        function generateRandomData(count = 50) {
+            const data = [];
+            const categories = ['Sales', 'Marketing', 'Development', 'Support', 'Research'];
+            const regions = ['North', 'South', 'East', 'West', 'Central'];
+            
+            for (let i = 0; i < count; i++) {
+                data.push({
+                    x: Math.random() * 40 - 20,
+                    y: Math.random() * 30,
+                    z: Math.random() * 40 - 20,
+                    value: Math.random() * 100 + 10,
+                    category: categories[Math.floor(Math.random() * categories.length)],
+                    region: regions[Math.floor(Math.random() * regions.length)],
+                    timestamp: new Date(2024, Math.floor(Math.random() * 12), Math.floor(Math.random() * 28) + 1)
+                });
+            }
+            
+            return data;
+        }
+
+        function generateNewData() {
+            // Clear existing visualizations
+            clearVisualizations();
+            
+            // Generate new data
+            dataPoints = generateRandomData(60);
+            
+            // Create visualizations
+            createBars();
+            createScatterPoints();
+            createRibbons();
+            
+            // Update statistics
+            updateStatistics();
+        }
+
+        function clearVisualizations() {
+            // Remove bars
+            bars.forEach(bar => scene.remove(bar));
+            bars = [];
+            
+            // Remove scatter points
+            scatterPoints.forEach(point => scene.remove(point));
+            scatterPoints = [];
+            
+            // Remove ribbons
+            ribbons.forEach(ribbon => scene.remove(ribbon));
+            ribbons = [];
+        }
+
+        function createBars() {
+            const barGeometry = new THREE.BoxGeometry(1, 1, 1);
+            
+            dataPoints.forEach((point, index) => {
+                const height = (point.value / 100) * 20;
+                const material = new THREE.MeshLambertMaterial({
+                    color: getColorByCategory(point.category),
+                    transparent: true,
+                    opacity: 0.8
+                });
+                
+                const bar = new THREE.Mesh(barGeometry, material);
+                bar.position.set(point.x, height / 2, point.z);
+                bar.scale.set(0.8, height, 0.8);
+                bar.castShadow = true;
+                bar.receiveShadow = true;
+                bar.userData = { ...point, type: 'bar', index };
+                
+                bars.push(bar);
+                scene.add(bar);
+            });
+        }
+
+        function createScatterPoints() {
+            const pointGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+            
+            dataPoints.forEach((point, index) => {
+                const material = new THREE.MeshPhongMaterial({
+                    color: getColorByRegion(point.region),
+                    transparent: true,
+                    opacity: 0.7,
+                    shininess: 100
+                });
+                
+                const sphere = new THREE.Mesh(pointGeometry, material);
+                sphere.position.set(point.x + 2, point.y + 15, point.z + 2);
+                sphere.scale.setScalar((point.value / 100) * 2 + 0.5);
+                sphere.castShadow = true;
+                sphere.userData = { ...point, type: 'scatter', index };
+                
+                scatterPoints.push(sphere);
+                scene.add(sphere);
+            });
+        }
+
+        function createRibbons() {
+            // Group points by category for ribbon creation
+            const categoryGroups = {};
+            dataPoints.forEach(point => {
+                if (!categoryGroups[point.category]) {
+                    categoryGroups[point.category] = [];
+                }
+                categoryGroups[point.category].push(point);
+            });
+
+            Object.keys(categoryGroups).forEach(category => {
+                const points = categoryGroups[category].sort((a, b) => a.x - b.x);
+                if (points.length < 2) return;
+
+                const curve = new THREE.CatmullRomCurve3(
+                    points.map(p => new THREE.Vector3(p.x, p.y + 25, p.z))
+                );
+
+                const tubeGeometry = new THREE.TubeGeometry(curve, 20, 0.3, 8, false);
+                const material = new THREE.MeshLambertMaterial({
+                    color: getColorByCategory(category),
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+
+                const ribbon = new THREE.Mesh(tubeGeometry, material);
+                ribbon.userData = { type: 'ribbon', category, points };
+                
+                ribbons.push(ribbon);
+                scene.add(ribbon);
+            });
+        }
+
+        function getColorByCategory(category) {
+            const colors = {
+                'Sales': 0xff6b6b,
+                'Marketing': 0x4ecdc4,
+                'Development': 0x45b7d1,
+                'Support': 0xf9ca24,
+                'Research': 0x6c5ce7
+            };
+            return colors[category] || 0x95a5a6;
+        }
+
+        function getColorByRegion(region) {
+            const colors = {
+                'North': 0xe74c3c,
+                'South': 0x2ecc71,
+                'East': 0x3498db,
+                'West': 0xf39c12,
+                'Central': 0x9b59b6
+            };
+            return colors[region] || 0x95a5a6;
+        }
+
+        function setupEventListeners() {
+            // Mouse move for hover effects
+            document.addEventListener('mousemove', onMouseMove, false);
+            
+            // Window resize
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Keyboard controls
+            document.addEventListener('keydown', onKeyDown, false);
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            
+            const allObjects = [...bars, ...scatterPoints];
+            const intersects = raycaster.intersectObjects(allObjects);
+            
+            const tooltip = document.getElementById('tooltip');
+            
+            if (intersects.length > 0) {
+                const object = intersects[0].object;
+                const data = object.userData;
+                
+                tooltip.style.left = event.clientX + 10 + 'px';
+                tooltip.style.top = event.clientY - 10 + 'px';
+                tooltip.style.opacity = 1;
+                tooltip.innerHTML = `
+                    <strong>${data.type.toUpperCase()}</strong><br>
+                    Category: ${data.category}<br>
+                    Region: ${data.region}<br>
+                    Value: ${data.value.toFixed(2)}<br>
+                    Position: (${data.x.toFixed(1)}, ${data.y.toFixed(1)}, ${data.z.toFixed(1)})
+                `;
+                
+                // Highlight effect
+                object.material.emissive.setHex(0x444444);
+                document.body.style.cursor = 'pointer';
+            } else {
+                tooltip.style.opacity = 0;
+                document.body.style.cursor = 'default';
+                
+                // Remove highlight
+                allObjects.forEach(obj => {
+                    if (obj.material.emissive) {
+                        obj.material.emissive.setHex(0x000000);
+                    }
+                });
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKeyDown(event) {
+            switch(event.code) {
+                case 'KeyR':
+                    generateNewData();
+                    break;
+                case 'KeyT':
+                    toggleTheme();
+                    break;
+                case 'Space':
+                    setCameraView('overview');
+                    event.preventDefault();
+                    break;
+            }
+        }
+
+        function setCameraView(view) {
+            const duration = 1500;
+            const startPosition = camera.position.clone();
+            const startTarget = controls.target.clone();
+            let endPosition, endTarget;
+
+            switch(view) {
+                case 'overview':
+                    endPosition = new THREE.Vector3(50, 50, 50);
+                    endTarget = new THREE.Vector3(0, 10, 0);
+                    break;
+                case 'front':
+                    endPosition = new THREE.Vector3(0, 30, 60);
+                    endTarget = new THREE.Vector3(0, 10, 0);
+                    break;
+                case 'side':
+                    endPosition = new THREE.Vector3(60, 30, 0);
+                    endTarget = new THREE.Vector3(0, 10, 0);
+                    break;
+                case 'top':
+                    endPosition = new THREE.Vector3(0, 80, 0);
+                    endTarget = new THREE.Vector3(0, 0, 0);
+                    break;
+            }
+
+            const startTime = Date.now();
+
+            function animateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeInOut = progress * progress * (3 - 2 * progress);
+
+                camera.position.lerpVectors(startPosition, endPosition, easeInOut);
+                controls.target.lerpVectors(startTarget, endTarget, easeInOut);
+                controls.update();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
+                }
+            }
+
+            animateCamera();
+        }
+
+        function toggleTheme() {
+            isLightTheme = !isLightTheme;
+            const body = document.body;
+            
+            if (isLightTheme) {
+                body.className = 'light-theme';
+                renderer.setClearColor(0xf0f0f0, 0.1);
+            } else {
+                body.className = 'dark-theme';
+                renderer.setClearColor(0x000000, 0);
+            }
+        }
+
+        function toggleBars() {
+            showBars = !showBars;
+            bars.forEach(bar => bar.visible = showBars);
+        }
+
+        function toggleScatter() {
+            showScatter = !showScatter;
+            scatterPoints.forEach(point => point.visible = showScatter);
+        }
+
+        function toggleRibbons() {
+            showRibbons = !showRibbons;
+            ribbons.forEach(ribbon => ribbon.visible = showRibbons);
+        }
+
+        function toggleGrid() {
+            showGrid = !showGrid;
+            gridHelper.visible = showGrid;
+            axesHelper.visible = showGrid;
+        }
+
+        function updateStatistics() {
+            const values = dataPoints.map(p => p.value);
+            const maxValue = Math.max(...values);
+            const minValue = Math.min(...values);
+            const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
+
+            document.getElementById('point-count').textContent = dataPoints.length;
+            document.getElementById('max-value').textContent = maxValue.toFixed(2);
+            document.getElementById('min-value').textContent = minValue.toFixed(2);
+            document.getElementById('avg-value').textContent = avgValue.toFixed(2);
+        }
+
+        function exportCSV() {
+            if (dataPoints.length === 0) return;
+
+            const headers = ['X', 'Y', 'Z', 'Value', 'Category', 'Region', 'Timestamp'];
+            const csvData = [headers.join(',')];
+
+            dataPoints.forEach(point => {
+                const row = [
+                    point.x.toFixed(2),
+                    point.y.toFixed(2),
+                    point.z.toFixed(2),
+                    point.value.toFixed(2),
+                    point.category,
+                    point.region,
+                    point.timestamp.toISOString().split('T')[0]
+                ];
+                csvData.push(row.join(','));
+            });
+
+            const csvContent = csvData.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `analytics_data_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+            
+            const elapsedTime = clock.getElapsedTime();
+            
+            // Animate scatter points with floating effect
+            scatterPoints.forEach((point, index) => {
+                point.position.y = point.userData.y + 15 + Math.sin(elapsedTime * 0.5 + index * 0.1) * 0.5;
+                point.rotation.y = elapsedTime * 0.2 + index * 0.1;
+            });
+            
+            // Animate ribbons with wave effect
+            ribbons.forEach((ribbon, index) => {
+                ribbon.rotation.y = Math.sin(elapsedTime * 0.3 + index * 0.2) * 0.1;
+            });
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Initialize the application
+        init();
+    </script>
+</body>
+</html>

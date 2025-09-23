@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Particle System</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <script>
+        // Initialize Three.js scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000);
+        document.body.appendChild(renderer.domElement);
+
+        // Mouse tracking
+        let mouseX = 0;
+        let mouseY = 0;
+        let targetRotationX = 0;
+        let targetRotationY = 0;
+        
+        document.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX - window.innerWidth / 2) / 100;
+            mouseY = (event.clientY - window.innerHeight / 2) / 100;
+        });
+
+        // Create particle system with 1000+ particles
+        const particleCount = 1500;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        const ages = new Float32Array(particleCount);
+        const lifespans = new Float32Array(particleCount);
+
+        // Initialize particles
+        for (let i = 0; i < particleCount; i++) {
+            // Position - starting near the center
+            positions[i * 3] = (Math.random() - 0.5) * 2;
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 2;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 2;
+            
+            // Colors - will animate over time
+            colors[i * 3] = Math.random();
+            colors[i * 3 + 1] = Math.random();
+            colors[i * 3 + 2] = Math.random();
+            
+            // Velocities - fountain-like pattern with upward bias
+            velocities[i * 3] = (Math.random() - 0.5) * 2;
+            velocities[i * 3 + 1] = Math.random() * 3 + 1; // Upward velocity
+            velocities[i * 3 + 2] = (Math.random() - 0.5) * 2;
+            
+            // Age and lifespan for color cycling and physics
+            ages[i] = 0;
+            lifespans[i] = Math.random() * 5 + 3;
+        }
+
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        
+        // Create material
+        const material = new THREE.PointsMaterial({
+            size: 0.05,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+
+        // Create points
+        const pointCloud = new THREE.Points(particles, material);
+        scene.add(pointCloud);
+
+        // Position camera
+        camera.position.z = 15;
+
+        // Physics parameters
+        const gravity = -0.05;
+        const windFactor = 0.02;
+        const drag = 0.98;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update rotation based on mouse
+            targetRotationX = mouseY * 0.05;
+            targetRotationY = mouseX * 0.05;
+            
+            pointCloud.rotation.x += (targetRotationX - pointCloud.rotation.x) * 0.05;
+            pointCloud.rotation.y += (targetRotationY - pointCloud.rotation.y) * 0.05;
+            
+            // Get attributes for updating
+            const positions = particles.attributes.position.array;
+            const colors = particles.attributes.color.array;
+            const time = Date.now() * 0.001;
+            
+            // Update each particle
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                
+                // Update velocity with gravity and wind
+                velocities[i3 + 1] += gravity;
+                
+                // Add wind effect based on mouse position
+                velocities[i3] += (mouseX * windFactor - velocities[i3]) * 0.01;
+                velocities[i3 + 2] += (mouseY * windFactor - velocities[i3 + 2]) * 0.01;
+                
+                // Apply drag
+                velocities[i3] *= drag;
+                velocities[i3 + 1] *= drag;
+                velocities[i3 + 2] *= drag;
+                
+                // Update position
+                positions[i3] += velocities[i3];
+                positions[i3 + 1] += velocities[i3 + 1];
+                positions[i3 + 2] += velocities[i3 + 2];
+                
+                // Age the particle
+                ages[i] += 0.016; // Approximate delta time
+                
+                // If particle is too old, reset it
+                if (ages[i] > lifespans[i]) {
+                    // Reset position to center
+                    positions[i3] = (Math.random() - 0.5) * 2;
+                    positions[i3 + 1] = (Math.random() - 0.5) * 1;
+                    positions[i3 + 2] = (Math.random() - 0.5) * 2;
+                    
+                    // Reset velocity with fountain-like pattern
+                    velocities[i3] = (Math.random() - 0.5) * 2;
+                    velocities[i3 + 1] = Math.random() * 3 + 1;
+                    velocities[i3 + 2] = (Math.random() - 0.5) * 2;
+                    
+                    // Reset age
+                    ages[i] = 0;
+                    lifespans[i] = Math.random() * 5 + 3;
+                }
+                
+                // Update color based on age and position
+                const agePercent = ages[i] / lifespans[i];
+                const heightFactor = (positions[i3 + 1] + 5) / 10; // Normalize height
+                
+                // Color cycles through rainbow based on age and height
+                colors[i3] = 0.5 + 0.5 * Math.sin(agePercent * Math.PI * 2 + time);
+                colors[i3 + 1] = 0.5 + 0.5 * Math.sin(agePercent * Math.PI * 2 + time + 2);
+                colors[i3 + 2] = 0.5 + 0.5 * Math.sin(agePercent * Math.PI * 2 + time + 4);
+                
+                // Make particles brighter when higher up
+                const brightness = Math.max(0.3, heightFactor);
+                colors[i3] *= brightness;
+                colors[i3 + 1] *= brightness;
+                colors[i3 + 2] *= brightness;
+            }
+            
+            // Update the position attribute
+            particles.attributes.position.needsUpdate = true;
+            particles.attributes.color.needsUpdate = true;
+            
+            // Render
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Particle System</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(135deg, #0c0c0c, #1a1a2e, #16213e);
+            font-family: Arial, sans-serif;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .controls h3 {
+            margin: 0 0 10px 0;
+            color: #4fc3f7;
+        }
+        
+        .control-group {
+            margin-bottom: 10px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #ffffff;
+        }
+        
+        .control-group input[type="range"] {
+            width: 150px;
+        }
+        
+        .control-group button {
+            background: #4fc3f7;
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        
+        .control-group button:hover {
+            background: #29b6f6;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h3>Particle System Controls</h3>
+        <div class="control-group">
+            <label>Particle Count: <span id="particleCountLabel">2000</span></label>
+            <input type="range" id="particleCount" min="500" max="5000" value="2000" step="100">
+        </div>
+        <div class="control-group">
+            <label>Fountain Power: <span id="fountainPowerLabel">0.8</span></label>
+            <input type="range" id="fountainPower" min="0.3" max="1.5" value="0.8" step="0.1">
+        </div>
+        <div class="control-group">
+            <label>Gravity: <span id="gravityLabel">0.015</span></label>
+            <input type="range" id="gravity" min="0.005" max="0.03" value="0.015" step="0.005">
+        </div>
+        <div class="control-group">
+            <button onclick="toggleMode()">Switch Mode</button>
+            <button onclick="explode()">Explode!</button>
+        </div>
+        <div class="control-group">
+            <small>Move mouse to influence particles</small>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        class Particle {
+            constructor(x, y, z) {
+                this.position = new THREE.Vector3(x, y, z);
+                this.velocity = new THREE.Vector3();
+                this.acceleration = new THREE.Vector3();
+                this.life = Math.random() * 100 + 50;
+                this.maxLife = this.life;
+                this.size = Math.random() * 3 + 1;
+                this.mass = this.size * 0.1;
+                
+                // Color properties
+                this.hue = Math.random() * 360;
+                this.saturation = 80 + Math.random() * 20;
+                this.lightness = 50 + Math.random() * 30;
+            }
+            
+            update(gravity, mouseInfluence, mode) {
+                // Reset acceleration
+                this.acceleration.set(0, 0, 0);
+                
+                // Apply gravity
+                this.acceleration.y -= gravity;
+                
+                // Apply mouse influence
+                if (mouseInfluence.force > 0) {
+                    const distance = this.position.distanceTo(mouseInfluence.position);
+                    if (distance < mouseInfluence.radius) {
+                        const force = mouseInfluence.force * (1 - distance / mouseInfluence.radius);
+                        const direction = new THREE.Vector3()
+                            .subVectors(this.position, mouseInfluence.position)
+                            .normalize()
+                            .multiplyScalar(force / this.mass);
+                        this.acceleration.add(direction);
+                    }
+                }
+                
+                // Apply wind or turbulence
+                if (mode === 'fountain') {
+                    const windForce = Math.sin(Date.now() * 0.001 + this.position.x * 0.01) * 0.002;
+                    this.acceleration.x += windForce;
+                } else if (mode === 'explosion') {
+                    // Add some turbulence
+                    this.acceleration.x += (Math.random() - 0.5) * 0.01;
+                    this.acceleration.z += (Math.random() - 0.5) * 0.01;
+                } else if (mode === 'stream') {
+                    // Flowing motion
+                    this.acceleration.x += Math.sin(this.position.y * 0.01) * 0.005;
+                    this.acceleration.z += Math.cos(this.position.y * 0.01) * 0.005;
+                }
+                
+                // Update physics
+                this.velocity.add(this.acceleration);
+                this.velocity.multiplyScalar(0.995); // Air resistance
+                this.position.add(this.velocity);
+                
+                // Update life and color
+                this.life--;
+                const lifeRatio = this.life / this.maxLife;
+                
+                // Color cycling based on life and time
+                this.hue = (this.hue + 1) % 360;
+                this.lightness = 30 + lifeRatio * 50;
+                this.saturation = 60 + lifeRatio * 40;
+                
+                return this.life > 0;
+            }
+            
+            reset(mode, fountainPower) {
+                this.life = Math.random() * 100 + 50;
+                this.maxLife = this.life;
+                
+                if (mode === 'fountain') {
+                    // Fountain spawn
+                    this.position.set(
+                        (Math.random() - 0.5) * 10,
+                        -50,
+                        (Math.random() - 0.5) * 10
+                    );
+                    
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = (Math.random() * 0.3 + 0.5) * fountainPower;
+                    const upwardSpeed = (Math.random() * 0.8 + 0.6) * fountainPower;
+                    
+                    this.velocity.set(
+                        Math.cos(angle) * speed,
+                        upwardSpeed,
+                        Math.sin(angle) * speed
+                    );
+                } else if (mode === 'explosion') {
+                    // Explosion spawn
+                    this.position.set(0, 0, 0);
+                    
+                    const phi = Math.random() * Math.PI * 2;
+                    const theta = Math.random() * Math.PI;
+                    const speed = Math.random() * 2 + 1;
+                    
+                    this.velocity.set(
+                        Math.sin(theta) * Math.cos(phi) * speed,
+                        Math.sin(theta) * Math.sin(phi) * speed,
+                        Math.cos(theta) * speed
+                    );
+                } else if (mode === 'stream') {
+                    // Stream spawn
+                    this.position.set(-80, Math.random() * 100 - 50, (Math.random() - 0.5) * 20);
+                    this.velocity.set(
+                        1.5 + Math.random() * 0.5,
+                        (Math.random() - 0.5) * 0.2,
+                        (Math.random() - 0.5) * 0.1
+                    );
+                }
+                
+                this.hue = Math.random() * 360;
+            }
+        }
+        
+        class ParticleSystem {
+            constructor() {
+                this.scene = new THREE.Scene();
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(0x000000, 0);
+                document.body.appendChild(this.renderer.domElement);
+                
+                this.particleCount = 2000;
+                this.particles = [];
+                this.geometry = new THREE.BufferGeometry();
+                this.material = new THREE.PointsMaterial({
+                    size: 2,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.8,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                this.points = new THREE.Points(this.geometry, this.material);
+                this.scene.add(this.points);
+                
+                // Physics parameters
+                this.gravity = 0.015;
+                this.fountainPower = 0.8;
+                this.mode = 'fountain'; // fountain, explosion, stream
+                
+                // Mouse interaction
+                this.mouse = new THREE.Vector2();
+                this.mouseInfluence = {
+                    position: new THREE.Vector3(),
+                    force: 0,
+                    radius: 50
+                };
+                
+                this.setupCamera();
+                this.initParticles();
+                this.setupEventListeners();
+                this.setupControls();
+                this.animate();
+            }
+            
+            setupCamera() {
+                this.camera.position.set(0, 0, 100);
+                this.camera.lookAt(0, 0, 0);
+            }
+            
+            initParticles() {
+                this.particles = [];
+                for (let i = 0; i < this.particleCount; i++) {
+                    const particle = new Particle(0, 0, 0);
+                    particle.reset(this.mode, this.fountainPower);
+                    this.particles.push(particle);
+                }
+                this.updateGeometry();
+            }
+            
+            updateGeometry() {
+                const positions = new Float32Array(this.particles.length * 3);
+                const colors = new Float32Array(this.particles.length * 3);
+                const sizes = new Float32Array(this.particles.length);
+                
+                for (let i = 0; i < this.particles.length; i++) {
+                    const particle = this.particles[i];
+                    
+                    positions[i * 3] = particle.position.x;
+                    positions[i * 3 + 1] = particle.position.y;
+                    positions[i * 3 + 2] = particle.position.z;
+                    
+                    // HSL to RGB conversion
+                    const color = new THREE.Color().setHSL(
+                        particle.hue / 360,
+                        particle.saturation / 100,
+                        particle.lightness / 100
+                    );
+                    
+                    colors[i * 3] = color.r;
+                    colors[i * 3 + 1] = color.g;
+                    colors[i * 3 + 2] = color.b;
+                    
+                    sizes[i] = particle.size * (particle.life / particle.maxLife);
+                }
+                
+                this.geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                this.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                this.geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            }
+            
+            setupEventListeners() {
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+                
+                window.addEventListener('mousemove', (event) => {
+                    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                    
+                    // Convert mouse to world coordinates
+                    const vector = new THREE.Vector3(this.mouse.x, this.mouse.y, 0.5);
+                    vector.unproject(this.camera);
+                    const dir = vector.sub(this.camera.position).normalize();
+                    const distance = -this.camera.position.z / dir.z;
+                    this.mouseInfluence.position.copy(this.camera.position).add(dir.multiplyScalar(distance));
+                    this.mouseInfluence.force = 0.5;
+                });
+                
+                window.addEventListener('mouseleave', () => {
+                    this.mouseInfluence.force = 0;
+                });
+            }
+            
+            setupControls() {
+                const particleCountSlider = document.getElementById('particleCount');
+                const fountainPowerSlider = document.getElementById('fountainPower');
+                const gravitySlider = document.getElementById('gravity');
+                
+                particleCountSlider.addEventListener('input', (e) => {
+                    this.particleCount = parseInt(e.target.value);
+                    document.getElementById('particleCountLabel').textContent = this.particleCount;
+                    this.initParticles();
+                });
+                
+                fountainPowerSlider.addEventListener('input', (e) => {
+                    this.fountainPower = parseFloat(e.target.value);
+                    document.getElementById('fountainPowerLabel').textContent = this.fountainPower;
+                });
+                
+                gravitySlider.addEventListener('input', (e) => {
+                    this.gravity = parseFloat(e.target.value);
+                    document.getElementById('gravityLabel').textContent = this.gravity;
+                });
+            }
+            
+            toggleMode() {
+                const modes = ['fountain', 'explosion', 'stream'];
+                const currentIndex = modes.indexOf(this.mode);
+                this.mode = modes[(currentIndex + 1) % modes.length];
+                this.initParticles();
+            }
+            
+            explode() {
+                for (let i = 0; i < this.particles.length; i++) {
+                    const particle = this.particles[i];
+                    const phi = Math.random() * Math.PI * 2;
+                    const theta = Math.random() * Math.PI;
+                    const speed = Math.random() * 3 + 1;
+                    
+                    particle.position.copy(this.mouseInfluence.position.clone().add(
+                        new THREE.Vector3(
+                            (Math.random() - 0.5) * 10,
+                            (Math.random() - 0.5) * 10,
+                            (Math.random() - 0.5) * 10
+                        )
+                    ));
+                    
+                    particle.velocity.set(
+                        Math.sin(theta) * Math.cos(phi) * speed,
+                        Math.sin(theta) * Math.sin(phi) * speed,
+                        Math.cos(theta) * speed
+                    );
+                    
+                    particle.life = Math.random() * 50 + 25;
+                    particle.maxLife = particle.life;
+                }
+            }
+            
+            update() {
+                for (let i = 0; i < this.particles.length; i++) {
+                    const particle = this.particles[i];
+                    const alive = particle.update(this.gravity, this.mouseInfluence, this.mode);
+                    
+                    if (!alive || this.shouldReset(particle)) {
+                        particle.reset(this.mode, this.fountainPower);
+                    }
+                }
+                
+                // Gradually reduce mouse influence
+                this.mouseInfluence.force *= 0.95;
+                
+                this.updateGeometry();
+            }
+            
+            shouldReset(particle) {
+                // Reset particles that are too far from origin
+                const maxDistance = 200;
+                return particle.position.length() > maxDistance;
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                this.update();
+                
+                // Rotate camera around the scene
+                const time = Date.now() * 0.0005;
+                this.camera.position.x = Math.cos(time) * 120;
+                this.camera.position.z = Math.sin(time) * 120;
+                this.camera.position.y = Math.sin(time * 0.5) * 30;
+                this.camera.lookAt(0, 0, 0);
+                
+                this.renderer.render(this.scene, this.camera);
+            }
+        }
+        
+        // Global functions for controls
+        let particleSystem;
+        
+        function toggleMode() {
+            particleSystem.toggleMode();
+        }
+        
+        function explode() {
+            particleSystem.explode();
+        }
+        
+        // Initialize the particle system when the page loads
+        window.addEventListener('load', () => {
+            particleSystem = new ParticleSystem();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Space Shooter</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            touch-action: none;
+        }
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 24px;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            pointer-events: auto;
+        }
+        .control-btn {
+            width: 80px;
+            height: 80px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            user-select: none;
+            -webkit-user-select: none;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+        #fire-btn {
+            width: 100px;
+            height: 100px;
+            font-size: 30px;
+        }
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 48px;
+            text-align: center;
+            display: none;
+            pointer-events: auto;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 40px;
+            border-radius: 20px;
+        }
+        #restart-btn {
+            margin-top: 30px;
+            padding: 15px 30px;
+            font-size: 24px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="ui">
+        <div id="health">Health: 100</div>
+        <div id="score">Score: 0</div>
+        <div id="level">Level: 1</div>
+    </div>
+    <div id="controls">
+        <div class="control-btn" id="left-btn">←</div>
+        <div class="control-btn" id="fire-btn">⚡</div>
+        <div class="control-btn" id="right-btn">→</div>
+    </div>
+    <div id="game-over">
+        <h1>GAME OVER</h1>
+        <div id="final-score">Your Score: 0</div>
+        <button id="restart-btn">Play Again</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+        import { EffectComposer } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/postprocessing/UnrealBloomPass.js';
+
+        // Game state
+        const state = {
+            health: 100,
+            score: 0,
+            level: 1,
+            gameActive: true,
+            keys: {
+                left: false,
+                right: false,
+                fire: false
+            },
+            touchControls: {
+                left: false,
+                right: false,
+                fire: false
+            },
+            lastFireTime: 0,
+            fireRate: 250, // ms between shots
+            enemies: [],
+            lasers: [],
+            particles: [],
+            enemySpeed: 0.05,
+            enemySpawnRate: 2000, // ms between spawns
+            lastEnemySpawn: 0,
+            cameraZ: 5,
+            playerX: 0,
+            maxPlayerX: 4,
+            gameOver: false
+        };
+
+        // Set up scene
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+
+        // Set up camera
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = state.cameraZ;
+
+        // Set up renderer
+        const renderer = new THREE.WebGLRenderer({
+            canvas: document.getElementById('canvas'),
+            antialias: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+
+        // Set up post-processing
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5,    // strength
+            0.4,    // radius
+            0.85    // threshold
+        );
+        composer.addPass(bloomPass);
+
+        // Create starfield background
+        function createStarfield() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.1,
+                transparent: true
+            });
+
+            const starsVertices = [];
+            for (let i = 0; i < 2000; i++) {
+                const x = (Math.random() - 0.5) * 200;
+                const y = (Math.random() - 0.5) * 200;
+                const z = -Math.random() * 100 - 10;
+                starsVertices.push(x, y, z);
+            }
+
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            const stars = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(stars);
+
+            return stars;
+        }
+
+        const starfield = createStarfield();
+
+        // Create player ship
+        function createPlayer() {
+            const geometry = new THREE.ConeGeometry(0.3, 1, 8);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff,
+                emissive: 0x008888
+            });
+            const ship = new THREE.Mesh(geometry, material);
+            ship.rotation.x = Math.PI;
+            ship.position.y = -3;
+            scene.add(ship);
+            return ship;
+        }
+
+        const player = createPlayer();
+
+        // Create enemy (using instanced meshes)
+        function createEnemies() {
+            const enemyGeometry = new THREE.OctahedronGeometry(0.4, 0);
+            const enemyMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff0000,
+                emissive: 0x550000
+            });
+            
+            // Create many instances
+            const enemyMesh = new THREE.InstancedMesh(enemyGeometry, enemyMaterial, 100);
+            enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            scene.add(enemyMesh);
+            
+            return enemyMesh;
+        }
+
+        const enemyMesh = createEnemies();
+        let enemyCount = 0;
+
+        // Create laser projectile
+        function createLaser(x, y) {
+            const geometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 8);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x00ffff,
+                emissive: 0x00ffff
+            });
+            
+            const laser = new THREE.Mesh(geometry, material);
+            laser.position.set(x, y || -2.5, 0);
+            laser.rotation.z = Math.PI / 2;
+            scene.add(laser);
+            
+            return {
+                mesh: laser,
+                active: true,
+                speed: 0.2
+            };
+        }
+
+        // Create particle system for explosions
+        function createParticleEffect() {
+            const particleCount = 500;
+            const particlesGeometry = new THREE.BufferGeometry();
+            
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const sizes = new Float32Array(particleCount);
+            const lifetimes = new Float32Array(particleCount);
+            
+            for (let i = 0; i < particleCount; i++) {
+                // Initialize positions, colors, sizes, and lifetimes to 0
+                positions[i * 3] = 0;
+                positions[i * 3 + 1] = 0;
+                positions[i * 3 + 2] = 0;
+                
+                colors[i * 3] = 1;
+                colors[i * 3 + 1] = 0.5;
+                colors[i * 3 + 2] = 0;
+                
+                sizes[i] = 0;
+                lifetimes[i] = 0;
+            }
+            
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            particlesGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            particlesGeometry.setAttribute('lifetime', new THREE.BufferAttribute(lifetimes, 1));
+            
+            const particlesMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    pointTexture: { value: createParticleTexture() }
+                },
+                vertexShader: `
+                    attribute float size;
+                    attribute float lifetime;
+                    varying float vLifetime;
+                    void main() {
+                        vLifetime = lifetime;
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (300.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D pointTexture;
+                    varying float vLifetime;
+                    void main() {
+                        if (vLifetime <= 0.0) discard;
+                        vec4 color = vec4(1.0, 0.5, 0.0, vLifetime);
+                        gl_FragColor = color * texture2D(pointTexture, gl_PointCoord);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            
+            const particles = new THREE.Points(particlesGeometry, particlesMaterial);
+            particles.frustumCulled = false;
+            scene.add(particles);
+            
+            return {
+                mesh: particles,
+                geometry: particlesGeometry,
+                count: particleCount,
+                active: false,
+                age: 0,
+                maxAge: 1.0
+            };
+        }
+
+        function createParticleTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 32;
+            canvas.height = 32;
+            
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+            gradient.addColorStop(0.2, 'rgba(255, 200, 0, 1.0)');
+            gradient.addColorStop(0.4, 'rgba(255, 100, 0, 0.8)');
+            gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 32, 32);
+            
+            const texture = new THREE.Texture(canvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        // Create multiple particle systems
+        const particleSystems = [];
+        for (let i = 0; i < 10; i++) {
+            particleSystems.push(createParticleEffect());
+        }
+
+        // Spawn enemy
+        function spawnEnemy() {
+            if (enemyCount >= 100) return;
+            
+            const index = enemyCount;
+            const matrix = new THREE.Matrix4();
+            
+            // Random position at top of screen
+            const x = (Math.random() - 0.5) * 8;
+            const y = 5;
+            const z = 0;
+            
+            matrix.setPosition(x, y, z);
+            enemyMesh.setMatrixAt(index, matrix);
+            enemyMesh.instanceMatrix.needsUpdate = true;
+            
+            // Store enemy data
+            state.enemies.push({
+                index: index,
+                x: x,
+                y: y,
+                z: z,
+                active: true,
+                health: 1 + Math.floor(state.level / 3)
+            });
+            
+            enemyCount++;
+        }
+
+        // Fire laser
+        function fireLaser() {
+            const now = Date.now();
+            if (now - state.lastFireTime < state.fireRate) return;
+            
+            state.lastFireTime = now;
+            const laser = createLaser(state.playerX, -2.5);
+            state.lasers.push(laser);
+        }
+
+        // Explode enemy
+        function explodeEnemy(x, y, z) {
+            // Find an inactive particle system
+            let system = particleSystems.find(p => !p.active);
+            if (!system) {
+                // If all are active, use the oldest one
+                system = particleSystems.reduce((oldest, current) => 
+                    !current.active || current.age > oldest.age ? current : oldest
+                );
+            }
+            
+            system.active = true;
+            system.age = 0;
+            
+            const positions = system.geometry.attributes.position.array;
+            const colors = system.geometry.attributes.color.array;
+            const sizes = system.geometry.attributes.size.array;
+            const lifetimes = system.geometry.attributes.lifetime.array;
+            
+            for (let i = 0; i < system.count; i++) {
+                // Random direction
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 0.3 + 0.1;
+                const vx = Math.cos(angle) * speed;
+                const vy = Math.sin(angle) * speed;
+                const vz = (Math.random() - 0.5) * 0.2;
+                
+                positions[i * 3] = x + vx * 0.1;
+                positions[i * 3 + 1] = y + vy * 0.1;
+                positions[i * 3 + 2] = z + vz * 0.1;
+                
+                // Random color variations
+                colors[i * 3] = Math.random() * 0.5 + 0.5; // R
+                colors[i * 3 + 1] = Math.random() * 0.5;   // G
+                colors[i * 3 + 2] = 0;                      // B
+                
+                sizes[i] = Math.random() * 0.2 + 0.1;
+                lifetimes[i] = Math.random() * 0.5 + 0.5;
+            }
+            
+            system.geometry.attributes.position.needsUpdate = true;
+            system.geometry.attributes.color.needsUpdate = true;
+            system.geometry.attributes.size.needsUpdate = true;
+            system.geometry.attributes.lifetime.needsUpdate = true;
+            
+            // Add score
+            state.score += 10 * state.level;
+            updateUI();
+        }
+
+        // Update particle systems
+        function updateParticles(deltaTime) {
+            for (const system of particleSystems) {
+                if (!system.active) continue;
+                
+                system.age += deltaTime;
+                if (system.age >= system.maxAge) {
+                    system.active = false;
+                    continue;
+                }
+                
+                const positions = system.geometry.attributes.position.array;
+                const sizes = system.geometry.attributes.size.array;
+                const lifetimes = system.geometry.attributes.lifetime.array;
+                
+                for (let i = 0; i < system.count; i++) {
+                    if (lifetimes[i] <= 0) continue;
+                    
+                    // Age the particle
+                    lifetimes[i] -= deltaTime * 2;
+                    if (lifetimes[i] < 0) lifetimes[i] = 0;
+                    
+                    // Shrink the particle as it dies
+                    sizes[i] = sizes[i] * (lifetimes[i] / (lifetimes[i] + deltaTime * 2));
+                    
+                    // Move the particle
+                    positions[i * 3] += (positions[i * 3] - system.mesh.position.x) * deltaTime * 2;
+                    positions[i * 3 + 1] += (positions[i * 3 + 1] - system.mesh.position.y) * deltaTime * 2;
+                    positions[i * 3 + 2] += (positions[i * 3 + 2] - system.mesh.position.z) * deltaTime * 2;
+                }
+                
+                system.geometry.attributes.position.needsUpdate = true;
+                system.geometry.attributes.size.needsUpdate = true;
+                system.geometry.attributes.lifetime.needsUpdate = true;
+            }
+        }
+
+        // Handle collisions
+        function checkCollisions() {
+            // Lasers vs Enemies
+            for (let i = state.lasers.length - 1; i >= 0; i--) {
+                const laser = state.lasers[i];
+                if (!laser.active) continue;
+                
+                for (let j = state.enemies.length - 1; j >= 0; j--) {
+                    const enemy = state.enemies[j];
+                    if (!enemy.active) continue;
+                    
+                    // Simple distance check
+                    const dx = laser.mesh.position.x - enemy.x;
+                    const dy = laser.mesh.position.y - enemy.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < 0.7) {
+                        // Hit!
+                        enemy.health--;
+                        laser.active = false;
+                        scene.remove(laser.mesh);
+                        state.lasers.splice(i, 1);
+                        
+                        if (enemy.health <= 0) {
+                            // Kill enemy
+                            enemy.active = false;
+                            const matrix = new THREE.Matrix4();
+                            matrix.setPosition(0, -100, 0); // Move off-screen
+                            enemyMesh.setMatrixAt(enemy.index, matrix);
+                            enemyMesh.instanceMatrix.needsUpdate = true;
+                            
+                            // Create explosion
+                            explodeEnemy(enemy.x, enemy.y, enemy.z);
+                            
+                            // Remove from array eventually
+                            setTimeout(() => {
+                                state.enemies.splice(j, 1);
+                            }, 1000);
+                        }
+                        
+                        break;
+                    }
+                }
+            }
+            
+            // Enemies vs Player
+            for (let i = state.enemies.length - 1; i >= 0; i--) {
+                const enemy = state.enemies[i];
+                if (!enemy.active) continue;
+                
+                // Check if enemy reached player
+                if (enemy.y < -2.5) {
+                    const dx = enemy.x - state.playerX;
+                    const distance = Math.abs(dx);
+                    
+                    if (distance < 1.0) {
+                        // Collision with player
+                        state.health -= 25;
+                        updateUI();
+                        
+                        // Create explosion
+                        explodeEnemy(enemy.x, enemy.y, enemy.z);
+                        
+                        // Remove enemy
+                        enemy.active = false;
+                        const matrix = new THREE.Matrix4();
+                        matrix.setPosition(0, -100, 0);
+                        enemyMesh.setMatrixAt(enemy.index, matrix);
+                        enemyMesh.instanceMatrix.needsUpdate = true;
+                        state.enemies.splice(i, 1);
+                        
+                        if (state.health <= 0) {
+                            gameOver();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update UI
+        function updateUI() {
+            document.getElementById('health').textContent = `Health: ${state.health}`;
+            document.getElementById('score').textContent = `Score: ${state.score}`;
+            document.getElementById('level').textContent = `Level: ${state.level}`;
+        }
+
+        // Game Over
+        function gameOver() {
+            state.gameActive = false;
+            state.gameOver = true;
+            document.getElementById('final-score').textContent = `Your Score: ${state.score}`;
+            document.getElementById('game-over').style.display = 'block';
+        }
+
+        // Restart game
+        function restartGame() {
+            state.health = 100;
+            state.score = 0;
+            state.level = 1;
+            state.gameActive = true;
+            state.gameOver = false;
+            state.playerX = 0;
+            state.enemies = [];
+            state.lasers = [];
+            enemyCount = 0;
+            
+            // Reset enemy mesh
+            const resetMatrix = new THREE.Matrix4();
+            resetMatrix.setPosition(0, -100, 0);
+            for (let i = 0; i < 100; i++) {
+                enemyMesh.setMatrixAt(i, resetMatrix);
+            }
+            enemyMesh.instanceMatrix.needsUpdate = true;
+            
+            // Clear lasers
+            for (const laser of state.lasers) {
+                if (laser.mesh.parent) {
+                    scene.remove(laser.mesh);
+                }
+            }
+            state.lasers = [];
+            
+            // Reset particle systems
+            for (const system of particleSystems) {
+                system.active = false;
+            }
+            
+            document.getElementById('game-over').style.display = 'none';
+            updateUI();
+        }
+
+        // Handle difficulty scaling
+        function updateDifficulty() {
+            // Increase difficulty every 500 points
+            const newLevel = Math.floor(state.score / 500) + 1;
+            if (newLevel > state.level) {
+                state.level = newLevel;
+                state.enemySpeed = 0.05 + (state.level - 1) * 0.01;
+                state.enemySpawnRate = Math.max(500, 2000 - (state.level - 1) * 200);
+                state.fireRate = Math.max(100, 250 - (state.level - 1) * 20);
+            }
+        }
+
+        // Input handling
+        function setupInput() {
+            // Keyboard
+            document.addEventListener('keydown', (event) => {
+                if (!state.gameActive) return;
+                
+                switch (event.key) {
+                    case 'ArrowLeft':
+                    case 'a':
+                        state.keys.left = true;
+                        break;
+                    case 'ArrowRight':
+                    case 'd':
+                        state.keys.right = true;
+                        break;
+                    case ' ':
+                    case 'ArrowUp':
+                    case 'w':
+                        state.keys.fire = true;
+                        fireLaser();
+                        break;
+                }
+            });
+            
+            document.addEventListener('keyup', (event) => {
+                switch (event.key) {
+                    case 'ArrowLeft':
+                    case 'a':
+                        state.keys.left = false;
+                        break;
+                    case 'ArrowRight':
+                    case 'd':
+                        state.keys.right = false;
+                        break;
+                    case ' ':
+                    case 'ArrowUp':
+                    case 'w':
+                        state.keys.fire = false;
+                        break;
+                }
+            });
+            
+            // Touch controls
+            document.getElementById('left-btn').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                state.touchControls.left = true;
+            });
+            
+            document.getElementById('left-btn').addEventListener('touchend', (e) => {
+                e.preventDefault();
+                state.touchControls.left = false;
+            });
+            
+            document.getElementById('right-btn').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                state.touchControls.right = true;
+            });
+            
+            document.getElementById('right-btn').addEventListener('touchend', (e) => {
+                e.preventDefault();
+                state.touchControls.right = false;
+            });
+            
+            document.getElementById('fire-btn').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (state.gameActive) {
+                    state.touchControls.fire = true;
+                    fireLaser();
+                }
+            });
+            
+            document.getElementById('fire-btn').addEventListener('touchend', (e) => {
+                e.preventDefault();
+                state.touchControls.fire = false;
+            });
+            
+            // For mouse/touch on buttons
+            document.getElementById('left-btn').addEventListener('mousedown', () => {
+                if (state.gameActive) state.touchControls.left = true;
+            });
+            
+            document.getElementById('left-btn').addEventListener('mouseup', () => {
+                state.touchControls.left = false;
+            });
+            
+            document.getElementById('right-btn').addEventListener('mousedown', () => {
+                if (state.gameActive) state.touchControls.right = true;
+            });
+            
+            document.getElementById('right-btn').addEventListener('mouseup', () => {
+                state.touchControls.right = false;
+            });
+            
+            document.getElementById('fire-btn').addEventListener('mousedown', () => {
+                if (state.gameActive) {
+                    state.touchControls.fire = true;
+                    fireLaser();
+                }
+            });
+            
+            document.getElementById('fire-btn').addEventListener('mouseup', () => {
+                state.touchControls.fire = false;
+            });
+            
+            // Restart button
+            document.getElementById('restart-btn').addEventListener('click', restartGame);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.addEventListener('resize', onWindowResize);
+
+        // Game loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const deltaTime = 1/60; // Assume 60fps for simplicity
+            
+            if (state.gameActive) {
+                // Handle input
+                let direction = 0;
+                if (state.keys.left || state.touchControls.left) direction -= 1;
+                if (state.keys.right || state.touchControls.right) direction += 1;
+                
+                state.playerX += direction * 0.15;
+                state.playerX = Math.max(-state.maxPlayerX, Math.min(state.maxPlayerX, state.playerX));
+                player.position.x = state.playerX;
+                
+                // Spawn enemies
+                const now = Date.now();
+                if (now - state.lastEnemySpawn > state.enemySpawnRate) {
+                    state.lastEnemySpawn = now;
+                    spawnEnemy();
+                }
+                
+                // Update lasers
+                for (let i = state.lasers.length - 1; i >= 0; i--) {
+                    const laser = state.lasers[i];
+                    if (!laser.active) continue;
+                    
+                    laser.mesh.position.y += laser.speed;
+                    
+                    // Remove lasers that go off screen
+                    if (laser.mesh.position.y > 6) {
+                        laser.active = false;
+                        scene.remove(laser.mesh);
+                        state.lasers.splice(i, 1);
+                    }
+                }
+                
+                // Update enemies
+                for (const enemy of state.enemies) {
+                    if (!enemy.active) continue;
+                    
+                    enemy.y -= state.enemySpeed;
+                    enemy.z = 0;
+                    
+                    // Update enemy position
+                    const matrix = new THREE.Matrix4();
+                    matrix.setPosition(enemy.x, enemy.y, enemy.z);
+                    enemyMesh.setMatrixAt(enemy.index, matrix);
+                    enemyMesh.instanceMatrix.needsUpdate = true;
+                    
+                    // Remove enemies that go off screen
+                    if (enemy.y < -6) {
+                        enemy.active = false;
+                        const resetMatrix = new THREE.Matrix4();
+                        resetMatrix.setPosition(0, -100, 0);
+                        enemyMesh.setMatrixAt(enemy.index, resetMatrix);
+                        enemyMesh.instanceMatrix.needsUpdate = true;
+                    }
+                }
+                
+                // Check collisions
+                checkCollisions();
+                
+                // Update difficulty
+                updateDifficulty();
+                
+                // Update particles
+                updateParticles(deltaTime);
+            }
+            
+            // Update starfield (slowly move stars to create parallax effect)
+            starfield.position.z -= 0.01;
+            if (starfield.position.z < -50) {
+                starfield.position.z = 0;
+            }
+            
+            // Render with post-processing
+            composer.render();
+        }
+
+        // Initialize
+        setupInput();
+        updateUI();
+        animate();
+    </script>
+</body>
+</html>

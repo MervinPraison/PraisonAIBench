@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Three.js Particle System - Fountain + Swirl</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; background: #000; }
+    #overlay {
+      position: absolute; left: 12px; top: 12px; color: #cfd8dc; font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: rgba(0,0,0,0.35); padding: 10px 12px; border-radius: 8px; backdrop-filter: blur(2px);
+      user-select: none; z-index: 10;
+    }
+    a { color: #90caf9; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    Three.js Particle Fountain (2000 particles)
+    <br>- Move mouse: push/pull particles near the cursor
+    <br>- Click: toggle attraction/repulsion
+    <br>- Space: burst impulse
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script>
+  (() => {
+    // Basic Three.js setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000000, 0.07);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 2.5, 7);
+    camera.lookAt(0, 1.3, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 1);
+    document.body.appendChild(renderer.domElement);
+
+    // Soft circular sprite for points
+    function makeSprite(size = 128) {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      g.addColorStop(0.0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.2, 'rgba(255,255,255,0.9)');
+      g.addColorStop(0.5, 'rgba(255,255,255,0.3)');
+      g.addColorStop(1.0, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,size,size);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.minFilter = THREE.LinearMipMapLinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = true;
+      return tex;
+    }
+
+    // Ground reference (subtle) and emitter marker
+    {
+      const grid = new THREE.GridHelper(60, 60, 0x2a2a2a, 0x1a1a1a);
+      grid.position.y = 0;
+      grid.material.opacity = 0.25;
+      grid.material.transparent = true;
+      scene.add(grid);
+
+      const emitterRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.2, 0.01, 8, 48),
+        new THREE.MeshBasicMaterial({ color: 0x2266ff })
+      );
+      emitterRing.rotation.x = Math.PI / 2;
+      emitterRing.position.set(0, 0.001, 0);
+      scene.add(emitterRing);
+    }
+
+    // Particle system parameters
+    const COUNT = 2000;
+    const emitter = new THREE.Vector3(0, 0.0, 0);
+    const gravity = new THREE.Vector3(0, -9.8, 0); // m/s^2
+    const airDrag = 0.995; // simple drag per frame
+    const floorY = 0.0;
+    const restitution = 0.45; // bounce dampening
+    const friction = 0.85; // along-surface energy loss
+    const swirlStrength = 1.2; // angular acceleration around Y
+    const mouseForceBase = 35; // strength of mouse interaction
+    const mouseRadius = 1.8; // influence radius
+    const respawnBelowY = -8;
+
+    // Buffers and attributes
+    const positions = new Float32Array(COUNT * 3);
+    const velocities = new Float32Array(COUNT * 3);
+    const colors = new Float32Array(COUNT * 3);
+    const ages = new Float32Array(COUNT);
+    const lifes = new Float32Array(COUNT);
+    const seeds = new Float32Array(COUNT); // per-particle phase/noise seed
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.computeBoundingSphere = () => {}; // micro-optimization; boundingSphere not needed here
+
+    const material = new THREE.PointsMaterial({
+      size: 0.08,
+      map: makeSprite(128),
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true,
+      opacity: 0.95,
+      sizeAttenuation: true
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+
+    // Utilities
+    function randRange(min, max) { return min + Math.random() * (max - min); }
+
+    function hslToRgb(h, s, l) {
+      // h,s,l in [0,1]
+      if (s === 0) {
+        const v = l; return [v, v, v];
+      }
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      const hk = h - Math.floor(h);
+      const tc = [hk + 1/3, hk, hk - 1/3].map(t => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      });
+      return tc;
+    }
+
+    function respawn(i) {
+      // Emit upward from a small disk with a cone of velocities; slight randomness in lifespan
+      const r = Math.sqrt(Math.random()) * 0.2;
+      const ang = Math.random() * Math.PI * 2;
+      const ox = Math.cos(ang) * r;
+      const oz = Math.sin(ang) * r;
+
+      const idx = i * 3;
+      positions[idx + 0] = emitter.x + ox;
+      positions[idx + 1] = emitter.y + 0.01;
+      positions[idx + 2] = emitter.z + oz;
+
+      // Upward initial speed with slight lateral spread; make interesting by biasing with emitter offset
+      const vy = randRange(3.5, 7.0);
+      const vx = ox * randRange(2.0, 4.5) + randRange(-0.6, 0.6);
+      const vz = oz * randRange(2.0, 4.5) + randRange(-0.6, 0.6);
+
+      velocities[idx + 0] = vx;
+      velocities[idx + 1] = vy;
+      velocities[idx + 2] = vz;
+
+      ages[i] = 0;
+      lifes[i] = randRange(1.8, 3.8); // seconds
+      seeds[i] = Math.random() * 1000;
+    }
+
+    // Initialize all particles
+    for (let i = 0; i < COUNT; i++) {
+      respawn(i);
+      // initialize color
+      const c = i * 3;
+      colors[c+0] = 1; colors[c+1] = 1; colors[c+2] = 1;
+    }
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+
+    // Lighting-like additive haze using a dim point light proxy (not actual light for particles)
+    {
+      const glow = new THREE.Points(
+        new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 2, 0], 3)),
+        new THREE.PointsMaterial({ size: 12, color: 0x113366, transparent: true, opacity: 0.03, depthWrite: false, blending: THREE.AdditiveBlending, map: makeSprite(128) })
+      );
+      scene.add(glow);
+    }
+
+    // Mouse interaction (ray onto plane y=0)
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2(0, 0);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y=0
+    const mouseWorld = new THREE.Vector3(0, 0, 0);
+    let haveMouseWorld = false;
+    let attract = false; // false = repel, true = attract
+
+    function updateMouseWorld() {
+      raycaster.setFromCamera(mouse, camera);
+      const hit = new THREE.Vector3();
+      if (raycaster.ray.intersectPlane(plane, hit)) {
+        mouseWorld.copy(hit);
+        haveMouseWorld = true;
+      } else {
+        haveMouseWorld = false;
+      }
+    }
+
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      updateMouseWorld();
+    }, { passive: true });
+
+    window.addEventListener('mousedown', () => { attract = !attract; });
+    window.addEventListener('touchstart', (e) => {
+      const t = e.touches[0];
+      mouse.x = (t.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(t.clientY / window.innerHeight) * 2 + 1;
+      updateMouseWorld();
+      attract = !attract;
+    }, { passive: true });
+
+    // Burst impulse on space
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        burst(mouseWorld, haveMouseWorld ? 5 : 0);
+      }
+    });
+
+    function burst(center, radius = 3) {
+      // Radial impulse from a point, with falloff
+      for (let i = 0; i < COUNT; i++) {
+        const idx = i * 3;
+        const dx = positions[idx+0] - center.x;
+        const dy = positions[idx+1] - center.y;
+        const dz = positions[idx+2] - center.z;
+        const dist = Math.hypot(dx, dy, dz) + 1e-6;
+        const falloff = Math.exp(-(dist*dist) / (2 * (radius*radius)));
+        const strength = 18 * falloff;
+        velocities[idx+0] += (dx / dist) * strength;
+        velocities[idx+1] += (dy / dist) * strength;
+        velocities[idx+2] += (dz / dist) * strength;
+      }
+    }
+
+    // Animation loop
+    let prev = performance.now() / 1000;
+    function animate() {
+      const now = performance.now() / 1000;
+      const rawDt = now - prev;
+      prev = now;
+      const dt = Math.min(0.033, rawDt); // clamp to maintain stability
+      const t = now;
+
+      // Camera slow orbit for parallax interest
+      const camR = 7;
+      const camSpeed = 0.08;
+      camera.position.x = Math.cos(t * camSpeed) * camR;
+      camera.position.z = Math.sin(t * camSpeed) * camR;
+      camera.position.y = 2.6 + Math.sin(t * 0.35) * 0.3;
+      camera.lookAt(0, 1.3, 0);
+
+      // Update particle physics
+      for (let i = 0; i < COUNT; i++) {
+        const p = i * 3;
+
+        // Age and lifetime
+        ages[i] += dt;
+        if (ages[i] > lifes[i]) {
+          respawn(i);
+          continue;
+        }
+
+        // Position and velocity
+        let px = positions[p+0];
+        let py = positions[p+1];
+        let pz = positions[p+2];
+
+        let vx = velocities[p+0];
+        let vy = velocities[p+1];
+        let vz = velocities[p+2];
+
+        // Forces: gravity
+        vx += gravity.x * dt;
+        vy += gravity.y * dt;
+        vz += gravity.z * dt;
+
+        // Swirl (vortex) around Y axis
+        const radialX = px;
+        const radialZ = pz;
+        const rLen = Math.hypot(radialX, radialZ) + 1e-6;
+        const swirlDirX = -radialZ / rLen;
+        const swirlDirZ = radialX / rLen;
+        const swirlFalloff = 1.0 / (1.0 + rLen * 1.3);
+        vx += swirlDirX * swirlStrength * swirlFalloff * dt * vy * 0.2;
+        vz += swirlDirZ * swirlStrength * swirlFalloff * dt * vy * 0.2;
+
+        // Gentle per-particle sine drift for turbulence
+        const s = seeds[i];
+        vx += Math.sin(t * 1.3 + s) * 0.3 * dt;
+        vz += Math.cos(t * 1.7 + s * 0.7) * 0.3 * dt;
+
+        // Mouse field
+        if (haveMouseWorld) {
+          const mx = mouseWorld.x;
+          const my = mouseWorld.y;
+          const mz = mouseWorld.z;
+          const dx = mx - px;
+          const dy = my - py;
+          const dz = mz - pz;
+          const dist = Math.hypot(dx, dy, dz);
+          if (dist < mouseRadius) {
+            const norm = dist > 1e-6 ? 1.0 / dist : 0.0;
+            const dirx = dx * norm, diry = dy * norm, dirz = dz * norm;
+            const falloff = Math.exp(-(dist * dist) / (2 * mouseRadius * mouseRadius));
+            const sign = attract ? 1.0 : -1.0;
+            const f = mouseForceBase * falloff * dt;
+            vx += dirx * f * sign;
+            vy += diry * f * sign;
+            vz += dirz * f * sign;
+          }
+        }
+
+        // Apply drag
+        vx *= Math.pow(airDrag, 60 * dt); // scale drag to frame time
+        vy *= Math.pow(airDrag, 60 * dt);
+        vz *= Math.pow(airDrag, 60 * dt);
+
+        // Integrate
+        px += vx * dt;
+        py += vy * dt;
+        pz += vz * dt;
+
+        // Floor collision and bounce
+        if (py < floorY) {
+          py = floorY;
+          if (vy < 0) {
+            vy = -vy * restitution;
+            vx *= friction;
+            vz *= friction;
+          }
+        }
+
+        // If falls too low (e.g., escaped), respawn
+        if (py < respawnBelowY) {
+          respawn(i);
+          continue;
+        }
+
+        // Store back
+        positions[p+0] = px;
+        positions[p+1] = py;
+        positions[p+2] = pz;
+        velocities[p+0] = vx;
+        velocities[p+1] = vy;
+        velocities[p+2] = vz;
+
+        // Color over time: hue cycles with age and height, brightness with velocity
+        const age01 = ages[i] / Math.max(lifes[i], 1e-6);
+        const hue = (0.58 + age01 * 0.4 + (py * 0.05)) % 1.0; // go from cyan->magenta range
+        const speed = Math.min(1.0, Math.hypot(vx, vy, vz) / 8);
+        const sat = 0.9 - 0.3 * age01 + 0.1 * speed;
+        const lum = 0.45 + 0.25 * speed;
+
+        const [r, g, b] = hslToRgb(hue, sat, lum);
+        colors[p+0] = r;
+        colors[p+1] = g;
+        colors[p+2] = b;
+      }
+
+      geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.color.needsUpdate = true;
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    // Handle resize
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    window.addEventListener('resize', onResize);
+
+    // Prime mouse world for initial frame
+    updateMouseWorld();
+
+    // Kick off
+    requestAnimationFrame(animate);
+  })();
+  </script>
+</body>
+</html>

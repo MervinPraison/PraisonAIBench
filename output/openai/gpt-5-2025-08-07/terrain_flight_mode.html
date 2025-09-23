@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Procedural Terrain Flight - Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #0a0d12; }
+    #hud {
+      position: absolute; left: 10px; top: 10px; color: #e8f0ff; font: 12px/1.4 -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: rgba(0,0,0,0.35); padding: 10px 12px; border-radius: 8px; user-select: none;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.3); backdrop-filter: blur(6px);
+      max-width: 380px;
+    }
+    #hud .title { font-size: 14px; font-weight: 700; letter-spacing: 0.4px; margin-bottom: 6px; }
+    #hud .row { opacity: 0.92; }
+    #hud .kbd { display: inline-block; padding: 1px 6px; margin: 1px 2px; border-radius: 4px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.18); }
+    #status {
+      position: absolute; right: 10px; top: 10px; color: #cfe3ff; font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: rgba(0,0,0,0.35); padding: 8px 10px; border-radius: 6px; white-space: pre; text-align: right; min-width: 160px;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.3); backdrop-filter: blur(6px);
+    }
+    #credit {
+      position: absolute; right: 10px; bottom: 10px; color: #9bb6ff; opacity: 0.8; font: 11px/1.25 system-ui, Arial, sans-serif;
+      background: rgba(0,0,0,0.25); padding: 6px 8px; border-radius: 6px;
+    }
+    a { color: #b4d1ff; text-decoration: none; border-bottom: 1px dotted rgba(180,209,255,0.6); }
+    a:hover { color: #e7f1ff; border-bottom-color: rgba(231,241,255,0.9); }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="title">Procedural Terrain Flight</div>
+    <div class="row">- Terrain: Fractal noise, carved river, instanced trees, LOD</div>
+    <div class="row">- Fly a small drone/plane with collision avoidance</div>
+    <div class="row" style="margin-top:6px"><b>Controls</b></div>
+    <div class="row">Throttle: <span class="kbd">W</span> accelerate, <span class="kbd">S</span> brake</div>
+    <div class="row">Yaw: <span class="kbd">←</span> / <span class="kbd">→</span></div>
+    <div class="row">Pitch: <span class="kbd">↑</span> / <span class="kbd">↓</span></div>
+    <div class="row">Roll: <span class="kbd">A</span> / <span class="kbd">D</span></div>
+    <div class="row">Boost: <span class="kbd">Shift</span> | Toggle camera: <span class="kbd">C</span></div>
+    <div class="row">Pause: <span class="kbd">P</span> | Reset: <span class="kbd">R</span></div>
+  </div>
+  <div id="status"></div>
+  <div id="credit">Three.js from CDN • Save this file as: terrain_flight.html</div>
+
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script>
+  (() => {
+    'use strict';
+
+    // ---------- Parameters ----------
+    const WORLD_SIZE = 2000;           // Size of the terrain plane in world units
+    const BASE_SEGMENTS = 256;         // Base grid resolution (high LOD) per side
+    const TREE_COUNT = 3000;           // Number of trees (instanced)
+    const RIVER_STEP = 16;             // Distance between river path points
+    const RIVER_WIDTH = 36;            // Visual river width (surface)
+    const RIVER_VALLEY_WIDTH = 60;     // Valley width used to carve terrain
+    const RIVER_VALLEY_DEPTH = 18;     // How deep to carve the river valley
+    const NOISE_ELEVATION = 120;       // Max terrain elevation amplitude
+    const TERRAIN_OFFSET_Y = -10;      // Shifts whole terrain up/down
+    const CLEARANCE_BASE = 8;          // Base clearance above terrain for craft
+    const CLEARANCE_TREE_EXTRA = 8;    // Extra clearance to avoid trees
+    const LOOKAHEAD_DIST = 40;         // Collision look-ahead forward distance
+    const BOUNDS_MARGIN = 40;          // Margin before turning back at world edge
+
+    // ---------- Renderer, Scene, Camera ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x82a5d6);
+    scene.fog = new THREE.FogExp2(0x7ea2cf, 0.0008);
+
+    const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 5000);
+    camera.position.set(0, 40, 100);
+
+    // ---------- Lights ----------
+    const hemi = new THREE.HemisphereLight(0xbfd7ff, 0x32423a, 0.85);
+    scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight(0xfff2cf, 0.9);
+    sun.position.set(-300, 400, 200);
+    sun.castShadow = false;
+    scene.add(sun);
+
+    // ---------- Random & Noise ----------
+    // Seeded PRNG
+    const seed = (Date.now() ^ 0x9e3779b9) >>> 0;
+    function mulberry32(a) {
+      return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      }
+    }
+    const rnd = mulberry32(seed);
+
+    // 2D value noise with smooth interpolation + fractal Brownian motion
+    function hash2i(x, y) {
+      // Integer hash -> 32-bit unsigned
+      let h = x * 374761393 + y * 668265263; // large primes
+      h = (h ^ (h >>> 13)) >>> 0;
+      h = Math.imul(h, 1274126177) >>> 0;
+      return (h ^ (h >>> 16)) >>> 0;
+    }
+    function rand2i(x, y) {
+      return (hash2i(x, y) / 4294967296) * 2 - 1; // [-1,1]
+    }
+    function smoothstep(t) {
+      return t * t * (3 - 2 * t);
+    }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function valueNoise2D(x, y) {
+      const xi = Math.floor(x), yi = Math.floor(y);
+      const xf = x - xi, yf = y - yi;
+      const r00 = rand2i(xi, yi);
+      const r10 = rand2i(xi + 1, yi);
+      const r01 = rand2i(xi, yi + 1);
+      const r11 = rand2i(xi + 1, yi + 1);
+      const u = smoothstep(xf);
+      const v = smoothstep(yf);
+      const x1 = lerp(r00, r10, u);
+      const x2 = lerp(r01, r11, u);
+      return lerp(x1, x2, v); // roughly [-1,1]
+    }
+    function fbm2(x, y, octaves = 6, lacunarity = 2.0, gain = 0.5) {
+      let amp = 1.0, freq = 1.0, sum = 0.0, norm = 0.0;
+      for (let i = 0; i < octaves; i++) {
+        sum += valueNoise2D(x * freq, y * freq) * amp;
+        norm += amp;
+        amp *= gain;
+        freq *= lacunarity;
+      }
+      return sum / norm; // [-1,1] approximately
+    }
+
+    // ---------- River Path Generation ----------
+    function genRiverPath() {
+      // Start on left edge, random Z within bounds
+      const half = WORLD_SIZE * 0.5;
+      let x = -half;
+      let z = (rnd() * 0.6 + 0.2) * WORLD_SIZE - half; // within middle 60%
+      let theta = (rnd() - 0.5) * 0.4; // small initial deviation
+      const pts = [];
+      const maxSteps = Math.ceil(WORLD_SIZE / RIVER_STEP) + 200;
+      const meander = 0.25;
+      const turnBias = (rnd() - 0.5) * 0.1;
+
+      let steps = 0;
+      while (x < half && steps < maxSteps) {
+        pts.push(new THREE.Vector2(x, z));
+        // Meander using fractal noise
+        const t = steps * 0.08;
+        const n = fbm2(t + seed * 0.001, (t - 7.123) * 0.7, 3, 2, 0.6);
+        theta += (n + turnBias) * 0.05;
+        theta = THREE.MathUtils.clamp(theta, -0.8, 0.8);
+
+        // Step forward
+        x += Math.cos(theta) * RIVER_STEP;
+        z += Math.sin(theta) * RIVER_STEP;
+
+        // Keep within bounds
+        const zClamp = half - 20;
+        if (z < -zClamp) { z = -zClamp; theta = 0.1; }
+        if (z >  zClamp) { z =  zClamp; theta = -0.1; }
+
+        steps++;
+      }
+      // Ensure right edge endpoint
+      pts.push(new THREE.Vector2(half, z));
+      return pts;
+    }
+
+    // Distance squared from point p to segment ab (2D)
+    function distSqPointToSegment(p, a, b) {
+      const abx = b.x - a.x, abz = b.y - a.y; // using Vector2 where .y is z
+      const apx = p.x - a.x, apz = p.y - a.y;
+      const ab2 = abx * abx + abz * abz;
+      if (ab2 <= 1e-6) {
+        const dx = apx, dz = apz; return dx * dx + dz * dz;
+      }
+      const t = THREE.MathUtils.clamp((apx * abx + apz * abz) / ab2, 0, 1);
+      const cx = a.x + t * abx, cz = a.y + t * abz;
+      const dx = p.x - cx, dz = p.y - cz;
+      return dx * dx + dz * dz;
+    }
+
+    // ---------- Heightfield Generation ----------
+    const gridN = BASE_SEGMENTS + 1;
+    const heights = new Float32Array(gridN * gridN);
+    const halfSize = WORLD_SIZE * 0.5;
+
+    // Pre-generate river path
+    const riverPath = genRiverPath();
+
+    // Generate base heightfield from FBM noise
+    const baseFreq = 1.0 / 260; // base frequency scaled to world size
+    for (let j = 0; j < gridN; j++) {
+      for (let i = 0; i < gridN; i++) {
+        const idx = j * gridN + i;
+        const x = -halfSize + (i / BASE_SEGMENTS) * WORLD_SIZE;
+        const z = -halfSize + (j / BASE_SEGMENTS) * WORLD_SIZE;
+
+        // Multi-layer noise: base, ridges, low-frequency bias
+        const n1 = fbm2(x * baseFreq, z * baseFreq, 5, 2.0, 0.5);
+        const n2 = fbm2(x * baseFreq * 0.3, z * baseFreq * 0.3, 3, 2.2, 0.55);
+        const ridge = Math.abs(fbm2(x * baseFreq * 1.9, z * baseFreq * 1.9, 4, 2.0, 0.5));
+        let h = n1 * 0.65 + n2 * 0.25 + ridge * 0.1;
+
+        heights[idx] = h;
+      }
+    }
+
+    // Normalize heights to [-1,1] then scale to elevation
+    (function normalizeHeights() {
+      let min = Infinity, max = -Infinity;
+      for (let k = 0; k < heights.length; k++) { const v = heights[k]; if (v < min) min = v; if (v > max) max = v; }
+      const scale = max - min > 1e-6 ? 2.0 / (max - min) : 1.0;
+      const bias = -1 - min * scale;
+      for (let k = 0; k < heights.length; k++) heights[k] = heights[k] * scale + bias;
+    })();
+
+    // Carve river valley by subtracting a Gaussian profile near river path
+    (function carveRiver() {
+      const sigma = RIVER_VALLEY_WIDTH * 0.55;
+      const twoSigma2 = 2 * sigma * sigma;
+      // For optimization, precompute path segments
+      const segments = [];
+      for (let i = 0; i < riverPath.length - 1; i++) {
+        segments.push([riverPath[i], riverPath[i + 1]]);
+      }
+      for (let j = 0; j < gridN; j++) {
+        for (let i = 0; i < gridN; i++) {
+          const idx = j * gridN + i;
+          const x = -halfSize + (i / BASE_SEGMENTS) * WORLD_SIZE;
+          const z = -halfSize + (j / BASE_SEGMENTS) * WORLD_SIZE;
+          const p = new THREE.Vector2(x, z);
+          // Find minimum squared distance to path segments
+          let d2 = Infinity;
+          for (let s = 0; s < segments.length; s++) {
+            const [a, b] = segments[s];
+            const dsq = distSqPointToSegment(p, a, b);
+            if (dsq < d2) d2 = dsq;
+          }
+          const d = Math.sqrt(d2);
+          const valley = RIVER_VALLEY_DEPTH * Math.exp(- (d * d) / twoSigma2);
+          heights[idx] -= (valley / NOISE_ELEVATION); // subtract in normalized space
+        }
+      }
+      // Slight smoothing pass to reduce ridges around valley
+      const tmp = heights.slice(0);
+      for (let j = 1; j < gridN - 1; j++) {
+        for (let i = 1; i < gridN - 1; i++) {
+          const idx = j * gridN + i;
+          const sum = (
+            tmp[idx] * 4 +
+            tmp[idx - 1] + tmp[idx + 1] + tmp[idx - gridN] + tmp[idx + gridN]
+          ) / 8;
+          heights[idx] = THREE.MathUtils.lerp(tmp[idx], sum, 0.35);
+        }
+      }
+    })();
+
+    // Scale heights to world elevation and offset
+    for (let k = 0; k < heights.length; k++) {
+      heights[k] = heights[k] * NOISE_ELEVATION + TERRAIN_OFFSET_Y;
+    }
+
+    // ----------- Height sampling (bilinear) -----------
+    function getHeightAt(x, z) {
+      // Convert world (x,z) to grid domain
+      const gx = (x + halfSize) / WORLD_SIZE * BASE_SEGMENTS;
+      const gz = (z + halfSize) / WORLD_SIZE * BASE_SEGMENTS;
+      const i = Math.floor(gx), j = Math.floor(gz);
+      const tx = THREE.MathUtils.clamp(gx - i, 0, 1);
+      const tz = THREE.MathUtils.clamp(gz - j, 0, 1);
+      const i0 = THREE.MathUtils.clamp(i, 0, BASE_SEGMENTS);
+      const j0 = THREE.MathUtils.clamp(j, 0, BASE_SEGMENTS);
+      const i1 = THREE.MathUtils.clamp(i + 1, 0, BASE_SEGMENTS);
+      const j1 = THREE.MathUtils.clamp(j + 1, 0, BASE_SEGMENTS);
+      const idx00 = j0 * gridN + i0;
+      const idx10 = j0 * gridN + i1;
+      const idx01 = j1 * gridN + i0;
+      const idx11 = j1 * gridN + i1;
+      const h00 = heights[idx00], h10 = heights[idx10], h01 = heights[idx01], h11 = heights[idx11];
+      const hx0 = lerp(h00, h10, tx);
+      const hx1 = lerp(h01, h11, tx);
+      return lerp(hx0, hx1, tz);
+    }
+    function getSlopeAt(x, z) {
+      const e = 1.5; // small sample offset
+      const h = getHeightAt(x, z);
+      const hx = getHeightAt(x + e, z);
+      const hz = getHeightAt(x, z + e);
+      const dhdx = (hx - h) / e;
+      const dhdz = (hz - h) / e;
+      return Math.sqrt(dhdx * dhdx + dhdz * dhdz);
+    }
+
+    // ----------- Terrain Geometry (LOD with vertex colors) -----------
+    function buildTerrainGeometry(segments) {
+      const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, segments, segments);
+      geo.rotateX(-Math.PI / 2);
+
+      const pos = geo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      const color = new THREE.Color();
+
+      for (let v = 0; v < pos.count; v++) {
+        const vx = pos.getX(v);
+        const vz = pos.getZ(v);
+        const h = getHeightAt(vx, vz);
+        pos.setY(v, h);
+
+        const slope = getSlopeAt(vx, vz);
+
+        // Color ramp based on height and slope
+        // Low: river banks -> wet dark
+        // Mid: grass
+        // High/steep: rock, very high: snow
+        const hNorm = (h - (TERRAIN_OFFSET_Y - NOISE_ELEVATION)) / (NOISE_ELEVATION * 2.2);
+        let r = 0, g = 0, b = 0;
+        if (h < -5) {
+          color.setRGB(0.18, 0.24, 0.28); // darker lowlands
+        } else if (slope > 0.8) {
+          color.setRGB(0.45, 0.43, 0.40); // rocky
+        } else {
+          // Blend grass to snow
+          const t = THREE.MathUtils.smoothstep(hNorm, 0.2, 0.8);
+          const grass = new THREE.Color(0.33, 0.50, 0.28);
+          const dirt = new THREE.Color(0.38, 0.34, 0.26);
+          const snow = new THREE.Color(0.92, 0.94, 0.96);
+          const base = dirt.lerp(grass, 0.7);
+          color.copy(base).lerp(snow, Math.pow(t, 2.2));
+        }
+        colors[v * 3 + 0] = color.r;
+        colors[v * 3 + 1] = color.g;
+        colors[v * 3 + 2] = color.b;
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    const terrainMaterial = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.95,
+      metalness: 0.0,
+      envMapIntensity: 0.1
+    });
+
+    const terrainLOD = new THREE.LOD();
+    const highGeo = buildTerrainGeometry(BASE_SEGMENTS);
+    const midGeo  = buildTerrainGeometry(128);
+    const lowGeo  = buildTerrainGeometry(64);
+    const highMesh = new THREE.Mesh(highGeo, terrainMaterial);
+    const midMesh  = new THREE.Mesh(midGeo, terrainMaterial);
+    const lowMesh  = new THREE.Mesh(lowGeo, terrainMaterial);
+    highMesh.receiveShadow = false; midMesh.receiveShadow = false; lowMesh.receiveShadow = false;
+
+    terrainLOD.addLevel(highMesh, 0);
+    terrainLOD.addLevel(midMesh, 800);
+    terrainLOD.addLevel(lowMesh, 1400);
+    scene.add(terrainLOD);
+
+    // ----------- River Mesh (ribbon following bed height) -----------
+    function buildRiverMesh() {
+      const positions = [];
+      const uvs = [];
+      const indices = [];
+      let index = 0;
+      const halfW = RIVER_WIDTH * 0.5;
+
+      for (let i = 0; i < riverPath.length; i++) {
+        const c = riverPath[i];
+        const prev = riverPath[Math.max(0, i - 1)];
+        const next = riverPath[Math.min(riverPath.length - 1, i + 1)];
+        const tx = next.x - prev.x;
+        const tz = next.y - prev.y;
+        const len = Math.hypot(tx, tz) || 1;
+        const nx = -tz / len; // 2D normal (x,z plane)
+        const nz =  tx / len;
+
+        const cx = c.x;
+        const cz = c.y;
+
+        const centerH = getHeightAt(cx, cz);
+        const waterY = centerH + 0.6; // slightly above bed
+
+        // Left and right edges
+        const lx = cx + nx * halfW;
+        const lz = cz + nz * halfW;
+        const rx = cx - nx * halfW;
+        const rz = cz - nz * halfW;
+
+        positions.push(lx, waterY, lz);
+        positions.push(rx, waterY, rz);
+
+        uvs.push(0, i / (riverPath.length - 1));
+        uvs.push(1, i / (riverPath.length - 1));
+
+        if (i < riverPath.length - 1) {
+          indices.push(index, index + 1, index + 2);
+          indices.push(index + 1, index + 3, index + 2);
+        }
+        index += 2;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+
+      const mat = new THREE.MeshPhysicalMaterial({
+        color: 0x3aa0ff,
+        transmission: 0.0,
+        opacity: 0.65,
+        transparent: true,
+        roughness: 0.25,
+        metalness: 0.0,
+        reflectivity: 0.2,
+        clearcoat: 0.6,
+        clearcoatRoughness: 0.7
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = 1;
+      return mesh;
+    }
+    const riverMesh = buildRiverMesh();
+    scene.add(riverMesh);
+
+    // ----------- Instanced Trees -----------
+    const treeTrunkMaterial = new THREE.MeshStandardMaterial({ color: 0x6b4e2e, roughness: 0.9, metalness: 0.0 });
+    const treeLeafMaterial  = new THREE.MeshStandardMaterial({ color: 0x2f6f37, roughness: 0.8, metalness: 0.0 });
+
+    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.5, 3.2, 6);
+    const leafGeo = new THREE.ConeGeometry(1.6, 3.4, 8);
+    leafGeo.translate(0, 1.7, 0);
+
+    const trunks = new THREE.InstancedMesh(trunkGeo, treeTrunkMaterial, TREE_COUNT);
+    const leaves = new THREE.InstancedMesh(leafGeo, treeLeafMaterial, TREE_COUNT);
+    trunks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    leaves.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    const dummy = new THREE.Object3D();
+
+    function isNearRiver(x, z, threshold) {
+      const p = new THREE.Vector2(x, z);
+      let d2min = Infinity;
+      for (let i = 0; i < riverPath.length - 1; i++) {
+        const a = riverPath[i], b = riverPath[i + 1];
+        const d2 = distSqPointToSegment(p, a, b);
+        if (d2 < d2min) d2min = d2;
+      }
+      return d2min < threshold * threshold;
+    }
+
+    let instanceIndex = 0;
+    for (let t = 0; t < TREE_COUNT * 4 && instanceIndex < TREE_COUNT; t++) {
+      const x = (rnd() * 2 - 1) * (WORLD_SIZE * 0.5 - 8);
+      const z = (rnd() * 2 - 1) * (WORLD_SIZE * 0.5 - 8);
+      const y = getHeightAt(x, z);
+
+      if (y < -4) continue; // avoid lowlands
+      if (isNearRiver(x, z, RIVER_WIDTH * 1.2)) continue; // keep banks clear
+      const slope = getSlopeAt(x, z);
+      if (slope > 0.6) continue; // too steep
+
+      // Random scale & slight variety
+      const scale = 0.8 + rnd() * 0.7;
+      const yaw = rnd() * Math.PI * 2;
+
+      // Trunk
+      dummy.position.set(x, y, z);
+      dummy.rotation.set(0, yaw, 0);
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      trunks.setMatrixAt(instanceIndex, dummy.matrix);
+
+      // Leaves (stacked for fuller canopies)
+      dummy.position.set(x, y + 2.6 * scale, z);
+      dummy.rotation.set(0, yaw, 0);
+      dummy.scale.setScalar(scale);
+      dummy.updateMatrix();
+      leaves.setMatrixAt(instanceIndex, dummy.matrix);
+
+      instanceIndex++;
+    }
+    trunks.count = instanceIndex;
+    leaves.count = instanceIndex;
+    scene.add(trunks);
+    scene.add(leaves);
+
+    // ----------- Craft (drone/plane) and Controller -----------
+    const craft = new THREE.Group();
+    scene.add(craft);
+
+    // Simple craft model
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x98c3ff, roughness: 0.5, metalness: 0.2 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0xffc857, roughness: 0.6, metalness: 0.1 });
+
+    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 3.2, 10), bodyMat);
+    fuselage.rotation.z = Math.PI * 0.5;
+    fuselage.castShadow = false;
+    craft.add(fuselage);
+
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.8, 10), accentMat);
+    nose.position.set(1.8, 0, 0);
+    nose.rotation.z = -Math.PI * 0.5;
+    craft.add(nose);
+
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.8, 0.08), bodyMat);
+    tail.position.set(-1.5, 0.4, 0);
+    craft.add(tail);
+
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.06, 2.4), bodyMat);
+    wing.position.set(0, 0, 0);
+    wing.rotation.y = 0;
+    craft.add(wing);
+
+    const camHolder = new THREE.Object3D();
+    camHolder.position.set(0, 0.6, 0);
+    craft.add(camHolder);
+
+    // Camera modes
+    let firstPerson = false;
+    function updateCameraMode() {
+      if (firstPerson) {
+        camera.position.set(0.2, 0.3, 0.3);
+        camera.rotation.set(0, 0, 0);
+        camHolder.add(camera);
+      } else {
+        camera.position.set(-0.6, 0.9, -4.6);
+        camera.rotation.set(0, 0, 0);
+        camHolder.add(camera);
+      }
+    }
+    updateCameraMode();
+
+    craft.position.set(-WORLD_SIZE * 0.35, getHeightAt(-WORLD_SIZE * 0.35, 0) + 25, 0);
+    craft.rotation.set(0, Math.PI * 0.25, 0);
+
+    const controls = {
+      throttle: 12,
+      minSpeed: 4,
+      maxSpeed: 70,
+      yawRate: THREE.MathUtils.degToRad(60),
+      pitchRate: THREE.MathUtils.degToRad(50),
+      rollRate: THREE.MathUtils.degToRad(80),
+      damping: 0.98,
+      boost: false,
+      paused: false
+    };
+
+    const keys = Object.create(null);
+    addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      if (e.code === 'KeyC') { firstPerson = !firstPerson; updateCameraMode(); }
+      if (e.code === 'KeyP') { controls.paused = !controls.paused; }
+      if (e.code === 'KeyR') { resetCraft(); }
+    });
+    addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    function resetCraft() {
+      craft.position.set(0, getHeightAt(0, 0) + 30, -WORLD_SIZE * 0.2);
+      craft.rotation.set(0, 0, 0);
+      controls.throttle = 12;
+    }
+
+    // ----------- Update loop / physics-ish -----------
+    const clock = new THREE.Clock();
+    let lastTime = performance.now();
+
+    function step() {
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const now = performance.now();
+      if (!controls.paused) update(dt);
+      terrainLOD.update(camera);
+      renderer.render(scene, camera);
+      lastTime = now;
+      requestAnimationFrame(step);
+    }
+
+    function update(dt) {
+      // Input handling
+      const boost = keys['ShiftLeft'] || keys['ShiftRight'];
+      controls.boost = boost;
+
+      // Throttle control
+      if (keys['KeyW']) controls.throttle += 20 * dt;
+      if (keys['KeyS']) controls.throttle -= 30 * dt;
+      const maxSpd = boost ? controls.maxSpeed * 1.6 : controls.maxSpeed;
+      controls.throttle = THREE.MathUtils.clamp(controls.throttle, controls.minSpeed, maxSpd);
+
+      // Orientation changes
+      const euler = new THREE.Euler().copy(craft.rotation);
+
+      if (keys['ArrowLeft'])  euler.y += controls.yawRate * dt;
+      if (keys['ArrowRight']) euler.y -= controls.yawRate * dt;
+
+      if (keys['ArrowUp'])    euler.x -= controls.pitchRate * dt;
+      if (keys['ArrowDown'])  euler.x += controls.pitchRate * dt;
+
+      if (keys['KeyA'])       euler.z += controls.rollRate * dt;
+      if (keys['KeyD'])       euler.z -= controls.rollRate * dt;
+
+      // Gentle auto-level roll
+      euler.z *= Math.pow(controls.damping, dt * 60);
+
+      // Clamp pitch to avoid extreme flips
+      euler.x = THREE.MathUtils.clamp(euler.x, -Math.PI / 2 + 0.15, Math.PI / 2 - 0.15);
+
+      craft.rotation.copy(euler);
+
+      // Move forward along local -Z (Three.js forward)
+      const forward = new THREE.Vector3(0, 0, -1).applyEuler(craft.rotation).normalize();
+      const speed = controls.throttle;
+      craft.position.addScaledVector(forward, speed * dt);
+
+      // Collision avoidance (terrain + basic tree clearance)
+      const groundHere = getHeightAt(craft.position.x, craft.position.z);
+      const clearance = CLEARANCE_BASE + CLEARANCE_TREE_EXTRA * 0.6; // basic margin
+      const minY = groundHere + clearance;
+      if (craft.position.y < minY) {
+        craft.position.y = minY;
+        // Pitch up gently if scraping ground
+        craft.rotation.x = THREE.MathUtils.lerp(craft.rotation.x, -0.1, 0.15);
+      }
+
+      // Look-ahead predictive check
+      const lookAhead = LOOKAHEAD_DIST + speed * 0.6;
+      const ahead = new THREE.Vector3().copy(craft.position).addScaledVector(forward, lookAhead);
+      const groundAhead = getHeightAt(ahead.x, ahead.z) + clearance + 2;
+      const pathY = craft.position.y + forward.y * lookAhead;
+      if (pathY < groundAhead) {
+        // Nudge up and yaw slightly following terrain normal
+        craft.rotation.x -= THREE.MathUtils.degToRad(30) * dt;
+        craft.position.y = THREE.MathUtils.lerp(craft.position.y, groundAhead + 2, 0.08);
+      }
+
+      // Keep within world bounds, turn back softly
+      const half = WORLD_SIZE * 0.5 - 2;
+      if (craft.position.x < -half + BOUNDS_MARGIN) craft.rotation.y += controls.yawRate * 0.8 * dt;
+      if (craft.position.x >  half - BOUNDS_MARGIN) craft.rotation.y -= controls.yawRate * 0.8 * dt;
+      if (craft.position.z < -half + BOUNDS_MARGIN) craft.rotation.y += controls.yawRate * 0.8 * dt;
+      if (craft.position.z >  half - BOUNDS_MARGIN) craft.rotation.y -= controls.yawRate * 0.8 * dt;
+
+      // Update status HUD
+      updateHUD(speed);
+    }
+
+    function updateHUD(speed) {
+      const pos = craft.position;
+      const yGround = getHeightAt(pos.x, pos.z);
+      const altitude = pos.y - yGround;
+      const el = document.getElementById('status');
+      el.textContent =
+        'Speed: ' + speed.toFixed(1) + (controls.boost ? ' (boost)' : '') + '\n' +
+        'Alt:   ' + altitude.toFixed(1) + ' m\n' +
+        'Pos:   ' + pos.x.toFixed(0) + ', ' + pos.y.toFixed(0) + ', ' + pos.z.toFixed(0) + '\n' +
+        'Cam:   ' + (firstPerson ? 'First-person' : 'Chase') + '\n' +
+        (controls.paused ? 'Paused' : '');
+    }
+
+    // ----------- Resize ----------
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // ----------- Start loop -----------
+    requestAnimationFrame(step);
+  })();
+  </script>
+</body>
+</html>

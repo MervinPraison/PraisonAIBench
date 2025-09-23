@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotating Cube with Three.js</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r150/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.150.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body style="margin: 0; overflow: hidden;">
+    <div id="container" style="width: 100vw; height: 100vh;"></div>
+    <script>
+        // Scene, Camera, Renderer
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // Cube geometry and materials for different colored faces
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const materials = [
+            new THREE.MeshLambertMaterial({ color: 0xff0000 }), // Red - Front
+            new THREE.MeshLambertMaterial({ color: 0x00ff00 }), // Green - Back
+            new THREE.MeshLambertMaterial({ color: 0x0000ff }), // Blue - Top
+            new THREE.MeshLambertMaterial({ color: 0xffff00 }), // Yellow - Bottom
+            new THREE.MeshLambertMaterial({ color: 0xff00ff }), // Magenta - Left
+            new THREE.MeshLambertMaterial({ color: 0x00ffff })  // Cyan - Right
+        ];
+        const cube = new THREE.Mesh(geometry, materials);
+        scene.add(cube);
+
+        // Lighting
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+
+        // Camera position
+        camera.position.z = 5;
+
+        // OrbitControls for user interaction
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            // Continuous rotation
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+            controls.update(); // Required for damping
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

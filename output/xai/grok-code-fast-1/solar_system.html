@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Solar System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Add point light at the sun
+        const light = new THREE.PointLight(0xffffff, 1, 100);
+        light.position.set(0, 0, 0);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040, 0.3)); // Ambient light for visibility
+
+        // Sun
+        const sunGeometry = new THREE.SphereGeometry(1, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+
+        // Earth
+        const earthGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+        const earthMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        scene.add(earth);
+
+        // Moon
+        const moonGeometry = new THREE.SphereGeometry(0.1, 32, 32);
+        const moonMaterial = new THREE.MeshLambertMaterial({ color: 0x888888 });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        scene.add(moon);
+
+        // Stars
+        const starCount = 1000;
+        const starPositions = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount; i++) {
+            starPositions[i * 3] = (Math.random() - 0.5) * 2000;
+            starPositions[i * 3 + 1] = (Math.random() - 0.5) * 2000;
+            starPositions[i * 3 + 2] = (Math.random() - 0.5) * 2000;
+        }
+        const starGeometry = new THREE.BufferGeometry();
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const starMaterial = new THREE.PointsMaterial({ color: 0xffffff });
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        camera.position.set(0, 20, 20);
+        camera.lookAt(0, 0, 0);
+
+        // Orbital parameters
+        const earthOrbitRadius = 10; // Distance from sun to earth
+        const moonOrbitRadius = 2;   // Distance from earth to moon
+        let earthAngle = 0;          // Angle for earth's orbit
+        let moonAngle = 0;           // Angle for moon's orbit
+
+        // Realistic speeds: Earth takes 365 days, moon 27 days, so moon is ~13.5 times faster
+        // For animation, we'll speed up: Earth's orbit in 10 seconds, moon accordingly
+        const earthSpeed = (2 * Math.PI) / 1000; // Angle increment per frame (assuming 60fps, 10s orbit)
+        const moonSpeed = earthSpeed * 13.5;     // Faster for moon
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update positions
+            earth.position.x = earthOrbitRadius * Math.cos(earthAngle);
+            earth.position.z = earthOrbitRadius * Math.sin(earthAngle);
+
+            moon.position.x = earth.position.x + moonOrbitRadius * Math.cos(moonAngle);
+            moon.position.z = earth.position.z + moonOrbitRadius * Math.sin(moonAngle);
+
+            // Increment angles
+            earthAngle += earthSpeed;
+            moonAngle += moonSpeed;
+
+            // Rotate the earth for effect
+            earth.rotation.y += 0.01;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

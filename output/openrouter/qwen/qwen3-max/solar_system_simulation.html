@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Solar System</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000;
+        }
+        canvas { 
+            display: block; 
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Initialize Three.js scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0x333333);
+        scene.add(ambientLight);
+
+        // Create sun (yellow sphere at center)
+        const sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+
+        // Add point light at sun's position
+        const sunLight = new THREE.PointLight(0xffffff, 1.5, 100);
+        scene.add(sunLight);
+
+        // Create Earth (blue sphere)
+        const earthGeometry = new THREE.SphereGeometry(1, 32, 32);
+        const earthMaterial = new THREE.MeshLambertMaterial({ color: 0x1976d2 });
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        
+        // Create Earth's orbit path
+        const earthOrbitRadius = 20;
+        const earthOrbit = new THREE.Object3D();
+        scene.add(earthOrbit);
+        earth.position.set(earthOrbitRadius, 0, 0);
+        earthOrbit.add(earth);
+
+        // Create Moon (gray sphere)
+        const moonGeometry = new THREE.SphereGeometry(0.3, 32, 32);
+        const moonMaterial = new THREE.MeshLambertMaterial({ color: 0x888888 });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        
+        // Create Moon's orbit around Earth
+        const moonOrbitRadius = 3;
+        const moonOrbit = new THREE.Object3D();
+        earth.add(moonOrbit);
+        moon.position.set(moonOrbitRadius, 0, 0);
+        moonOrbit.add(moon);
+
+        // Add stars to background
+        const starGeometry = new THREE.BufferGeometry();
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.1
+        });
+
+        const starVertices = [];
+        for (let i = 0; i < 10000; i++) {
+            const x = (Math.random() - 0.5) * 2000;
+            const y = (Math.random() - 0.5) * 2000;
+            const z = (Math.random() - 0.5) * 2000;
+            starVertices.push(x, y, z);
+        }
+
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        // Position camera
+        camera.position.z = 50;
+
+        // Animation variables
+        let earthOrbitSpeed = 0.001;  // Earth orbits sun once per ~628 frames (2π/0.001)
+        let moonOrbitSpeed = 0.01;    // Moon orbits Earth faster
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Rotate Earth around Sun
+            earthOrbit.rotation.y += earthOrbitSpeed;
+            
+            // Rotate Moon around Earth
+            moonOrbit.rotation.y += moonOrbitSpeed;
+            
+            // Self-rotation for celestial bodies
+            sun.rotation.y += 0.0005;
+            earth.rotation.y += 0.005;
+            moon.rotation.y += 0.003;
+            
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

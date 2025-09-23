@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Physics Playground - Three.js + cannon-es</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #0e0f12;
+      color: #eaeaea;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      height: 100%;
+    }
+    #ui {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      padding: 10px 12px;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      backdrop-filter: blur(6px);
+      z-index: 10;
+      user-select: none;
+    }
+    #ui h1 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      opacity: 0.95;
+    }
+    #ui .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 6px 0;
+      flex-wrap: wrap;
+    }
+    #ui button, #ui input[type="range"], #ui input[type="checkbox"], #ui label {
+      cursor: pointer;
+    }
+    #ui button {
+      background: #3a7afe;
+      color: white;
+      border: 0;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-weight: 600;
+      box-shadow: 0 2px 0 rgba(0,0,0,0.25);
+    }
+    #ui button:active {
+      transform: translateY(1px);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.25);
+    }
+    #ui .small {
+      font-size: 12px;
+      color: #cfcfcf;
+      opacity: 0.9;
+      line-height: 1.35;
+    }
+    #help {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      padding: 8px 10px;
+      background: rgba(0, 0, 0, 0.45);
+      border-radius: 8px;
+      font-size: 12px;
+      color: #dcdcdc;
+      max-width: min(420px, calc(100vw - 24px));
+    }
+    a, a:visited {
+      color: #9ad1ff;
+      text-decoration: none;
+    }
+    .value {
+      min-width: 56px;
+      display: inline-block;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: #a2ffa2;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <h1>Physics Playground</h1>
+    <div class="row">
+      <button id="resetBtn" title="Reset scene">Reset</button>
+      <label title="Slow motion">
+        <input type="checkbox" id="slowMoChk" />
+        Slow motion
+      </label>
+    </div>
+    <div class="row">
+      <label for="gravitySlider">Gravity Y</label>
+      <input id="gravitySlider" type="range" min="-20" max="0" step="0.1" value="-9.8" />
+      <span class="value" id="gravityVal">-9.8</span>
+    </div>
+    <div class="small">
+      - Drag dynamic objects with Left Mouse (or touch)<br />
+      - Orbit: Right Mouse / two-finger drag, Zoom: Wheel / pinch
+    </div>
+  </div>
+  <div id="help">
+    Included: stackable boxes and spheres, hinge demo (door), simple ragdoll, mouse dragging, gravity control, slow-motion, and reset.
+  </div>
+
+  <script type="module">
+    // Import Three.js and cannon-es from CDNs
+    import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+    import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
+
+    // THREE globals
+    let scene, renderer, camera, controls, clock;
+    let dynamicGroup; // holds all dynamic meshes for easy reset
+
+    // CANNON globals
+    let world;
+    let physicsPairs = []; // { mesh, body }
+    let constraints = [];  // store constraints for cleanup
+
+    // Mouse drag interaction
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    let dragPlane = null;
+    let isDragging = false;
+    let grabbed = {
+      body: null,
+      constraint: null,
+      localPivot: new CANNON.Vec3(),
+      anchorBody: null,
+      lastAnchorPos: new THREE.Vector3()
+    };
+
+    // Simulation control
+    let timeScale = 1.0; // 1.0 normal speed, <1 slow motion
+    const fixedTimeStep = 1 / 60;
+    const maxSubSteps = 10;
+
+    // Materials (visual)
+    const materials = {
+      ground: new THREE.MeshStandardMaterial({ color: 0x30343b, metalness: 0.0, roughness: 0.8 }),
+      box:    new THREE.MeshStandardMaterial({ color: 0x6fa8dc, metalness: 0.1, roughness: 0.7 }),
+      boxAlt: new THREE.MeshStandardMaterial({ color: 0xf6b26b, metalness: 0.1, roughness: 0.7 }),
+      sphere: new THREE.MeshStandardMaterial({ color: 0x93c47d, metalness: 0.1, roughness: 0.5 }),
+      rag:    new THREE.MeshStandardMaterial({ color: 0xc27ba0, metalness: 0.0, roughness: 0.9 }),
+      door:   new THREE.MeshStandardMaterial({ color: 0xbcbcbc, metalness: 0.0, roughness: 0.9 }),
+    };
+
+    // UI elements
+    const ui = {
+      resetBtn: null,
+      slowMoChk: null,
+      gravitySlider: null,
+      gravityVal: null
+    };
+
+    init();
+
+    function init() {
+      initThree();
+      initPhysicsWorld();
+      buildSceneContents();
+      setupUI();
+      animate();
+      window.addEventListener('resize', onResize);
+    }
+
+    function initThree() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0e0f12);
+      clock = new THREE.Clock();
+
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
+      camera.position.set(8, 6, 10);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      document.body.appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxDistance = 50;
+      controls.target.set(0, 1, 0);
+      controls.update();
+
+      // Lights
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x202020, 0.8);
+      scene.add(hemi);
+
+      const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+      dirLight.position.set(10, 12, 8);
+      dirLight.castShadow = true;
+      dirLight.shadow.mapSize.set(2048, 2048);
+      dirLight.shadow.camera.near = 1;
+      dirLight.shadow.camera.far = 50;
+      dirLight.shadow.camera.left = -20;
+      dirLight.shadow.camera.right = 20;
+      dirLight.shadow.camera.top = 20;
+      dirLight.shadow.camera.bottom = -20;
+      scene.add(dirLight);
+
+      // Grid & ambient feel
+      const grid = new THREE.GridHelper(100, 100, 0x666666, 0x333333);
+      grid.position.y = 0.001;
+      scene.add(grid);
+
+      // Mouse inputs for dragging
+      renderer.domElement.addEventListener('pointerdown', onPointerDown);
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+    }
+
+    function initPhysicsWorld() {
+      world = new CANNON.World({
+        gravity: new CANNON.Vec3(0, -9.82, 0)
+      });
+      world.broadphase = new CANNON.SAPBroadphase(world);
+      world.allowSleep = true;
+      world.solver.iterations = 10;
+
+      // Default materials
+      const defaultMat = new CANNON.Material('default');
+      const slippery = new CANNON.Material('slippery');
+
+      const defaultContact = new CANNON.ContactMaterial(defaultMat, defaultMat, {
+        friction: 0.4,
+        restitution: 0.15
+      });
+      const slipContact = new CANNON.ContactMaterial(defaultMat, slippery, {
+        friction: 0.1,
+        restitution: 0.05
+      });
+      world.defaultContactMaterial = defaultContact;
+      world.addContactMaterial(defaultContact);
+      world.addContactMaterial(slipContact);
+
+      // Create groups
+      dynamicGroup = new THREE.Group();
+      scene.add(dynamicGroup);
+
+      // Ground
+      const groundSize = 100;
+      const groundGeom = new THREE.BoxGeometry(groundSize, 1, groundSize);
+      const groundMesh = new THREE.Mesh(groundGeom, materials.ground);
+      groundMesh.position.set(0, -0.5, 0);
+      groundMesh.receiveShadow = true;
+      scene.add(groundMesh);
+
+      const groundBody = new CANNON.Body({
+        mass: 0,
+        shape: new CANNON.Box(new CANNON.Vec3(groundSize / 2, 0.5, groundSize / 2)),
+        material: defaultMat
+      });
+      groundBody.position.copy(threeToCannonVec(groundMesh.position));
+      world.addBody(groundBody);
+    }
+
+    function buildSceneContents() {
+      // Clear dynamic content if any
+      clearDynamic();
+
+      // Add stackable boxes and spheres
+      buildStacks();
+
+      // Hinge demo: simple door on a post
+      addHingeDoor(new THREE.Vector3(-6, 0.9, -2));
+
+      // Add a ragdoll
+      addRagdoll(new THREE.Vector3(2.5, 2.5, 0));
+    }
+
+    function clearDynamic() {
+      // Remove existing constraints
+      constraints.forEach(c => world.removeConstraint(c));
+      constraints.length = 0;
+
+      // Remove bodies for dynamic items (leaving ground)
+      physicsPairs.forEach(p => {
+        try { world.removeBody(p.body); } catch (e) {}
+      });
+      physicsPairs.length = 0;
+
+      // Remove dynamic meshes
+      while (dynamicGroup.children.length) {
+        const child = dynamicGroup.children.pop();
+        child.geometry?.dispose?.();
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose?.());
+        } else {
+          child.material?.dispose?.();
+        }
+        scene.remove(child);
+      }
+
+      // Reset dragging if active
+      if (isDragging) {
+        endDrag();
+      }
+    }
+
+    function setupUI() {
+      ui.resetBtn = document.getElementById('resetBtn');
+      ui.slowMoChk = document.getElementById('slowMoChk');
+      ui.gravitySlider = document.getElementById('gravitySlider');
+      ui.gravityVal = document.getElementById('gravityVal');
+
+      ui.resetBtn.addEventListener('click', () => {
+        // Recreate world to fully reset simulation state
+        scene.remove(dynamicGroup);
+        initPhysicsWorld();
+        buildSceneContents();
+        updateGravityFromUI();
+      });
+
+      ui.slowMoChk.addEventListener('change', (e) => {
+        timeScale = e.target.checked ? 0.2 : 1.0;
+      });
+
+      ui.gravitySlider.addEventListener('input', () => {
+        updateGravityFromUI();
+      });
+      updateGravityFromUI();
+    }
+
+    function updateGravityFromUI() {
+      const gy = parseFloat(ui.gravitySlider.value);
+      ui.gravityVal.textContent = gy.toFixed(1);
+      world.gravity.set(0, gy, 0);
+    }
+
+    // Builders
+
+    function buildStacks() {
+      const baseX = -1.5;
+      const baseZ = 2.5;
+
+      // Tower of boxes
+      const levels = 6;
+      for (let i = 0; i < levels; i++) {
+        const size = new THREE.Vector3(0.6, 0.4, 0.6);
+        const x = baseX + (Math.random() - 0.5) * 0.3;
+        const y = 0.2 + i * (size.y + 0.01);
+        const z = baseZ + (Math.random() - 0.5) * 0.3;
+        addBox(size, new THREE.Vector3(x, y, z), 1.0, i % 2 ? materials.box : materials.boxAlt);
+      }
+
+      // Stack of alternating boxes and spheres
+      const colX = 0.0;
+      const colZ = -2.5;
+      for (let i = 0; i < 5; i++) {
+        if (i % 2 === 0) {
+          const s = 0.5;
+          addBox(new THREE.Vector3(s, s, s), new THREE.Vector3(colX, 0.25 + i * (s + 0.02), colZ), 0.8, materials.boxAlt);
+        } else {
+          const r = 0.32;
+          addSphere(r, new THREE.Vector3(colX, r + i * (r * 2 + 0.02), colZ), 0.6, materials.sphere);
+        }
+      }
+
+      // A few loose spheres
+      for (let i = 0; i < 8; i++) {
+        const r = 0.25 + Math.random() * 0.15;
+        const px = -2 + Math.random() * 4;
+        const py = 2 + Math.random() * 2;
+        const pz = -3 + Math.random() * 6;
+        addSphere(r, new THREE.Vector3(px, py, pz), 0.5, materials.sphere);
+      }
+    }
+
+    function addHingeDoor(position) {
+      // Create a "post" (static) and a "door" (dynamic) connected with hinge
+      const doorW = 1.2, doorH = 1.8, doorD = 0.12;
+
+      // Visual post (optional)
+      const postGeom = new THREE.BoxGeometry(0.15, doorH + 0.2, 0.2);
+      const postMesh = new THREE.Mesh(postGeom, materials.door);
+      postMesh.position.set(position.x - doorW/2 - 0.075, position.y, position.z);
+      postMesh.castShadow = true;
+      postMesh.receiveShadow = true;
+      dynamicGroup.add(postMesh); // keep in dynamicGroup for easy cleanup, though it's static in physics
+
+      const postBody = new CANNON.Body({ mass: 0 });
+      postBody.addShape(new CANNON.Box(new CANNON.Vec3(0.075, (doorH + 0.2)/2, 0.1)));
+      postBody.position.copy(threeToCannonVec(postMesh.position));
+      world.addBody(postBody);
+
+      const doorGeom = new THREE.BoxGeometry(doorW, doorH, doorD);
+      const doorMesh = new THREE.Mesh(doorGeom, materials.door);
+      doorMesh.position.copy(position);
+      doorMesh.castShadow = true;
+      doorMesh.receiveShadow = true;
+      dynamicGroup.add(doorMesh);
+
+      const doorBody = new CANNON.Body({ mass: 5 });
+      doorBody.addShape(new CANNON.Box(new CANNON.Vec3(doorW/2, doorH/2, doorD/2)));
+      doorBody.position.copy(threeToCannonVec(doorMesh.position));
+      world.addBody(doorBody);
+
+      linkBodyMesh(doorBody, doorMesh);
+
+      // Hinge axis: vertical Y
+      const hinge = new CANNON.HingeConstraint(doorBody, postBody, {
+        pivotA: new CANNON.Vec3(-doorW/2, 0, 0), // left edge of door
+        axisA: new CANNON.Vec3(0, 1, 0),
+        pivotB: new CANNON.Vec3(0.075, 0, 0),    // center of post (offset to align)
+        axisB: new CANNON.Vec3(0, 1, 0),
+        collideConnected: false
+      });
+      hinge.setLimits(-Math.PI * 0.95, Math.PI * 0.95, 0.9, 0.3);
+      world.addConstraint(hinge);
+      constraints.push(hinge);
+    }
+
+    function addRagdoll(origin = new THREE.Vector3()) {
+      // Simple box/sphere ragdoll with hinge joints
+
+      // Dimensions
+      const torsoSize = new THREE.Vector3(0.4, 0.6, 0.2);
+      const pelvisSize = new THREE.Vector3(0.35, 0.3, 0.2);
+      const headRadius = 0.15;
+      const upperArm = new THREE.Vector3(0.3, 0.12, 0.12);
+      const lowerArm = new THREE.Vector3(0.3, 0.1, 0.1);
+      const upperLeg = new THREE.Vector3(0.2, 0.45, 0.2);
+      const lowerLeg = new THREE.Vector3(0.18, 0.45, 0.18);
+
+      // Bodies
+      const pelvis = addBox(pelvisSize, origin.clone().add(new THREE.Vector3(0, 1.2, 0)), 2.0, materials.rag).body;
+      const torso  = addBox(torsoSize,  origin.clone().add(new THREE.Vector3(0, 1.2 + (pelvisSize.y/2 + torsoSize.y/2), 0)), 2.5, materials.rag).body;
+      const head   = addSphere(headRadius, origin.clone().add(new THREE.Vector3(0, 1.2 + pelvisSize.y + torsoSize.y + headRadius, 0)), 0.8, materials.rag).body;
+
+      // Arms L/R
+      const shoulderY = pelvis.position.y + pelvisSize.y/2 + torsoSize.y/2;
+      const shoulderOffsetX = torsoSize.x/2 + upperArm.x/2;
+      const elbowOffset = (upperArm.x/2 + lowerArm.x/2);
+
+      const uArmL = addBox(upperArm, new THREE.Vector3().copy(origin).setX(origin.x - shoulderOffsetX).setY(shoulderY).setZ(origin.z), 1.0, materials.rag).body;
+      const lArmL = addBox(lowerArm, new THREE.Vector3().copy(origin).setX(origin.x - shoulderOffsetX - lowerArm.x - 0.02).setY(shoulderY).setZ(origin.z), 0.8, materials.rag).body;
+
+      const uArmR = addBox(upperArm, new THREE.Vector3().copy(origin).setX(origin.x + shoulderOffsetX).setY(shoulderY).setZ(origin.z), 1.0, materials.rag).body;
+      const lArmR = addBox(lowerArm, new THREE.Vector3().copy(origin).setX(origin.x + shoulderOffsetX + lowerArm.x + 0.02).setY(shoulderY).setZ(origin.z), 0.8, materials.rag).body;
+
+      // Legs L/R
+      const hipY = pelvis.position.y - pelvisSize.y/2 - upperLeg.y/2;
+      const kneeY = hipY - upperLeg.y/2 - lowerLeg.y/2;
+      const hipOffsetX = pelvisSize.x * 0.25;
+
+      const uLegL = addBox(upperLeg, new THREE.Vector3(origin.x - hipOffsetX, hipY, origin.z), 1.6, materials.rag).body;
+      const lLegL = addBox(lowerLeg, new THREE.Vector3(origin.x - hipOffsetX, kneeY, origin.z), 1.2, materials.rag).body;
+
+      const uLegR = addBox(upperLeg, new THREE.Vector3(origin.x + hipOffsetX, hipY, origin.z), 1.6, materials.rag).body;
+      const lLegR = addBox(lowerLeg, new THREE.Vector3(origin.x + hipOffsetX, kneeY, origin.z), 1.2, materials.rag).body;
+
+      // Constraints
+      const axisZ = new CANNON.Vec3(0, 0, 1); // bend front/back if arms lie along X
+      const axisX = new CANNON.Vec3(1, 0, 0); // nodding neck
+
+      // Pelvis to Torso (spine hinge)
+      constraints.push(addHinge(torso, pelvis,
+        new CANNON.Vec3(0, -torsoSize.y/2, 0),
+        new CANNON.Vec3(0, pelvisSize.y/2, 0),
+        axisZ, axisZ, -0.5, 0.5));
+
+      // Neck (Torso to Head)
+      constraints.push(addHinge(head, torso,
+        new CANNON.Vec3(0, -headRadius, 0),
+        new CANNON.Vec3(0, torsoSize.y/2, 0),
+        axisX, axisX, -0.5, 0.5));
+
+      // Shoulders
+      constraints.push(addHinge(uArmL, torso,
+        new CANNON.Vec3(upperArm.x/2, 0, 0),
+        new CANNON.Vec3(-torsoSize.x/2, 0, 0),
+        axisZ, axisZ, -1.2, 1.2));
+      constraints.push(addHinge(uArmR, torso,
+        new CANNON.Vec3(-upperArm.x/2, 0, 0),
+        new CANNON.Vec3(torsoSize.x/2, 0, 0),
+        axisZ, axisZ, -1.2, 1.2));
+
+      // Elbows
+      constraints.push(addHinge(lArmL, uArmL,
+        new CANNON.Vec3(lowerArm.x/2, 0, 0),
+        new CANNON.Vec3(-upperArm.x/2, 0, 0),
+        axisZ, axisZ, 0, 2.4));
+      constraints.push(addHinge(lArmR, uArmR,
+        new CANNON.Vec3(-lowerArm.x/2, 0, 0),
+        new CANNON.Vec3(upperArm.x/2, 0, 0),
+        axisZ, axisZ, 0, 2.4));
+
+      // Hips
+      constraints.push(addHinge(uLegL, pelvis,
+        new CANNON.Vec3(0, upperLeg.y/2, 0),
+        new CANNON.Vec3(-hipOffsetX + 0, -pelvisSize.y/2, 0),
+        axisZ, axisZ, -0.7, 0.7));
+      constraints.push(addHinge(uLegR, pelvis,
+        new CANNON.Vec3(0, upperLeg.y/2, 0),
+        new CANNON.Vec3(hipOffsetX + 0, -pelvisSize.y/2, 0),
+        axisZ, axisZ, -0.7, 0.7));
+
+      // Knees
+      constraints.push(addHinge(lLegL, uLegL,
+        new CANNON.Vec3(0, lowerLeg.y/2, 0),
+        new CANNON.Vec3(0, -upperLeg.y/2, 0),
+        axisZ, axisZ, 0, 2.2));
+      constraints.push(addHinge(lLegR, uLegR,
+        new CANNON.Vec3(0, lowerLeg.y/2, 0),
+        new CANNON.Vec3(0, -upperLeg.y/2, 0),
+        axisZ, axisZ, 0, 2.2));
+    }
+
+    function addHinge(bodyA, bodyB, pivotA, pivotB, axisA, axisB, lowerLimit, upperLimit) {
+      const hinge = new CANNON.HingeConstraint(bodyA, bodyB, {
+        pivotA, pivotB, axisA, axisB, collideConnected: false
+      });
+      if (typeof lowerLimit === 'number' && typeof upperLimit === 'number') {
+        hinge.setLimits(lowerLimit, upperLimit, 0.9, 0.3);
+      }
+      world.addConstraint(hinge);
+      return hinge;
+    }
+
+    // Primitive adders
+
+    function addBox(size, position, mass = 1, material = materials.box) {
+      const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      dynamicGroup.add(mesh);
+
+      const half = new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2);
+      const shape = new CANNON.Box(half);
+      const body = new CANNON.Body({ mass });
+      body.addShape(shape);
+      body.position.copy(threeToCannonVec(position));
+      world.addBody(body);
+
+      linkBodyMesh(body, mesh);
+      return { body, mesh };
+    }
+
+    function addSphere(radius, position, mass = 1, material = materials.sphere) {
+      const geometry = new THREE.SphereGeometry(radius, 24, 18);
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.copy(position);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      dynamicGroup.add(mesh);
+
+      const shape = new CANNON.Sphere(radius);
+      const body = new CANNON.Body({ mass });
+      body.addShape(shape);
+      body.position.copy(threeToCannonVec(position));
+      world.addBody(body);
+
+      linkBodyMesh(body, mesh);
+      return { body, mesh };
+    }
+
+    function linkBodyMesh(body, mesh) {
+      mesh.userData.body = body;
+      body.userData = { mesh };
+      physicsPairs.push({ mesh, body });
+    }
+
+    // Dragging via PointToPointConstraint to a kinematic "anchor" body
+
+    function onPointerDown(e) {
+      const pos = getMouse(e);
+      mouse.copy(pos);
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects(dynamicGroup.children, false)
+        .filter(int => int.object.visible && int.object.userData?.body && int.object.userData.body.mass > 0);
+
+      if (intersects.length > 0) {
+        const hit = intersects[0];
+        const mesh = hit.object;
+        const body = mesh.userData.body;
+        const hitPoint = hit.point.clone();
+
+        // Create a dragging plane at the hit point, normal to camera direction
+        const camDir = new THREE.Vector3();
+        camera.getWorldDirection(camDir);
+        dragPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, hitPoint);
+
+        beginDrag(body, hitPoint);
+      }
+    }
+
+    function onPointerMove(e) {
+      const pos = getMouse(e);
+      mouse.copy(pos);
+
+      if (isDragging && dragPlane) {
+        raycaster.setFromCamera(mouse, camera);
+        const point = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(dragPlane, point)) {
+          moveDragAnchor(point);
+        }
+      }
+    }
+
+    function onPointerUp() {
+      if (isDragging) {
+        endDrag();
+      }
+    }
+
+    function beginDrag(body, worldPoint) {
+      isDragging = true;
+      grabbed.body = body;
+
+      // Create anchor body if needed
+      if (!grabbed.anchorBody) {
+        grabbed.anchorBody = new CANNON.Body({
+          mass: 0,
+          type: CANNON.Body.KINEMATIC,
+          shape: new CANNON.Sphere(0.01) // tiny
+        });
+        world.addBody(grabbed.anchorBody);
+      }
+
+      grabbed.anchorBody.position.set(worldPoint.x, worldPoint.y, worldPoint.z);
+      grabbed.lastAnchorPos.copy(worldPoint);
+
+      // Compute local pivot in body coordinates
+      const wp = new CANNON.Vec3(worldPoint.x, worldPoint.y, worldPoint.z);
+      const local = new CANNON.Vec3();
+      body.pointToLocalFrame(wp, local);
+      grabbed.localPivot.copy(local);
+
+      // Create constraint
+      grabbed.constraint = new CANNON.PointToPointConstraint(
+        body, grabbed.localPivot,
+        grabbed.anchorBody, new CANNON.Vec3(0, 0, 0)
+      );
+      world.addConstraint(grabbed.constraint);
+      constraints.push(grabbed.constraint);
+    }
+
+    function moveDragAnchor(worldPoint) {
+      // Update anchor position and velocity (since KINEMATIC)
+      const dt = Math.max(1e-3, clock.getDelta()); // use recent delta as estimate
+      grabbed.anchorBody.velocity.set(
+        (worldPoint.x - grabbed.lastAnchorPos.x) / dt,
+        (worldPoint.y - grabbed.lastAnchorPos.y) / dt,
+        (worldPoint.z - grabbed.lastAnchorPos.z) / dt
+      );
+      grabbed.anchorBody.position.set(worldPoint.x, worldPoint.y, worldPoint.z);
+      grabbed.lastAnchorPos.copy(worldPoint);
+    }
+
+    function endDrag() {
+      if (grabbed.constraint) {
+        world.removeConstraint(grabbed.constraint);
+        const idx = constraints.indexOf(grabbed.constraint);
+        if (idx >= 0) constraints.splice(idx, 1);
+        grabbed.constraint = null;
+      }
+      grabbed.body = null;
+      isDragging = false;
+      dragPlane = null;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+      const scaled = delta * timeScale;
+      world.step(fixedTimeStep, scaled, maxSubSteps);
+
+      // Sync Three.js meshes with Cannon bodies
+      for (let i = 0; i < physicsPairs.length; i++) {
+        const { mesh, body } = physicsPairs[i];
+        mesh.position.copy(cannonToThreeVec(body.position));
+        mesh.quaternion.copy(cannonToThreeQuat(body.quaternion));
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function getMouse(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      return new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+    }
+
+    function onResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // Helpers: conversions
+    function threeToCannonVec(v) { return new CANNON.Vec3(v.x, v.y, v.z); }
+    function cannonToThreeVec(v) { return new THREE.Vector3(v.x, v.y, v.z); }
+    function cannonToThreeQuat(q) { return new THREE.Quaternion(q.x, q.y, q.z, q.w); }
+  </script>
+</body>
+</html>

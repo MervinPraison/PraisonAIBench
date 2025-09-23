@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebXR Art Gallery</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        #ui {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            color: white;
+        }
+        
+        #vr-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            z-index: 1000;
+        }
+        
+        #vr-button:hover {
+            background-color: #1565c0;
+        }
+        
+        #vr-button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+        
+        #info-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+            display: none;
+            z-index: 1001;
+        }
+        
+        #info-panel h3 {
+            margin-top: 0;
+        }
+        
+        #close-panel {
+            background-color: #d32f2f;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        #performance-info {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 12px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>Use WASD to move, mouse to look around</div>
+        <div>Click on artworks for information</div>
+    </div>
+    
+    <button id="vr-button">Enter VR</button>
+    
+    <div id="info-panel">
+        <h3 id="artwork-title"></h3>
+        <p id="artwork-description"></p>
+        <button id="close-panel">Close</button>
+    </div>
+    
+    <div id="performance-info">
+        <div>FPS: <span id="fps">0</span></div>
+        <div>Render calls: <span id="render-calls">0</span></div>
+        <div>Triangles: <span id="triangles">0</span></div>
+    </div>
+
+    <!-- Load Three.js and WebXR from CDN -->
+    <script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.158.0/examples/js/webxr/VRButton.js"></script>
+    <script src="https://unpkg.com/three@0.158.0/examples/js/controls/PointerLockControls.js"></script>
+
+    <script>
+        class VRGallery {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.controls = null;
+                this.raycaster = null;
+                this.mouse = new THREE.Vector2();
+                
+                // VR specific
+                this.controllers = [];
+                this.teleportTargets = [];
+                this.artworks = [];
+                this.audioListener = null;
+                this.audioLoader = null;
+                
+                // Performance monitoring
+                this.performanceMonitor = {
+                    frameCount: 0,
+                    lastTime: 0,
+                    fps: 0
+                };
+                
+                // Movement
+                this.moveForward = false;
+                this.moveBackward = false;
+                this.moveLeft = false;
+                this.moveRight = false;
+                this.velocity = new THREE.Vector3();
+                this.direction = new THREE.Vector3();
+                
+                this.init();
+            }
+            
+            init() {
+                this.setupScene();
+                this.setupLighting();
+                this.setupControls();
+                this.setupWebXR();
+                this.createGalleryRoom();
+                this.createArtworks();
+                this.setupAudio();
+                this.setupEventListeners();
+                this.animate();
+            }
+            
+            setupScene() {
+                // Scene
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.Fog(0x404040, 10, 50);
+                
+                // Camera
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+                this.camera.position.set(0, 1.6, 3);
+                
+                // Renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limit pixel ratio for performance
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
+                this.renderer.physicallyCorrectLights = true;
+                document.body.appendChild(this.renderer.domElement);
+                
+                // Raycaster
+                this.raycaster = new THREE.Raycaster();
+            }
+            
+            setupLighting() {
+                // Ambient light
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+                this.scene.add(ambientLight);
+                
+                // Gallery spotlights for artworks
+                const spotLights = [
+                    { position: [-4, 4, -1], target: [-4, 2, -2] },
+                    { position: [0, 4, -1], target: [0, 2, -2] },
+                    { position: [4, 4, -1], target: [4, 2, -2] },
+                    { position: [4, 4, 1], target: [4, 2, 2] },
+                    { position: [0, 4, 1], target: [0, 2, 2] },
+                    { position: [-4, 4, 1], target: [-4, 2, 2] }
+                ];
+                
+                spotLights.forEach(light => {
+                    const spotlight = new THREE.SpotLight(0xffffff, 0.8, 10, Math.PI / 6, 0.25, 1);
+                    spotlight.position.set(light.position[0], light.position[1], light.position[2]);
+                    spotlight.target.position.set(light.target[0], light.target[1], light.target[2]);
+                    spotlight.castShadow = true;
+                    spotlight.shadow.mapSize.width = 1024;
+                    spotlight.shadow.mapSize.height = 1024;
+                    this.scene.add(spotlight);
+                    this.scene.add(spotlight.target);
+                });
+                
+                // Main ceiling light
+                const mainLight = new THREE.DirectionalLight(0xffffff, 0.4);
+                mainLight.position.set(0, 8, 0);
+                mainLight.castShadow = true;
+                mainLight.shadow.mapSize.width = 2048;
+                mainLight.shadow.mapSize.height = 2048;
+                mainLight.shadow.camera.near = 0.1;
+                mainLight.shadow.camera.far = 20;
+                mainLight.shadow.camera.left = -10;
+                mainLight.shadow.camera.right = 10;
+                mainLight.shadow.camera.top = 10;
+                mainLight.shadow.camera.bottom = -10;
+                this.scene.add(mainLight);
+            }
+            
+            setupControls() {
+                // Desktop controls
+                this.controls = new THREE.PointerLockControls(this.camera, this.renderer.domElement);
+                
+                // Click to enable controls (non-VR)
+                this.renderer.domElement.addEventListener('click', () => {
+                    if (!this.renderer.xr.isPresenting) {
+                        this.controls.lock();
+                    }
+                });
+            }
+            
+            setupWebXR() {
+                this.renderer.xr.enabled = true;
+                
+                // Setup VR button
+                const vrButton = document.getElementById('vr-button');
+                
+                if ('xr' in navigator) {
+                    navigator.xr.isSessionSupported('immersive-vr').then((supported) => {
+                        if (supported) {
+                            vrButton.addEventListener('click', () => {
+                                if (!this.renderer.xr.isPresenting) {
+                                    navigator.xr.requestSession('immersive-vr', {
+                                        requiredFeatures: ['local-floor']
+                                    }).then((session) => {
+                                        this.renderer.xr.setSession(session);
+                                        this.setupVRControllers();
+                                    });
+                                }
+                            });
+                        } else {
+                            vrButton.disabled = true;
+                            vrButton.textContent = 'VR not supported';
+                        }
+                    });
+                } else {
+                    vrButton.disabled = true;
+                    vrButton.textContent = 'WebXR not available';
+                }
+            }
+            
+            setupVRControllers() {
+                // Controller setup
+                for (let i = 0; i <= 1; i++) {
+                    const controller = this.renderer.xr.getController(i);
+                    
+                    // Add ray line
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, -5], 3));
+                    const material = new THREE.LineBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.5 });
+                    const line = new THREE.Line(geometry, material);
+                    controller.add(line);
+                    
+                    // Controller interaction
+                    controller.addEventListener('selectstart', (event) => this.onControllerSelect(event, controller));
+                    controller.addEventListener('selectend', (event) => this.onControllerSelectEnd(event, controller));
+                    
+                    this.scene.add(controller);
+                    this.controllers.push(controller);
+                    
+                    // Hand tracking
+                    const hand = this.renderer.xr.getHand(i);
+                    this.scene.add(hand);
+                }
+            }
+            
+            onControllerSelect(event, controller) {
+                // Teleport and interaction logic
+                const raycaster = new THREE.Raycaster();
+                const tempMatrix = new THREE.Matrix4();
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+                
+                // Check for artwork intersections
+                const intersects = raycaster.intersectObjects(this.artworks);
+                if (intersects.length > 0) {
+                    this.showArtworkInfo(intersects[0].object);
+                }
+                
+                // Check for teleport targets
+                const floorIntersects = raycaster.intersectObjects(this.teleportTargets);
+                if (floorIntersects.length > 0) {
+                    const point = floorIntersects[0].point;
+                    // Teleport user
+                    this.camera.position.x = point.x;
+                    this.camera.position.z = point.z;
+                }
+            }
+            
+            onControllerSelectEnd(event, controller) {
+                // End selection logic if needed
+            }
+            
+            createGalleryRoom() {
+                // Floor with baked lighting texture
+                const floorGeometry = new THREE.PlaneGeometry(20, 20);
+                const floorMaterial = new THREE.MeshLambertMaterial({ 
+                    color: 0x404040,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+                floor.rotation.x = -Math.PI / 2;
+                floor.receiveShadow = true;
+                this.scene.add(floor);
+                this.teleportTargets.push(floor);
+                
+                // Walls
+                const wallMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                
+                // Back wall
+                const backWallGeometry = new THREE.PlaneGeometry(20, 6);
+                const backWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+                backWall.position.set(0, 3, -10);
+                backWall.receiveShadow = true;
+                this.scene.add(backWall);
+                
+                // Front wall
+                const frontWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+                frontWall.position.set(0, 3, 10);
+                frontWall.rotation.y = Math.PI;
+                frontWall.receiveShadow = true;
+                this.scene.add(frontWall);
+                
+                // Side walls
+                const sideWallGeometry = new THREE.PlaneGeometry(20, 6);
+                const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+                leftWall.position.set(-10, 3, 0);
+                leftWall.rotation.y = Math.PI / 2;
+                leftWall.receiveShadow = true;
+                this.scene.add(leftWall);
+                
+                const rightWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+                rightWall.position.set(10, 3, 0);
+                rightWall.rotation.y = -Math.PI / 2;
+                rightWall.receiveShadow = true;
+                this.scene.add(rightWall);
+                
+                // Ceiling
+                const ceilingGeometry = new THREE.PlaneGeometry(20, 20);
+                const ceilingMaterial = new THREE.MeshLambertMaterial({ color: 0xf0f0f0 });
+                const ceiling = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
+                ceiling.position.y = 6;
+                ceiling.rotation.x = Math.PI / 2;
+                this.scene.add(ceiling);
+            }
+            
+            createArtworks() {
+                const artworkData = [
+                    {
+                        title: "Digital Sunrise",
+                        description: "A vibrant digital interpretation of a sunrise over mountains, created using procedural generation techniques.",
+                        position: [-4, 2, -9.5],
+                        color: 0xff6b35
+                    },
+                    {
+                        title: "Geometric Dreams",
+                        description: "An abstract composition exploring the intersection of mathematics and art through geometric forms.",
+                        position: [0, 2, -9.5],
+                        color: 0x4ecdc4
+                    },
+                    {
+                        title: "Urban Reflection",
+                        description: "A study of light and shadow in urban environments, capturing the essence of city life.",
+                        position: [4, 2, -9.5],
+                        color: 0x45b7d1
+                    },
+                    {
+                        title: "Natural Patterns",
+                        description: "Inspired by fractals found in nature, this piece explores organic mathematical structures.",
+                        position: [4, 2, 9.5],
+                        color: 0x96ceb4
+                    },
+                    {
+                        title: "Color Symphony",
+                        description: "A dynamic exploration of color theory and emotional response through abstract forms.",
+                        position: [0, 2, 9.5],
+                        color: 0xfeca57
+                    },
+                    {
+                        title: "Digital Landscape",
+                        description: "A landscape reimagined through the lens of digital art, blending reality and imagination.",
+                        position: [-4, 2, 9.5],
+                        color: 0xff9ff3
+                    }
+                ];
+                
+                artworkData.forEach((data, index) => {
+                    // Create artwork frame
+                    const frameGeometry = new THREE.BoxGeometry(2.2, 1.6, 0.1);
+                    const frameMaterial = new THREE.MeshPhongMaterial({ color: 0x8b4513 });
+                    const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+                    frame.position.set(data.position[0], data.position[1], data.position[2]);
+                    frame.castShadow = true;
+                    this.scene.add(frame);
+                    
+                    // Create artwork canvas
+                    const canvasGeometry = new THREE.PlaneGeometry(2, 1.4);
+                    const canvasMaterial = new THREE.MeshPhongMaterial({ color: data.color });
+                    const canvas = new THREE.Mesh(canvasGeometry, canvasMaterial);
+                    canvas.position.set(data.position[0], data.position[1], data.position[2] + 0.06);
+                    canvas.userData = { title: data.title, description: data.description };
+                    this.artworks.push(canvas);
+                    this.scene.add(canvas);
+                    
+                    // Add some geometric details to make artworks more interesting
+                    const detailGeometry = new THREE.SphereGeometry(0.1, 8, 6);
+                    const detailMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
+                    const detail = new THREE.Mesh(detailGeometry, detailMaterial);
+                    detail.position.set(
+                        data.position[0] + (Math.random() - 0.5) * 1.5,
+                        data.position[1] + (Math.random() - 0.5) * 1,
+                        data.position[2] + 0.07
+                    );
+                    this.scene.add(detail);
+                });
+            }
+            
+            setupAudio() {
+                this.audioListener = new THREE.AudioListener();
+                this.camera.add(this.audioListener);
+                
+                this.audioLoader = new THREE.AudioLoader();
+                
+                // Ambient gallery sound
+                const ambientSound = new THREE.Audio(this.audioListener);
+                // Note: In a real implementation, you would load actual audio files
+                // ambientSound.setBuffer(buffer);
+                // ambientSound.setLoop(true);
+                // ambientSound.setVolume(0.1);
+                // ambientSound.play();
+            }
+            
+            setupEventListeners() {
+                // Keyboard controls for non-VR
+                document.addEventListener('keydown', (event) => {
+                    switch (event.code) {
+                        case 'KeyW':
+                        case 'ArrowUp':
+                            this.moveForward = true;
+                            break;
+                        case 'KeyS':
+                        case 'ArrowDown':
+                            this.moveBackward = true;
+                            break;
+                        case 'KeyA':
+                        case 'ArrowLeft':
+                            this.moveLeft = true;
+                            break;
+                        case 'KeyD':
+                        case 'ArrowRight':
+                            this.moveRight = true;
+                            break;
+                    }
+                });
+                
+                document.addEventListener('keyup', (event) => {
+                    switch (event.code) {
+                        case 'KeyW':
+                        case 'ArrowUp':
+                            this.moveForward = false;
+                            break;
+                        case 'KeyS':
+                        case 'ArrowDown':
+                            this.moveBackward = false;
+                            break;
+                        case 'KeyA':
+                        case 'ArrowLeft':
+                            this.moveLeft = false;
+                            break;
+                        case 'KeyD':
+                        case 'ArrowRight':
+                            this.moveRight = false;
+                            break;
+                    }
+                });
+                
+                // Mouse controls for artwork selection (non-VR)
+                this.renderer.domElement.addEventListener('click', (event) => {
+                    if (this.renderer.xr.isPresenting) return;
+                    
+                    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                    
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    const intersects = this.raycaster.intersectObjects(this.artworks);
+                    
+                    if (intersects.length > 0) {
+                        this.showArtworkInfo(intersects[0].object);
+                    }
+                });
+                
+                // Close info panel
+                document.getElementById('close-panel').addEventListener('click', () => {
+                    document.getElementById('info-panel').style.display = 'none';
+                });
+                
+                // Window resize
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+            }
+            
+            showArtworkInfo(artwork) {
+                const panel = document.getElementById('info-panel');
+                const title = document.getElementById('artwork-title');
+                const description = document.getElementById('artwork-description');
+                
+                title.textContent = artwork.userData.title;
+                description.textContent = artwork.userData.description;
+                panel.style.display = 'block';
+                
+                // Add spatial audio effect
+                if (this.audioListener) {
+                    const sound = new THREE.PositionalAudio(this.audioListener);
+                    // Note: In a real implementation, you would load an audio file
+                    // sound.setBuffer(clickSoundBuffer);
+                    // sound.setRefDistance(0.5);
+                    // artwork.add(sound);
+                    // sound.play();
+                }
+            }
+            
+            updateMovement(delta) {
+                if (this.renderer.xr.isPresenting) return; // Don't use keyboard movement in VR
+                
+                this.velocity.x -= this.velocity.x * 10.0 * delta;
+                this.velocity.z -= this.velocity.z * 10.0 * delta;
+                
+                this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+                this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+                this.direction.normalize();
+                
+                if (this.moveForward || this.moveBackward) {
+                    this.velocity.z -= this.direction.z * 20.0 * delta;
+                }
+                if (this.moveLeft || this.moveRight) {
+                    this.velocity.x -= this.direction.x * 20.0 * delta;
+                }
+                
+                if (this.controls.isLocked) {
+                    this.controls.moveRight(-this.velocity.x * delta);
+                    this.controls.moveForward(-this.velocity.z * delta);
+                    
+                    // Keep camera at standing height
+                    this.camera.position.y = 1.6;
+                }
+            }
+            
+            updatePerformanceMonitor() {
+                this.performanceMonitor.frameCount++;
+                const now = performance.now();
+                
+                if (now >= this.performanceMonitor.lastTime + 1000) {
+                    this.performanceMonitor.fps = Math.round(
+                        (this.performanceMonitor.frameCount * 1000) / (now - this.performanceMonitor.lastTime)
+                    );
+                    this.performanceMonitor.frameCount = 0;
+                    this.performanceMonitor.lastTime = now;
+                    
+                    // Update UI
+                    document.getElementById('fps').textContent = this.performanceMonitor.fps;
+                    document.getElementById('render-calls').textContent = this.renderer.info.render.calls;
+                    document.getElementById('triangles').textContent = this.renderer.info.render.triangles;
+                    
+                    // Performance budget check
+                    if (this.performanceMonitor.fps < 60) {
+                        console.warn('Performance below target: ' + this.performanceMonitor.fps + ' FPS');
+                        // Could implement automatic quality reduction here
+                    }
+                }
+            }
+            
+            animate() {
+                this.renderer.setAnimationLoop(() => {
+                    const delta = 0.016; // Assume 60fps for simplicity
+                    
+                    this.updateMovement(delta);
+                    this.updatePerformanceMonitor();
+                    
+                    // Update controller rays in VR
+                    if (this.renderer.xr.isPresenting) {
+                        this.controllers.forEach(controller => {
+                            if (controller.children.length > 0) {
+                                const line = controller.children[0];
+                                // Update ray visualization
+                                line.material.opacity = controller.userData.isSelecting ? 1.0 : 0.5;
+                            }
+                        });
+                    }
+                    
+                    this.renderer.render(this.scene, this.camera);
+                });
+            }
+        }
+        
+        // Initialize the VR Gallery when the page loads
+        window.addEventListener('load', () => {
+            new VRGallery();
+        });
+    </script>
+</body>
+</html>

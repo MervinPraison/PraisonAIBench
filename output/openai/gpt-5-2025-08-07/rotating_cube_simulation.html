@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Rotating 3D Cube - Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; background: #0e0e12; color: #fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    #app { position: fixed; inset: 0; }
+    .hud {
+      position: fixed; left: 12px; bottom: 12px; padding: 8px 10px;
+      background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; font-size: 12px; line-height: 1.35;
+      -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+      user-select: none; pointer-events: none;
+    }
+    a { color: #8ec5ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="hud">
+    Rotating Cube • Drag to orbit • Scroll to zoom • Right-click to pan
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/controls/OrbitControls.js';
+
+    // Basic setup
+    const container = document.getElementById('app');
+    const scene = new THREE.Scene();
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(
+      60, window.innerWidth / window.innerHeight, 0.1, 100
+    );
+    camera.position.set(3, 2, 4);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 1.5;
+    controls.maxDistance = 15;
+
+    // Lighting
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x222233, 0.7);
+    scene.add(hemiLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(5, 6, 4);
+    scene.add(dirLight);
+
+    // Cube with different colored faces
+    const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+    const materials = [
+      new THREE.MeshStandardMaterial({ color: 0xff5555, roughness: 0.5, metalness: 0.1 }), // +X
+      new THREE.MeshStandardMaterial({ color: 0x55ff55, roughness: 0.5, metalness: 0.1 }), // -X
+      new THREE.MeshStandardMaterial({ color: 0x5555ff, roughness: 0.5, metalness: 0.1 }), // +Y
+      new THREE.MeshStandardMaterial({ color: 0xffff55, roughness: 0.5, metalness: 0.1 }), // -Y
+      new THREE.MeshStandardMaterial({ color: 0xff55ff, roughness: 0.5, metalness: 0.1 }), // +Z
+      new THREE.MeshStandardMaterial({ color: 0x55ffff, roughness: 0.5, metalness: 0.1 }), // -Z
+    ];
+    const cube = new THREE.Mesh(geometry, materials);
+    scene.add(cube);
+
+    // Subtle background fog for depth perception
+    scene.fog = new THREE.Fog(0x0e0e12, 12, 26);
+
+    // Animation loop
+    function animate() {
+      // Continuous rotation
+      cube.rotation.x += 0.01;
+      cube.rotation.y += 0.016;
+
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
+
+    // Handle resize
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
+  </script>
+</body>
+</html>
