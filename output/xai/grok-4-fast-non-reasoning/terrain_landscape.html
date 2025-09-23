@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Landscape - Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #87CEEB 0%, #98FB98 100%);
+            font-family: Arial, sans-serif;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            z-index: 200;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>3D Terrain Explorer</h3>
+        <p><strong>WASD</strong> - Move (fly through terrain)</p>
+        <p><strong>Mouse</strong> - Look around</p>
+        <p><strong>Space</strong> - Move up</p>
+        <p><strong>Shift</strong> - Move down</p>
+    </div>
+    
+    <div id="loading">Loading terrain...</div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    
+    <script>
+        // Global variables
+        let scene, camera, renderer, controls;
+        let terrain, terrainMaterial;
+        let keys = {};
+        let moveSpeed = 0.5;
+        let mouseSensitivity = 0.002;
+        
+        // Noise function for terrain generation (Perlin-like noise)
+        function noise(x, y) {
+            // Simple 2D noise using sine waves
+            const n = Math.sin(x * 0.1) * Math.cos(y * 0.1);
+            const n2 = Math.sin(x * 0.05) * Math.cos(y * 0.05);
+            const n3 = Math.sin(x * 0.02) * Math.cos(y * 0.02);
+            return (n * 0.5 + n2 * 0.3 + n3 * 0.2) * 20;
+        }
+        
+        // Generate terrain height
+        function getHeight(x, y, scale = 1) {
+            let height = 0;
+            let frequency = 1;
+            let amplitude = 1;
+            
+            // Multiple octaves for more natural terrain
+            for (let i = 0; i < 4; i++) {
+                height += noise(x * frequency / scale, y * frequency / scale) * amplitude;
+                amplitude *= 0.5;
+                frequency *= 2;
+            }
+            
+            return height;
+        }
+        
+        // Create procedural grass texture
+        function createGrassTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const context = canvas.getContext('2d');
+            
+            // Create grass pattern
+            const gradient = context.createLinearGradient(0, 0, 0, 256);
+            gradient.addColorStop(0, '#4a7c59');
+            gradient.addColorStop(0.5, '#228B22');
+            gradient.addColorStop(1, '#32CD32');
+            
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 256, 256);
+            
+            // Add grass blades
+            context.fillStyle = '#2E8B57';
+            for (let i = 0; i < 1000; i++) {
+                const x = Math.random() * 256;
+                const y = Math.random() * 256;
+                const size = Math.random() * 3 + 1;
+                
+                context.fillRect(x, y, size * 0.5, size * 2);
+                context.fillRect(x + size * 0.3, y, size * 0.3, size * 1.5);
+            }
+            
+            // Add some rocks
+            context.fillStyle = '#8B4513';
+            for (let i = 0; i < 100; i++) {
+                const x = Math.random() * 256;
+                const y = Math.random() * 256;
+                const size = Math.random() * 10 + 5;
+                
+                context.beginPath();
+                context.arc(x, y, size, 0, Math.PI * 2);
+                context.fill();
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(10, 10);
+            return texture;
+        }
+        
+        // Create rock texture
+        function createRockTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const context = canvas.getContext('2d');
+            
+            // Gray rocky base
+            const gradient = context.createLinearGradient(0, 0, 128, 128);
+            gradient.addColorStop(0, '#696969');
+            gradient.addColorStop(0.5, '#A9A9A9');
+            gradient.addColorStop(1, '#808080');
+            
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 128, 128);
+            
+            // Add rock patterns
+            context.fillStyle = '#5C4033';
+            for (let i = 0; i < 50; i++) {
+                const x = Math.random() * 128;
+                const y = Math.random() * 128;
+                const size = Math.random() * 8 + 2;
+                
+                context.beginPath();
+                context.arc(x, y, size, 0, Math.PI * 2);
+                context.fill();
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(20, 20);
+            return texture;
+        }
+        
+        // Create terrain geometry
+        function createTerrain() {
+            const geometry = new THREE.PlaneGeometry(200, 200, 128, 128);
+            const vertices = geometry.attributes.position.array;
+            
+            // Modify vertices for height
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const y = vertices[i + 1];
+                vertices[i + 2] = getHeight(x, y);
+            }
+            
+            geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
+            
+            // Create material with height-based coloring
+            const material = new THREE.MeshLambertMaterial({
+                map: createGrassTexture(),
+                vertexColors: true
+            });
+            
+            // Color vertices based on height
+            const colors = new Float32Array(vertices.length);
+            for (let i = 0; i < vertices.length; i += 3) {
+                const height = vertices[i + 2];
+                let color;
+                
+                if (height > 10) {
+                    // Mountain tops - snow/rock
+                    color = new THREE.Color(0.8, 0.8, 0.9);
+                } else if (height > 2) {
+                    // Hills - rock
+                    color = new THREE.Color(0.6, 0.5, 0.4);
+                } else if (height > -2) {
+                    // Grassland
+                    color = new THREE.Color(0.2, 0.6, 0.2);
+                } else {
+                    // Valley/water
+                    color = new THREE.Color(0.2, 0.4, 0.8);
+                }
+                
+                colors[i] = color.r;
+                colors[i + 1] = color.g;
+                colors[i + 2] = color.b;
+            }
+            
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            material.vertexColors = true;
+            
+            terrain = new THREE.Mesh(geometry, material);
+            terrain.rotation.x = -Math.PI / 2;
+            terrain.position.set(0, 0, 0);
+            
+            return terrain;
+        }
+        
+        // Initialize the scene
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0xa0a0a0, 50, 300);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 20, 50);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x87CEEB);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+            
+            // Controls (simplified pointer lock)
+            controls = new THREE.PointerLockControls(camera, renderer.domElement);
+            scene.add(controls.getObject());
+            
+            // Lock pointer on click
+            renderer.domElement.addEventListener('click', function() {
+                controls.lock();
+            });
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            directionalLight.shadow.camera.left = -100;
+            directionalLight.shadow.camera.right = 100;
+            directionalLight.shadow.camera.top = 100;
+            directionalLight.shadow.camera.bottom = -100;
+            scene.add(directionalLight);
+            
+            // Add some atmospheric lights
+            for (let i = 0; i < 3; i++) {
+                const light = new THREE.PointLight(0x87CEEB, 0.5, 100);
+                light.position.set(
+                    (Math.random() - 0.5) * 200,
+                    Math.random() * 50 + 20,
+                    (Math.random() - 0.5) * 200
+                );
+                scene.add(light);
+            }
+            
+            // Create terrain
+            terrain = createTerrain();
+            scene.add(terrain);
+            
+            // Add some decorative rocks
+            const rockGeometry = new THREE.SphereGeometry(1, 8, 6);
+            const rockMaterial = new THREE.MeshLambertMaterial({
+                map: createRockTexture()
+            });
+            
+            for (let i = 0; i < 50; i++) {
+                const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+                const height = getHeight(
+                    (Math.random() - 0.5) * 180,
+                    (Math.random() - 0.5) * 180
+                );
+                rock.position.set(
+                    (Math.random() - 0.5) * 180,
+                    height + 1,
+                    (Math.random() - 0.5) * 180
+                );
+                rock.scale.set(
+                    Math.random() * 2 + 0.5,
+                    Math.random() * 1 + 0.5,
+                    Math.random() * 2 + 0.5
+                );
+                rock.castShadow = true;
+                rock.receiveShadow = true;
+                scene.add(rock);
+            }
+            
+            // Event listeners
+            setupEventListeners();
+            
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+            
+            // Start animation
+            animate();
+        }
+        
+        // Setup keyboard and mouse controls
+        function setupEventListeners() {
+            // Keyboard events
+            document.addEventListener('keydown', (event) => {
+                keys[event.code] = true;
+                
+                // Lock pointer when WASD is pressed
+                if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(event.code)) {
+                    controls.lock();
+                }
+            });
+            
+            document.addEventListener('keyup', (event) => {
+                keys[event.code] = false;
+            });
+            
+            // Mouse movement for looking around
+            let mouseX = 0, mouseY = 0;
+            document.addEventListener('mousemove', (event) => {
+                if (controls.isLocked) {
+                    mouseX -= event.movementX * mouseSensitivity;
+                    mouseY -= event.movementY * mouseSensitivity;
+                    mouseY = Math.max(-Math.PI/2, Math.min(Math.PI/2, mouseY));
+                    
+                    camera.rotation.order = 'YXZ';
+                    camera.rotation.y = mouseX;
+                    camera.rotation.x = mouseY;
+                }
+            });
+            
+            // Pointer lock events
+            controls.addEventListener('lock', function() {
+                document.body.style.cursor = 'none';
+            });
+            
+            controls.addEventListener('unlock', function() {
+                document.body.style.cursor = 'auto';
+            });
+            
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        // Movement logic
+        function updateMovement() {
+            if (!controls.isLocked) return;
+            
+            const direction = new THREE.Vector3();
+            const frontVector = new THREE.Vector3();
+            const sideVector = new THREE.Vector3();
+            
+            frontVector.set(0, 0, -(keys['KeyW'] ? 1 : 0) + (keys['KeyS'] ? 1 : 0));
+            sideVector.set(-(keys['KeyA'] ? 1 : 0) + (keys['KeyD'] ? 1 : 0), 0, 0);
+            
+            direction
+                .subVectors(frontVector, sideVector)
+                .normalize()
+                .multiplyScalar(moveSpeed)
+                .applyEuler(camera.rotation);
+            
+            // Vertical movement
+            const verticalSpeed = 0;
+            if (keys['Space']) {
+                direction.y += moveSpeed * 0.5;
+            }
+            if (keys['ShiftLeft']) {
+                direction.y -= moveSpeed * 0.5;
+            }
+            
+            // Apply movement relative to camera orientation
+            const moveX = direction.x;
+            const moveY = direction.y;
+            const moveZ = direction.z;
+            
+            camera.position.x += moveX;
+            camera.position.y += moveY;
+            camera.position.z += moveZ;
+            
+            // Keep camera above terrain (simple collision)
+            const terrainHeight = getHeight(camera.position.x, camera.position.z);
+            if (camera.position.y < terrainHeight + 5) {
+                camera.position.y = terrainHeight + 5;
+            }
+        }
+        
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            updateMovement();
+            
+            // Animate terrain slightly for wind effect
+            if (terrain) {
+                terrain.rotation.z += 0.0001;
+            }
+            
+            // Update fog for atmospheric effect
+            scene.fog.near = Math.max(0, camera.position.y - 20);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // Start the application
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

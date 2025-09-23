@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Art Gallery</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Arial', sans-serif;
+            background: #000;
+        }
+
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #enter-vr {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            pointer-events: all;
+            font-size: 16px;
+            z-index: 101;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .modal {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 400px;
+            max-height: 80%;
+            overflow-y: auto;
+            z-index: 200;
+            pointer-events: all;
+        }
+
+        .modal h2 {
+            margin-top: 0;
+            color: #ffd700;
+        }
+
+        .modal img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        .modal button {
+            background: #ffd700;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+
+        .modal button:hover {
+            background: #ffed4e;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            max-width: 300px;
+            pointer-events: none;
+        }
+
+        #fps-counter {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <button id="enter-vr">Enter VR</button>
+        <div id="loading">Loading VR Gallery...</div>
+        <div id="instructions">
+            <div id="vr-instructions" style="display: none;">
+                <strong>VR Controls:</strong><br>
+                • Point controller at artwork to select<br>
+                • Press trigger to view details<br>
+                • Use teleport (blue pad) to move<br>
+                • Use thumbstick to look around
+            </div>
+            <div id="desktop-instructions">
+                <strong>Desktop Controls:</strong><br>
+                • Click and drag to look around<br>
+                • WASD to move<br>
+                • Click on artworks to view details
+            </div>
+        </div>
+        <div id="fps-counter"></div>
+    </div>
+
+    <!-- Modal for artwork details -->
+    <div id="artwork-modal" class="modal">
+        <h2 id="modal-title"></h2>
+        <img id="modal-image" src="" alt="Artwork">
+        <p id="modal-description"></p>
+        <button id="close-modal">Close</button>
+    </div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/XRControllerModelFactory.js"></script>
+
+    <script>
+        class VRGallery {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.controls = null;
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                this.artworks = [];
+                this.audioListener = null;
+                this.audioSources = [];
+                this.clock = new THREE.Clock();
+                this.fpsCounter = 0;
+                this.frameCount = 0;
+                this.currentFps = 0;
+                
+                this.isVR = false;
+                this.controllers = [];
+                this.teleportGroup = null;
+                this.teleportRay = null;
+                this.teleportPointer = null;
+                
+                this.artworkModal = null;
+                this.selectedArtwork = null;
+                
+                this.init();
+            }
+
+            init() {
+                this.createScene();
+                this.createAudio();
+                this.createGallery();
+                this.setupEventListeners();
+                this.setupVR();
+                this.animate();
+                
+                // Show loading complete
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('vr-instructions').style.display = 'none';
+                document.getElementById('desktop-instructions').style.display = 'block';
+            }
+
+            createScene() {
+                // Scene
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x87CEEB); // Sky blue
+                
+                // Camera
+                this.camera = new THREE.PerspectiveCamera(
+                    75,
+                    window.innerWidth / window.innerHeight,
+                    0.1,
+                    1000
+                );
+                this.camera.position.set(0, 1.6, 0);
+                
+                // Renderer
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Performance optimization
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.xr.enabled = true;
+                document.body.appendChild(this.renderer.domElement);
+
+                // Lighting
+                this.createLighting();
+                
+                // Create gallery room
+                this.createGalleryRoom();
+                
+                // Controls for desktop
+                this.controls = new THREE.OrbitControls(this.camera, this.renderer.domElement);
+                this.controls.enableDamping = true;
+                this.controls.dampingFactor = 0.05;
+                this.controls.target.set(0, 1.6, 0);
+                this.controls.minDistance = 1;
+                this.controls.maxDistance = 20;
+                
+                // Keyboard movement for desktop
+                this.keys = {};
+                document.addEventListener('keydown', (event) => {
+                    this.keys[event.code] = true;
+                });
+                document.addEventListener('keyup', (event) => {
+                    this.keys[event.code] = false;
+                });
+            }
+
+            createLighting() {
+                // Ambient light
+                const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+                this.scene.add(ambientLight);
+
+                // Directional light (sun)
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(10, 10, 5);
+                directionalLight.castShadow = true;
+                directionalLight.shadow.mapSize.width = 2048;
+                directionalLight.shadow.mapSize.height = 2048;
+                this.scene.add(directionalLight);
+
+                // Point lights for artwork highlighting
+                const pointLight = new THREE.PointLight(0xffd700, 0.5, 10);
+                pointLight.position.set(0, 2, 0);
+                this.scene.add(pointLight);
+            }
+
+            createGalleryRoom() {
+                // Gallery floor
+                const floorGeometry = new THREE.PlaneGeometry(20, 20);
+                const floorTexture = new THREE.MeshLambertMaterial({ color: 0xf0f0f0 });
+                const floor = new THREE.Mesh(floorGeometry, floorTexture);
+                floor.rotation.x = -Math.PI / 2;
+                floor.receiveShadow = true;
+                this.scene.add(floor);
+
+                // Walls
+                const wallMaterial = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                
+                // Back wall
+                const backWallGeometry = new THREE.PlaneGeometry(20, 6);
+                const backWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+                backWall.position.set(0, 3, -10);
+                backWall.receiveShadow = true;
+                this.scene.add(backWall);
+
+                // Left wall
+                const leftWallGeometry = new THREE.PlaneGeometry(20, 6);
+                const leftWall = new THREE.Mesh(leftWallGeometry, wallMaterial);
+                leftWall.rotation.y = Math.PI / 2;
+                leftWall.position.set(-10, 3, 0);
+                leftWall.receiveShadow = true;
+                this.scene.add(leftWall);
+
+                // Right wall
+                const rightWall = new THREE.Mesh(leftWallGeometry, wallMaterial);
+                rightWall.rotation.y = -Math.PI / 2;
+                rightWall.position.set(10, 3, 0);
+                rightWall.receiveShadow = true;
+                this.scene.add(rightWall);
+
+                // Ceiling
+                const ceilingGeometry = new THREE.PlaneGeometry(20, 20);
+                const ceiling = new THREE.Mesh(ceilingGeometry, wallMaterial);
+                ceiling.rotation.x = Math.PI / 2;
+                ceiling.position.set(0, 6, 0);
+                this.scene.add(ceiling);
+
+                // Gallery name text
+                const loader = new THREE.FontLoader();
+                // For simplicity, we'll skip font loading and use basic text
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = 512;
+                canvas.height = 128;
+                context.fillStyle = 'white';
+                context.font = 'bold 60px Arial';
+                context.fillText('VR ART GALLERY', 50, 80);
+                
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+                const sprite = new THREE.Sprite(spriteMaterial);
+                sprite.position.set(0, 5.5, -9.5);
+                sprite.scale.set(8, 2, 1);
+                this.scene.add(sprite);
+            }
+
+            createAudio() {
+                this.audioListener = new THREE.AudioListener();
+                this.camera.add(this.audioListener);
+                
+                // Background ambient music
+                const ambientAudio = new THREE.Audio(this.audioListener);
+                const ambientLoader = new THREE.AudioLoader();
+                // Note: For a real implementation, you would load actual audio files
+                // For this demo, we'll simulate spatial audio
+                this.ambientSounds = [];
+                
+                this.ambientSounds.push({
+                    position: new THREE.Vector3(-5, 1.6, -5),
+                    audio: new THREE.Audio(this.audioListener)
+                });
+                this.ambientSounds.push({
+                    position: new THREE.Vector3(5, 1.6, -5),
+                    audio: new THREE.Audio(this.audioListener)
+                });
+                
+                this.scene.add(this.camera); // AudioListener is attached to camera
+            }
+
+            createArtworks() {
+                const artworksData = [
+                    {
+                        title: "Starry Night",
+                        artist: "Vincent van Gogh",
+                        description: "One of the most recognizable paintings in the art world, The Starry Night was painted from the east-facing window of the asylum at Saint-Rémy-de-Provence, just before sunrise.",
+                        position: new THREE.Vector3(-4, 1.6, -6),
+                        rotation: 0,
+                        image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDBiZmZmIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdyb2NrIGJ5IFZhbiBHb2doPC90ZXh0Pjwvc3ZnPg=='
+                    },
+                    {
+                        title: "The Persistence of Memory",
+                        artist: "Salvador Dalí",
+                        description: "Dalí's famous painting featuring melting clocks, painted in 1931. The work is small, 9½ x 13 in, and its haunting dreamscape imagery has made it one of the most recognizable works of surrealist art.",
+                        position: new THREE.Vector3(-2, 1.6, -6),
+                        rotation: 0,
+                        image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmZmMDAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkRhbcOpcyBNZWx0aW5nIENsb2NrczwvdGV4dD48L3N2Zz4='
+                    },
+                    {
+                        title: "Mona Lisa",
+                        artist: "Leonardo da Vinci",
+                        description: "The Mona Lisa is a half-length portrait painting by the Italian artist Leonardo da Vinci that has been described as 'the best known, the most visited, the most written about, the most parodied work of art in the world.'",
+                        position: new THREE.Vector3(0, 1.6, -6),
+                        rotation: 0,
+                        image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmYwMDAwIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk1vbmEgTGlzYTwvdGV4dD48L3N2Zz4='
+                    },
+                    {
+                        title: "The Scream",
+                        artist: "Edvard Munch",
+                        description: "The Scream is a composition created by Norwegian artist Edvard Munch in 1893. The agonised face in the painting has become one of the most iconic images of art, seen as symbolising the anxiety of the human condition.",
+                        position: new THREE.Vector3(2, 1.6, -6),
+                        rotation: 0,
+                        image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZmYwMGZmIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPlRoZSBTY3JlYW08L3RleHQ+PC9zdmc+'
+                    },
+                    {
+                        title: "Girl with a Pearl Earring",
+                        artist: "Johannes Vermeer",
+                        description: "Girl with a Pearl Earring is an oil painting by Dutch Golden Age painter Johannes Vermeer, c. 1665. The painting and especially its status as a truculent 'Mona Lisa of the North' or the 'Dutch Mona Lisa' have grown in international reputation.",
+                        position: new THREE.Vector3(4, 1.6, -6),
+                        rotation: 0,
+                        image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDBmZmZmIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzAwMDAwMCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkdpcmwgd2l0aCBQZXJsIEVhcnJpbmc8L3RleHQ+PC9zdmc+'
+                    }
+                ];
+
+                artworksData.forEach((artworkData, index) => {
+                    const frameGeometry = new THREE.PlaneGeometry(1.5, 2);
+                    const frameMaterial = new THREE.MeshLambertMaterial({ 
+                        map: this.createTextureFromDataUrl(artworkData.image) 
+                    });
+                    
+                    const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+                    frame.position.copy(artworkData.position);
+                    frame.rotation.y = artworkData.rotation;
+                    frame.castShadow = true;
+                    frame.receiveShadow = true;
+                    
+                    // Add glow effect
+                    const glowGeometry = new THREE.PlaneGeometry(1.6, 2.1);
+                    const glowMaterial = new THREE.MeshBasicMaterial({
+                        color: 0xffd700,
+                        transparent: true,
+                        opacity: 0.1
+                    });
+                    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+                    glow.position.copy(frame.position);
+                    glow.rotation.copy(frame.rotation);
+                    
+                    const artworkGroup = new THREE.Group();
+                    artworkGroup.add(frame);
+                    artworkGroup.add(glow);
+                    artworkGroup.userData = {
+                        title: artworkData.title,
+                        artist: artworkData.artist,
+                        description: artworkData.description,
+                        image: artworkData.image
+                    };
+                    artworkGroup.name = `artwork-${index}`;
+                    
+                    // Make the frame interactive
+                    frame.userData = artworkGroup.userData;
+                    frame.userData.isInteractive = true;
+                    
+                    this.scene.add(artworkGroup);
+                    this.artworks.push(artworkGroup);
+                });
+            }
+
+            createTextureFromDataUrl(dataUrl) {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                img.src = dataUrl;
+                canvas.width = 200;
+                canvas.height = 200;
+                ctx.drawImage(img, 0, 0);
+                return new THREE.CanvasTexture(canvas);
+            }
+
+            setupEventListeners() {
+                // Window resize
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                });
+
+                // Mouse controls for desktop
+                this.renderer.domElement.addEventListener('click', (event) => {
+                    if (!this.isVR) {
+                        this.handleClick(event);
+                    }
+                });
+
+                this.renderer.domElement.addEventListener('mousemove', (event) => {
+                    if (!this.isVR) {
+                        this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                        this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                    }
+                });
+
+                // Modal controls
+                document.getElementById('close-modal').addEventListener('click', () => {
+                    this.closeModal();
+                });
+
+                document.getElementById('artwork-modal').addEventListener('click', (event) => {
+                    if (event.target === document.getElementById('artwork-modal')) {
+                        this.closeModal();
+                    }
+                });
+            }
+
+            setupVR() {
+                const button = document.getElementById('enter-vr');
+                button.addEventListener('click', () => {
+                    this.renderer.xr.getSession()?.end();
+                    this.startVR();
+                });
+
+                // Handle VR session end
+                this.renderer.xr.addEventListener('sessionend', () => {
+                    this.onVRSessionEnd();
+                });
+
+                // Controller setup
+                this.controllers = [];
+                for (let i = 0; i < 2; i++) {
+                    const controller = this.renderer.xr.getController(i);
+                    this.scene.add(controller);
+                    this.controllers.push(controller);
+                    
+                    // Add raycaster for controller
+                    controller.addEventListener('selectstart', () => this.onSelectStart());
+                    controller.addEventListener('selectend', () => this.onSelectEnd());
+                    
+                    // Add controller model
+                    const controllerModel = this.renderer.xr.getControllerModel(i);
+                    controller.add(controllerModel);
+                }
+
+                // Teleport setup
+                this.setupTeleportation();
+            }
+
+            setupTeleportation() {
+                this.teleportGroup = new THREE.Group();
+                this.scene.add(this.teleportGroup);
+
+                this.teleportRay = new THREE.Group();
+                this.teleportRay.visible = false;
+                this.scene.add(this.teleportRay);
+
+                this.teleportPointer = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.02, 0.02, 0.2, 8),
+                    new THREE.MeshBasicMaterial({ color: 0x0066ff })
+                );
+                this.teleportPointer.rotation.x = Math.PI / 2;
+                this.teleportPointer.position.set(0, -0.1, 0);
+                this.teleportRay.add(this.teleportPointer);
+
+                // Teleport reticle
+                const reticleGeometry = new THREE.RingGeometry(0.2, 0.25, 32);
+                const reticleMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x0066ff, 
+                    transparent: true, 
+                    opacity: 0.8 
+                });
+                const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+                reticle.rotation.x = -Math.PI / 2;
+                this.teleportRay.add(reticle);
+
+                // Teleport pad
+                this.teleportPad = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.3, 0.3, 0.01, 16),
+                    new THREE.MeshBasicMaterial({ color: 0x0066ff, transparent: true, opacity: 0.5 })
+                );
+                this.teleportPad.rotation.x = -Math.PI / 2;
+                this.teleportGroup.add(this.teleportPad);
+            }
+
+            startVR() {
+                this.isVR = true;
+                this.controls.enabled = false;
+                document.getElementById('enter-vr').style.display = 'none';
+                document.getElementById('vr-instructions').style.display = 'block';
+                document.getElementById('desktop-instructions').style.display = 'none';
+
+                navigator.xr.requestSession('immersive-vr', {
+                    optionalFeatures: ['local-floor']
+                }).then((session) => {
+                    this.renderer.xr.setSession(session);
+                    this.camera.position.set(0, 0, 0); // Reset camera for VR
+                }).catch((error) => {
+                    console.error('Failed to start VR session:', error);
+                    alert('VR not supported on this device');
+                    this.isVR = false;
+                });
+            }
+
+            onVRSessionEnd() {
+                this.isVR = false;
+                this.controls.enabled = true;
+                document.getElementById('enter-vr').style.display = 'block';
+                document.getElementById('vr-instructions').style.display = 'none';
+                document.getElementById('desktop-instructions').style.display = 'block';
+                this.camera.position.set(0, 1.6, 0);
+            }
+
+            onSelectStart() {
+                const controller = this.renderer.xr.getController(0); // Primary controller
+                this.raycaster.setFromCamera(new THREE.Vector2(0, 0), controller);
+                const intersects = this.raycaster.intersectObjects(this.artworks, true);
+                
+                if (intersects.length > 0) {
+                    const intersected = intersects[0].object;
+                    const artwork = intersected.parent || intersected;
+                    if (artwork.userData.isInteractive || artwork.parent?.userData.isInteractive) {
+                        this.showArtworkInfo(artwork);
+                    }
+                }
+            }
+
+            onSelectEnd() {
+                // Handle selection end
+            }
+
+            handleClick(event) {
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.artworks, true);
+
+                if (intersects.length > 0) {
+                    const intersected = intersects[0].object;
+                    const artwork = intersected.parent || intersected;
+                    if (artwork.userData.isInteractive || artwork.parent?.userData.isInteractive) {
+                        this.showArtworkInfo(artwork);
+                    }
+                }
+            }
+
+            showArtworkInfo(artwork) {
+                this.selectedArtwork = artwork;
+                const data = artwork.userData;
+                
+                document.getElementById('modal-title').textContent = `${data.title} by ${data.artist}`;
+                document.getElementById('modal-image').src = data.image;
+                document.getElementById('modal-description').textContent = data.description;
+                document.getElementById('artwork-modal').style.display = 'block';
+                
+                // Play spatial audio if available
+                this.playArtworkAudio(data.title);
+            }
+
+            playArtworkAudio(title) {
+                // Simulate spatial audio - in a real implementation, load actual audio files
+                console.log(`Playing audio for: ${title}`);
+                // Here you would load and play artwork-specific audio descriptions
+            }
+
+            closeModal() {
+                document.getElementById('artwork-modal').style.display = 'none';
+                this.selectedArtwork = null;
+            }
+
+            updateDesktopMovement(deltaTime) {
+                const moveSpeed = 5.0 * deltaTime;
+                const forward = new THREE.Vector3(0, 0, -1);
+                forward.applyQuaternion(this.camera.quaternion);
+                forward.y = 0;
+                forward.normalize();
+
+                const right = new THREE.Vector3(1, 0, 0);
+                right.applyQuaternion(this.camera.quaternion);
+                right.y = 0;
+                right.normalize();
+
+                const moveVector = new THREE.Vector3();
+
+                if (this.keys['KeyW']) moveVector.add(forward);
+                if (this.keys['KeyS']) moveVector.sub(forward);
+                if (this.keys['KeyA']) moveVector.sub(right);
+                if (this.keys['KeyD']) moveVector.add(right);
+
+                if (moveVector.length() > 0) {
+                    moveVector.normalize().multiplyScalar(moveSpeed);
+                    this.camera.position.add(moveVector);
+                    
+                    // Keep camera at eye level
+                    this.camera.position.y = 1.6;
+                }
+
+                this.controls.update();
+            }
+
+            updateVR(deltaTime) {
+                // Update teleportation ray
+                const controller = this.renderer.xr.getController(0);
+                if (controller) {
+                    this.raycaster.setFromController(controller, 0);
+                    const floorIntersects = this.raycaster.intersectObject(
+                        this.scene.children.find(child => 
+                            child.geometry instanceof THREE.PlaneGeometry && 
+                            child.rotation.x === -Math.PI / 2
+                        ), true
+                    );
+
+                    if (floorIntersects.length > 0) {
+                        const point = floorIntersects[0].point;
+                        this.teleportRay.visible = true;
+                        this.teleportRay.matrix.copy(controller.matrixWorld);
+                        
+                        const scale = point.distanceTo(controller.position);
+                        this.teleportRay.scale.set(1, 1, scale);
+                        point.y += 0.01; // Slightly above floor
+                        this.teleportPad.position.copy(point);
+                        this.teleportGroup.visible = true;
+                    } else {
+                        this.teleportRay.visible = false;
+                        this.teleportGroup.visible = false;
+                    }
+                }
+            }
+
+            updateFPS() {
+                this.frameCount++;
+                const elapsed = this.clock.getElapsedTime();
+                
+                if (elapsed >= 1.0) {
+                    this.currentFps = Math.round(this.frameCount / elapsed);
+                    this.frameCount = 0;
+                    this.clock.start();
+                    
+                    document.getElementById('fps-counter').textContent = `FPS: ${this.currentFps}`;
+                    
+                    // Performance warning
+                    if (this.currentFps < 30) {
+                        console.warn('Performance below target - consider optimizing');
+                    }
+                }
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                const deltaTime = this.clock.getDelta();
+                this.updateFPS();
+                
+                // Update raycasting for highlighting
+                if (!this.isVR) {
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    const intersects = this.raycaster.intersectObjects(this.artworks, true);
+                    
+                    // Reset previous highlights
+                    this.artworks.forEach(artwork => {
+                        artwork.children.forEach(child => {
+                            if (child.material && child.material.color) {
+                                if (child.material.color.getHex() === 0xffd700) {
+                                    child.material.color.setHex(0xffffff);
+                                }
+                            }
+                        });
+                    });
+                    
+                    // Highlight current
+                    if (intersects.length > 0) {
+                        const intersected = intersects[0].object;
+                        const artwork = intersected.parent || intersected;
+                        if (artwork.parent) {
+                            artwork.parent.children.forEach(child => {
+                                if (child.material && child.material.color) {
+                                    child.material.color.setHex(0xffd700);
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // Update movement
+                if (!this.isVR) {
+                    this.updateDesktopMovement(deltaTime);
+                } else {
+                    this.updateVR(deltaTime);
+                }
+
+                // Update audio listener
+                this.audioListener.setMasterVolume(0.5);
+
+                // Render
+                this.renderer.render(this.scene, this.camera);
+                
+                // Performance budget check
+                if (this.currentFps < 45 && !this.performanceWarningShown) {
+                    this.performanceWarningShown = true;
+                    console.warn('Performance optimization needed - FPS below target');
+                }
+            }
+        }
+
+        // Initialize the gallery when page loads
+        window.addEventListener('load', () => {
+            // Create artworks after scene is ready
+            setTimeout(() => {
+                const gallery = new VRGallery();
+                gallery.createArtworks();
+            }, 100);
+        });
+
+        // Error handling for missing features
+        window.addEventListener('error', (event) => {
+            console.error('An error occurred:', event.error);
+            document.getElementById('loading').innerHTML = 
+                'Error loading gallery. Please refresh the page.';
+        });
+
+        // Prevent context menu on right click for better UX
+        document.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+        });
+    </script>
+</body>
+</html>

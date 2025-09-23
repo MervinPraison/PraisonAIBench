@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Terrain Landscape</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Simple Perlin noise implementation
+        class Perlin {
+            constructor() {
+                this.p = new Uint8Array(512);
+                for (let i = 0; i < 256; i++) {
+                    this.p[i] = i;
+                }
+                for (let i = 255; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [this.p[i], this.p[j]] = [this.p[j], this.p[i]];
+                }
+                for (let i = 0; i < 256; i++) {
+                    this.p[256 + i] = this.p[i];
+                }
+            }
+
+            noise(x, y) {
+                const X = Math.floor(x) & 255;
+                const Y = Math.floor(y) & 255;
+                x -= Math.floor(x);
+                y -= Math.floor(y);
+                const u = this.fade(x);
+                const v = this.fade(y);
+                const A = this.p[X] + Y;
+                const AA = this.p[A];
+                const AB = this.p[A + 1];
+                const B = this.p[X + 1] + Y;
+                const BA = this.p[B];
+                const BB = this.p[B + 1];
+                return this.lerp(v, this.lerp(u, this.grad(this.p[AA], x, y),
+                    this.grad(this.p[BA], x - 1, y)),
+                    this.lerp(u, this.grad(this.p[AB], x, y - 1),
+                    this.grad(this.p[BB], x - 1, y - 1)));
+            }
+
+            fade(t) {
+                return t * t * t * (t * (t * 6 - 15) + 10);
+            }
+
+            lerp(t, a, b) {
+                return a + t * (b - a);
+            }
+
+            grad(hash, x, y) {
+                const h = hash & 15;
+                const u = h < 8 ? x : y;
+                const v = h < 4 ? y : h === 12 || h === 14 ? x : 0;
+                return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+            }
+        }
+
+        const perlin = new Perlin();
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x87CEEB, 100, 1000); // Sky blue fog
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 50, 100);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(100, 100, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        scene.add(directionalLight);
+
+        // Terrain generation
+        const terrainSize = 256;
+        const terrainSegments = 255;
+        const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSegments, terrainSegments);
+        geometry.rotateX(-Math.PI / 2);
+
+        // Modify vertices with noise for hills and valleys
+        const vertices = geometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const y = vertices[i + 1];
+            const z = vertices[i + 2];
+            const height = (perlin.noise(x / 50, z / 50) * 30 + perlin.noise(x / 20, z / 20) * 15) * 2; // Multi-octave noise
+            vertices[i + 2] = height;
+        }
+        geometry.attributes.position.needsUpdate = true;
+        geometry.computeVertexNormals();
+
+        // Generate procedural texture for grass/rock
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Create a simple grass/rock texture
+        for (let x = 0; x < 512; x++) {
+            for (let y = 0; y < 512; y++) {
+                const noiseVal = perlin.noise(x / 20, y / 20);
+                if (noiseVal > 0.2) {
+                    ctx.fillStyle = '#228B22'; // Grass green
+                } else if (noiseVal > -0.2) {
+                    ctx.fillStyle = '#90EE90'; // Light grass
+                } else {
+                    ctx.fillStyle = '#8B4513'; // Rock brown
+                }
+                ctx.fillRect(x, y, 1, 1);
+            }
+        }
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(8, 8);
+
+        const material = new THREE.MeshLambertMaterial({ map: texture });
+        const terrain = new THREE.Mesh(geometry, material);
+        terrain.receiveShadow = true;
+        scene.add(terrain);
+
+        // Camera controls
+        const keys = {};
+        document.addEventListener('keydown', (event) => {
+            keys[event.code] = true;
+        });
+        document.addEventListener('keyup', (event) => {
+            keys[event.code] = false;
+        });
+
+        const moveSpeed = 2;
+        const rotationSpeed = 0.02;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // WASD controls for flying
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0;
+            direction.normalize();
+
+            const right = new THREE.Vector3();
+            right.crossVectors(direction, camera.up).normalize();
+
+            if (keys['KeyW']) {
+                camera.position.addScaledVector(direction, moveSpeed);
+            }
+            if (keys['KeyS']) {
+                camera.position.addScaledVector(direction, -moveSpeed);
+            }
+            if (keys['KeyA']) {
+                camera.position.addScaledVector(right, -moveSpeed);
+            }
+            if (keys['KeyD']) {
+                camera.position.addScaledVector(right, moveSpeed);
+            }
+
+            // Keep camera above terrain (simple y adjustment)
+            camera.position.y = Math.max(camera.position.y, 10);
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

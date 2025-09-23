@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architectural Walkthrough - Procedural House</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: #000;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #minimap {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 200px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 2px solid #fff;
+            border-radius: 10px;
+            z-index: 100;
+        }
+        
+        #minimap canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+        }
+        
+        #ui {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            max-width: 300px;
+        }
+        
+        #instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .hotspot {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: rgba(255, 255, 0, 0.8);
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 100;
+            transition: all 0.3s ease;
+        }
+        
+        .hotspot:hover {
+            background: rgba(255, 215, 0, 1);
+            transform: scale(1.2);
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 24px;
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="loading">Loading Architectural Walkthrough...</div>
+        <div id="minimap"></div>
+        <div id="instructions">
+            <h3>Controls</h3>
+            <p>WASD - Move | Mouse - Look | Click hotspots to interact</p>
+            <p>Scroll to adjust speed</p>
+        </div>
+        <div id="ui">
+            <h3>Room: <span id="currentRoom">Entrance</span></h3>
+            <p>Position: <span id="position">0, 0, 0</span></p>
+            <p>Interactions: <span id="interactions">0</span></p>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    
+    <script>
+        class ArchitecturalWalkthrough {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.controls = null;
+                
+                // House structure
+                this.rooms = [];
+                this.walls = [];
+                this.furniture = [];
+                this.hotspots = [];
+                
+                // Movement
+                this.velocity = new THREE.Vector3();
+                this.direction = new THREE.Vector3();
+                this.moveForward = false;
+                this.moveBackward = false;
+                this.moveLeft = false;
+                this.moveRight = false;
+                this.moveSpeed = 0.1;
+                
+                // Lighting
+                this.ambientLight = null;
+                this.directionalLight = null;
+                this.lightProbe = null;
+                
+                // Minimap
+                this.minimapScene = null;
+                this.minimapCamera = null;
+                this.minimapRenderer = null;
+                
+                // State
+                this.currentRoom = null;
+                this.interactionCount = 0;
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+                
+                this.init();
+                this.createHouse();
+                this.setupLighting();
+                this.setupMinimap();
+                this.setupControls();
+                this.setupEventListeners();
+                this.animate();
+            }
+            
+            init() {
+                // Scene setup
+                this.scene = new THREE.Scene();
+                this.scene.background = new THREE.Color(0x87CEEB);
+                this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+                
+                // Camera setup
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                this.camera.position.set(0, 1.6, 0); // Eye level
+                
+                // Renderer setup
+                this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.shadowMap.enabled = true;
+                this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 1;
+                document.getElementById('container').appendChild(this.renderer.domElement);
+                
+                // Hide loading
+                document.getElementById('loading').style.display = 'none';
+                
+                // Initial room detection
+                this.updateRoomInfo();
+            }
+            
+            createHouse() {
+                const houseGroup = new THREE.Group();
+                
+                // Room definitions
+                const roomLayout = [
+                    { name: 'Entrance', x: 0, z: 0, width: 8, depth: 6, color: 0xF5F5DC },
+                    { name: 'Living Room', x: 10, z: 0, width: 10, depth: 8, color: 0xDEB887 },
+                    { name: 'Kitchen', x: 0, z: 8, width: 8, depth: 6, color: 0xFFF8DC },
+                    { name: 'Bedroom 1', x: -10, z: 0, width: 8, depth: 8, color: 0xE6E6FA },
+                    { name: 'Bathroom', x: 10, z: 10, width: 6, depth: 5, color: 0xF0F8FF }
+                ];
+                
+                // Create rooms
+                roomLayout.forEach((room, index) => {
+                    this.createRoom(room, houseGroup);
+                });
+                
+                // Create connecting walls/doors
+                this.createConnectingWalls(houseGroup);
+                
+                // Create furniture
+                this.createFurniture(houseGroup);
+                
+                // Add hotspots
+                this.createHotspots(houseGroup);
+                
+                this.scene.add(houseGroup);
+            }
+            
+            createRoom(room, parent) {
+                const roomGeometry = new THREE.BoxGeometry(room.width, 4, room.depth);
+                const roomMaterial = new THREE.MeshLambertMaterial({ 
+                    color: room.color,
+                    transparent: true,
+                    opacity: 0.1,
+                    side: THREE.BackSide 
+                });
+                
+                const roomMesh = new THREE.Mesh(roomGeometry, roomMaterial);
+                roomMesh.position.set(room.x + room.width/2, 2, room.z + room.depth/2);
+                roomMesh.userData = { room: room.name, type: 'room' };
+                
+                // Floor
+                const floorGeometry = new THREE.PlaneGeometry(room.width, room.depth);
+                const floorMaterial = new THREE.MeshLambertMaterial({ 
+                    color: new THREE.Color(room.color).multiplyScalar(0.8)
+                });
+                const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+                floor.rotation.x = -Math.PI / 2;
+                floor.position.set(room.x + room.width/2, 0.01, room.z + room.depth/2);
+                floor.receiveShadow = true;
+                
+                // Walls
+                const wallHeight = 3;
+                const wallThickness = 0.2;
+                
+                // Back wall
+                const backWallGeometry = new THREE.BoxGeometry(room.width, wallHeight, wallThickness);
+                const backWall = new THREE.Mesh(backWallGeometry, this.createWallMaterial());
+                backWall.position.set(room.x + room.width/2, wallHeight/2, room.z + room.depth);
+                backWall.userData = { room: room.name, type: 'wall' };
+                
+                // Front wall
+                const frontWallGeometry = new THREE.BoxGeometry(room.width - 2, wallHeight, wallThickness);
+                const frontWall = new THREE.Mesh(frontWallGeometry, this.createWallMaterial());
+                frontWall.position.set(room.x + room.width/2, wallHeight/2, room.z + 1);
+                
+                // Left wall
+                const leftWallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, room.depth - 2);
+                const leftWall = new THREE.Mesh(leftWallGeometry, this.createWallMaterial());
+                leftWall.position.set(room.x, wallHeight/2, room.z + room.depth/2 - 1);
+                
+                // Right wall
+                const rightWallGeometry = new THREE.BoxGeometry(wallThickness, wallHeight, room.depth);
+                const rightWall = new THREE.Mesh(rightWallGeometry, this.createWallMaterial());
+                rightWall.position.set(room.x + room.width, wallHeight/2, room.z + room.depth/2);
+                
+                // Collision boxes for room boundaries
+                const collisionBox = new THREE.Mesh(
+                    new THREE.BoxGeometry(room.width + 0.2, 4, room.depth + 0.2),
+                    new THREE.MeshBasicMaterial({ visible: false })
+                );
+                collisionBox.position.set(room.x + room.width/2, 2, room.z + room.depth/2);
+                collisionBox.userData = { room: room.name, type: 'collision', roomData: room };
+                this.rooms.push(collisionBox);
+                
+                parent.add(roomMesh);
+                parent.add(floor);
+                parent.add(backWall);
+                parent.add(frontWall);
+                parent.add(leftWall);
+                parent.add(rightWall);
+                parent.add(collisionBox);
+                
+                this.walls.push(backWall, frontWall, leftWall, rightWall);
+            }
+            
+            createConnectingWalls(parent) {
+                // Create doorways between rooms
+                const doorMaterial = this.createWallMaterial(0.8);
+                const doorGeometry = new THREE.BoxGeometry(1, 2.5, 0.2);
+                
+                // Entrance to Living Room
+                const door1 = new THREE.Mesh(doorGeometry, doorMaterial);
+                door1.position.set(8, 1.25, 0);
+                parent.add(door1);
+                
+                // Entrance to Kitchen
+                const door2 = new THREE.Mesh(doorGeometry, doorMaterial);
+                door2.position.set(0, 1.25, 8);
+                door2.rotation.y = Math.PI / 2;
+                parent.add(door2);
+                
+                // Living Room to Bathroom
+                const door3 = new THREE.Mesh(doorGeometry, doorMaterial);
+                door3.position.set(15, 1.25, 6);
+                parent.add(door3);
+                
+                // Add collision for doors (no collision)
+                door1.userData = { type: 'door' };
+                door2.userData = { type: 'door' };
+                door3.userData = { type: 'door' };
+            }
+            
+            createFurniture(parent) {
+                // Entrance furniture
+                const tableGeometry = new THREE.BoxGeometry(1.5, 0.8, 1);
+                const tableMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                const table = new THREE.Mesh(tableGeometry, tableMaterial);
+                table.position.set(2, 0.4, 2);
+                table.castShadow = true;
+                table.receiveShadow = true;
+                table.userData = { type: 'furniture', name: 'Entrance Table', active: true };
+                this.furniture.push(table);
+                parent.add(table);
+                
+                // Living room sofa
+                const sofaGeometry = new THREE.BoxGeometry(3, 0.8, 1.2);
+                const sofaMaterial = new THREE.MeshLambertMaterial({ color: 0x654321 });
+                const sofa = new THREE.Mesh(sofaGeometry, sofaMaterial);
+                sofa.position.set(13, 0.4, 2);
+                sofa.castShadow = true;
+                sofa.receiveShadow = true;
+                sofa.userData = { type: 'furniture', name: 'Living Room Sofa', active: true };
+                this.furniture.push(sofa);
+                parent.add(sofa);
+                
+                // Kitchen counter
+                const counterGeometry = new THREE.BoxGeometry(2.5, 1, 0.8);
+                const counterMaterial = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+                const counter = new THREE.Mesh(counterGeometry, counterMaterial);
+                counter.position.set(3, 0.5, 10);
+                counter.castShadow = true;
+                counter.receiveShadow = true;
+                counter.userData = { type: 'furniture', name: 'Kitchen Counter', active: true };
+                this.furniture.push(counter);
+                parent.add(counter);
+                
+                // Bedroom bed
+                const bedGeometry = new THREE.BoxGeometry(2, 0.5, 3);
+                const bedMaterial = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+                const bed = new THREE.Mesh(bedGeometry, bedMaterial);
+                bed.position.set(-6, 0.25, 2);
+                bed.castShadow = true;
+                bed.receiveShadow = true;
+                bed.userData = { type: 'furniture', name: 'Bedroom Bed', active: true };
+                this.furniture.push(bed);
+                parent.add(bed);
+                
+                // Add cushions to sofa (toggleable)
+                const cushionGeometry = new THREE.BoxGeometry(0.8, 0.3, 1);
+                const cushionMaterial = new THREE.MeshLambertMaterial({ color: 0xFF6B6B });
+                for (let i = 0; i < 3; i++) {
+                    const cushion = new THREE.Mesh(cushionGeometry, cushionMaterial);
+                    cushion.position.set(13 + (i - 1) * 0.8, 1.1, 2.6);
+                    cushion.castShadow = true;
+                    cushion.userData = { type: 'cushion', active: true };
+                    sofa.add(cushion);
+                    this.furniture.push(cushion);
+                }
+            }
+            
+            createHotspots(parent) {
+                // Entrance hotspot - toggle table material
+                const hotspot1 = this.createHotspot(2, 1, 2, 'Toggle Table Material');
+                hotspot1.userData.target = this.furniture.find(f => f.userData.name === 'Entrance Table');
+                hotspot1.userData.originalColor = 0x8B4513;
+                hotspot1.userData.colors = [0x8B4513, 0x4169E1, 0x228B22];
+                hotspot1.userData.currentColorIndex = 0;
+                this.hotspots.push(hotspot1);
+                parent.add(hotspot1);
+                
+                // Living room hotspot - toggle sofa cushions
+                const hotspot2 = this.createHotspot(13, 1.2, 2, 'Toggle Sofa Cushions');
+                hotspot2.userData.target = this.furniture.find(f => f.userData.name === 'Living Room Sofa');
+                hotspot2.userData.toggleChildren = true;
+                this.hotspots.push(hotspot2);
+                parent.add(hotspot2);
+                
+                // Kitchen hotspot - add/remove chairs
+                const hotspot3 = this.createHotspot(3, 1, 10, 'Toggle Kitchen Chairs');
+                hotspot3.userData.target = this.furniture.find(f => f.userData.name === 'Kitchen Counter');
+                hotspot3.userData.addChairs = true;
+                hotspot3.userData.hasChairs = false;
+                this.hotspots.push(hotspot3);
+                parent.add(hotspot3);
+                
+                // Bedroom hotspot - change bed sheets
+                const hotspot4 = this.createHotspot(-6, 1, 2, 'Change Bed Sheets');
+                hotspot4.userData.target = this.furniture.find(f => f.userData.name === 'Bedroom Bed');
+                hotspot4.userData.originalColor = 0xFFFFFF;
+                hotspot4.userData.colors = [0xFFFFFF, 0xADD8E6, 0xF0E68C];
+                hotspot4.userData.currentColorIndex = 0;
+                this.hotspots.push(hotspot4);
+                parent.add(hotspot4);
+                
+                // Create UI hotspots
+                this.createUIHotspots();
+            }
+            
+            createHotspot(x, y, z, description) {
+                const hotspotGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+                const hotspotMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0xFFFF00,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                const hotspot = new THREE.Mesh(hotspotGeometry, hotspotMaterial);
+                hotspot.position.set(x, y, z);
+                hotspot.userData = {
+                    type: 'hotspot',
+                    description: description,
+                    active: true
+                };
+                
+                return hotspot;
+            }
+            
+            createUIHotspots() {
+                // Create 2D UI hotspots that follow 3D positions
+                this.hotspots.forEach((hotspot, index) => {
+                    const uiHotspot = document.createElement('div');
+                    uiHotspot.className = 'hotspot';
+                    uiHotspot.id = `hotspot-${index}`;
+                    uiHotspot.title = hotspot.userData.description;
+                    document.getElementById('container').appendChild(uiHotspot);
+                    
+                    // Store reference
+                    hotspot.userData.uiElement = uiHotspot;
+                });
+            }
+            
+            createWallMaterial(opacity = 1) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 512;
+                const context = canvas.getContext('2d');
+                
+                // Create wood-like texture
+                context.fillStyle = '#DEB887';
+                context.fillRect(0, 0, 512, 512);
+                
+                // Add wood grain
+                context.fillStyle = '#CD853F';
+                for (let i = 0; i < 50; i++) {
+                    const x = Math.random() * 512;
+                    const y = Math.random() * 512;
+                    const width = 20 + Math.random() * 40;
+                    const height = 2 + Math.random() * 4;
+                    context.fillRect(x, y, width, height);
+                }
+                
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                texture.repeat.set(4, 4);
+                
+                return new THREE.MeshLambertMaterial({
+                    map: texture,
+                    transparent: true,
+                    opacity: opacity
+                });
+            }
+            
+            setupLighting() {
+                // Ambient light
+                this.ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+                this.scene.add(this.ambientLight);
+                
+                // Directional light (sun)
+                this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                this.directionalLight.position.set(20, 30, 10);
+                this.directionalLight.castShadow = true;
+                this.directionalLight.shadow.mapSize.width = 2048;
+                this.directionalLight.shadow.mapSize.height = 2048;
+                this.directionalLight.shadow.camera.near = 0.5;
+                this.directionalLight.shadow.camera.far = 100;
+                this.directionalLight.shadow.camera.left = -20;
+                this.directionalLight.shadow.camera.right = 20;
+                this.directionalLight.shadow.camera.top = 20;
+                this.directionalLight.shadow.camera.bottom = -20;
+                this.scene.add(this.directionalLight);
+                
+                // Light probe for IBL
+                this.lightProbe = new THREE.LightProbe();
+                this.lightProbe.intensity = 1;
+                this.scene.add(this.lightProbe);
+                
+                // Point lights for rooms
+                const pointLight1 = new THREE.PointLight(0xFFA500, 0.5, 20);
+                pointLight1.position.set(5, 3, 3);
+                pointLight1.castShadow = true;
+                this.scene.add(pointLight1);
+                
+                const pointLight2 = new THREE.PointLight(0x4169E1, 0.4, 20);
+                pointLight2.position.set(15, 3, 5);
+                pointLight2.castShadow = true;
+                this.scene.add(pointLight2);
+                
+                // Hemisphere light for outdoor feel
+                const hemiLight = new THREE.HemisphereLight(0x87CEEB, 0x98FB98, 0.3);
+                this.scene.add(hemiLight);
+            }
+            
+            setupMinimap() {
+                // Minimap scene
+                this.minimapScene = new THREE.Scene();
+                this.minimapScene.background = new THREE.Color(0x000000);
+                
+                // Minimap camera (top-down)
+                this.minimapCamera = new THREE.OrthographicCamera(
+                    window.innerWidth / -200,
+                    window.innerWidth / 200,
+                    window.innerHeight / 200,
+                    window.innerHeight / -200,
+                    1,
+                    1000
+                );
+                this.minimapCamera.position.set(0, 30, 0);
+                this.minimapCamera.lookAt(0, 0, 0);
+                
+                // Minimap renderer
+                this.minimapRenderer = new THREE.WebGLRenderer({ 
+                    antialias: true,
+                    alpha: true 
+                });
+                this.minimapRenderer.setSize(200, 200);
+                this.minimapRenderer.domElement.style.borderRadius = '8px';
+                document.getElementById('minimap').appendChild(this.minimapRenderer.domElement);
+                
+                // Create minimap house representation
+                const minimapGeometry = new THREE.BoxGeometry(20, 1, 15);
+                const minimapMaterial = new THREE.MeshBasicMaterial({ 
+                    color: 0x444444,
+                    transparent: true,
+                    opacity: 0.7 
+                });
+                const minimapHouse = new THREE.Mesh(minimapGeometry, minimapMaterial);
+                this.minimapScene.add(minimapHouse);
+                
+                // Player indicator
+                const playerGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+                const playerMaterial = new THREE.MeshBasicMaterial({ color: 0xFF0000 });
+                this.playerIndicator = new THREE.Mesh(playerGeometry, playerMaterial);
+                this.minimapScene.add(this.playerIndicator);
+            }
+            
+            setupControls() {
+                // Pointer lock controls
+                this.controls = new THREE.PointerLockControls(this.camera, this.renderer.domElement);
+                this.scene.add(this.controls.getObject());
+                
+                this.renderer.domElement.addEventListener('click', () => {
+                    if (!this.controls.isLocked) {
+                        this.controls.lock();
+                    }
+                });
+                
+                this.controls.addEventListener('lock', () => {
+                    document.getElementById('instructions').style.display = 'none';
+                });
+                
+                this.controls.addEventListener('unlock', () => {
+                    document.getElementById('instructions').style.display = 'block';
+                });
+            }
+            
+            setupEventListeners() {
+                // Keyboard controls
+                document.addEventListener('keydown', (event) => {
+                    switch (event.code) {
+                        case 'KeyW':
+                            this.moveForward = true;
+                            break;
+                        case 'KeyS':
+                            this.moveBackward = true;
+                            break;
+                        case 'KeyA':
+                            this.moveLeft = true;
+                            break;
+                        case 'KeyD':
+                            this.moveRight = true;
+                            break;
+                    }
+                });
+                
+                document.addEventListener('keyup', (event) => {
+                    switch (event.code) {
+                        case 'KeyW':
+                            this.moveForward = false;
+                            break;
+                        case 'KeyS':
+                            this.moveBackward = false;
+                            break;
+                        case 'KeyA':
+                            this.moveLeft = false;
+                            break;
+                        case 'KeyD':
+                            this.moveRight = false;
+                            break;
+                    }
+                });
+                
+                // Mouse wheel for speed
+                document.addEventListener('wheel', (event) => {
+                    this.moveSpeed = Math.max(0.05, Math.min(0.2, this.moveSpeed + (event.deltaY > 0 ? -0.01 : 0.01)));
+                });
+                
+                // Click interactions
+                document.addEventListener('click', (event) => {
+                    if (this.controls.isLocked) {
+                        this.handleInteraction(event);
+                    }
+                });
+                
+                // Window resize
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = window.innerWidth / window.innerHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(window.innerWidth, window.innerHeight);
+                    
+                    // Update minimap camera
+                    this.minimapCamera.left = window.innerWidth / -200;
+                    this.minimapCamera.right = window.innerWidth / 200;
+                    this.minimapCamera.top = window.innerHeight / 200;
+                    this.minimapCamera.bottom = window.innerHeight / -200;
+                    this.minimapCamera.updateProjectionMatrix();
+                });
+                
+                // Update UI hotspots
+                this.updateUIHotspots = () => {
+                    this.hotspots.forEach((hotspot, index) => {
+                        if (hotspot.userData.uiElement && hotspot.visible) {
+                            const vector = hotspot.position.clone();
+                            vector.project(this.camera);
+                            
+                            const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                            const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                            
+                            const uiElement = hotspot.userData.uiElement;
+                            uiElement.style.left = (x - 10) + 'px';
+                            uiElement.style.top = (y - 10) + 'px';
+                            uiElement.style.display = (vector.z < 1 && this.isHotspotInView(hotspot)) ? 'block' : 'none';
+                        }
+                    });
+                };
+            }
+            
+            handleInteraction(event) {
+                // Raycast for hotspots
+                this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+                
+                this.raycaster.setFromCamera(this.mouse, this.camera);
+                const intersects = this.raycaster.intersectObjects(this.hotspots, true);
+                
+                if (intersects.length > 0) {
+                    const hotspot = intersects[0].object;
+                    if (hotspot.userData.type === 'hotspot') {
+                        this.interactWithHotspot(hotspot);
+                        this.interactionCount++;
+                        document.getElementById('interactions').textContent = this.interactionCount;
+                    }
+                }
+            }
+            
+            interactWithHotspot(hotspot) {
+                if (!hotspot.userData.target) return;
+                
+                const target = hotspot.userData.target;
+                
+                if (hotspot.userData.toggleChildren) {
+                    // Toggle sofa cushions
+                    target.children.forEach(child => {
+                        if (child.userData.type === 'cushion') {
+                            child.visible = !child.visible;
+                        }
+                    });
+                } else if (hotspot.userData.addChairs) {
+                    // Toggle kitchen chairs
+                    if (!hotspot.userData.hasChairs) {
+                        this.addChairsToCounter(target, hotspot);
+                        hotspot.userData.hasChairs = true;
+                    } else {
+                        this.removeChairsFromCounter(target, hotspot);
+                        hotspot.userData.hasChairs = false;
+                    }
+                } else if (hotspot.userData.colors) {
+                    // Change material color
+                    hotspot.userData.currentColorIndex = (hotspot.userData.currentColorIndex + 1) % hotspot.userData.colors.length;
+                    target.material.color.setHex(hotspot.userData.colors[hotspot.userData.currentColorIndex]);
+                }
+                
+                // Visual feedback
+                const originalScale = hotspot.scale.clone();
+                hotspot.scale.multiplyScalar(1.5);
+                setTimeout(() => {
+                    hotspot.scale.copy(originalScale);
+                }, 200);
+            }
+            
+            addChairsToCounter(counter, hotspot) {
+                const chairGeometry = new THREE.BoxGeometry(0.4, 0.8, 0.4);
+                const chairMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+                
+                for (let i = 0; i < 4; i++) {
+                    const chair = new THREE.Mesh(chairGeometry, chairMaterial);
+                    const angle = (i / 4) * Math.PI * 2;
+                    chair.position.set(
+                        Math.cos(angle) * 1.2,
+                        0.4,
+                        Math.sin(angle) * 1.2
+                    );
+                    chair.castShadow = true;
+                    chair.receiveShadow = true;
+                    chair.userData = { type: 'chair', active: true };
+                    counter.add(chair);
+                    this.furniture.push(chair);
+                }
+            }
+            
+            removeChairsFromCounter(counter, hotspot) {
+                const chairs = counter.children.filter(child => child.userData.type === 'chair');
+                chairs.forEach(chair => {
+                    counter.remove(chair);
+                    const index = this.furniture.indexOf(chair);
+                    if (index > -1) {
+                        this.furniture.splice(index, 1);
+                    }
+                    chair.geometry.dispose();
+                    chair.material.dispose();
+                });
+            }
+            
+            isHotspotInView(hotspot) {
+                const distance = this.camera.position.distanceTo(hotspot.position);
+                const angle = this.camera.getWorldDirection(new THREE.Vector3()).angleTo(
+                    new THREE.Vector3().subVectors(hotspot.position, this.camera.position).normalize()
+                );
+                return distance < 10 && angle < Math.PI / 3;
+            }
+            
+            checkCollisions() {
+                const capsuleRadius = 0.3;
+                const capsuleHeight = 1.8;
+                const capsuleCenter = new THREE.Vector3()
+                    .copy(this.camera.position)
+                    .add(new THREE.Vector3(0, capsuleHeight / 2, 0));
+                
+                // Check room boundaries
+                for (let room of this.rooms) {
+                    const box = new THREE.Box3().setFromObject(room);
+                    if (box.containsPoint(capsuleCenter)) {
+                        this.currentRoom = room.userData.room;
+                        break;
+                    }
+                }
+                
+                // Check wall collisions
+                this.raycaster.set(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
+                const wallIntersects = this.raycaster.intersectObjects(this.walls, true);
+                
+                if (wallIntersects.length > 0) {
+                    const distanceToWall = wallIntersects[0].distance;
+                    if (distanceToWall < capsuleRadius + 0.1) {
+                        // Push camera away from wall
+                        const normal = wallIntersects[0].face.normal.clone()
+                            .transformDirection(wallIntersects[0].object.matrixWorld)
+                            .multiplyScalar(capsuleRadius + 0.1 - distanceToWall);
+                        this.camera.position.add(normal);
+                    }
+                }
+                
+                // Check furniture collisions
+                this.raycaster.set(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
+                const furnitureIntersects = this.raycaster.intersectObjects(this.furniture.filter(f => f.userData.active), true);
+                
+                if (furnitureIntersects.length > 0) {
+                    const distanceToFurniture = furnitureIntersects[0].distance;
+                    if (distanceToFurniture < capsuleRadius + 0.2) {
+                        const normal = furnitureIntersects[0].face.normal.clone()
+                            .transformDirection(furnitureIntersects[0].object.matrixWorld)
+                            .multiplyScalar(capsuleRadius + 0.2 - distanceToFurniture);
+                        this.camera.position.add(normal);
+                    }
+                }
+            }
+            
+            updateMovement(deltaTime) {
+                this.velocity.x -= this.velocity.x * 10.0 * deltaTime;
+                this.velocity.z -= this.velocity.z * 10.0 * deltaTime;
+                
+                this.direction.z = Number(this.moveForward) - Number(this.moveBackward);
+                this.direction.x = Number(this.moveRight) - Number(this.moveLeft);
+                this.direction.normalize();
+                
+                if (this.moveForward || this.moveBackward) {
+                    this.velocity.z -= this.direction.z * this.moveSpeed * 400.0 * deltaTime;
+                }
+                if (this.moveLeft || this.moveRight) {
+                    this.velocity.x -= this.direction.x * this.moveSpeed * 400.0 * deltaTime;
+                }
+                
+                this.controls.moveRight(-this.velocity.x * deltaTime);
+                this.controls.moveForward(-this.velocity.z * deltaTime);
+                
+                // Keep camera above ground
+                this.camera.position.y = Math.max(1.6, this.camera.position.y);
+            }
+            
+            updateRoomCulling() {
+                // Simple room-based culling
+                this.rooms.forEach(room => {
+                    const box = new THREE.Box3().setFromObject(room);
+                    const containsCamera = box.containsPoint(this.camera.position);
+                    
+                    // Show/hide room contents based on proximity and visibility
+                    room.children.forEach(child => {
+                        if (child.userData.type === 'furniture' || child.userData.type === 'hotspot') {
+                            const distance = this.camera.position.distanceTo(child.position);
+                            child.visible = containsCamera || distance < 15;
+                        }
+                    });
+                });
+                
+                // Update hotspot visibility
+                this.hotspots.forEach(hotspot => {
+                    const distance = this.camera.position.distanceTo(hotspot.position);
+                    hotspot.visible = distance < 8 && hotspot.userData.active;
+                });
+            }
+            
+            updateRoomInfo() {
+                if (this.currentRoom) {
+                    document.getElementById('currentRoom').textContent = this.currentRoom;
+                }
+                document.getElementById('position').textContent = 
+                    `${this.camera.position.x.toFixed(1)}, ${this.camera.position.y.toFixed(1)}, ${this.camera.position.z.toFixed(1)}`;
+            }
+            
+            updateMinimap() {
+                // Update player position on minimap
+                this.playerIndicator.position.copy(this.camera.position);
+                this.playerIndicator.position.y = 0.3;
+                this.playerIndicator.lookAt(this.camera.getWorldDirection(new THREE.Vector3()));
+            }
+            
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                
+                const deltaTime = Math.min(0.1, this.clock.getDelta());
+                
+                // Update
+                this.updateMovement(deltaTime);
+                this.checkCollisions();
+                this.updateRoomCulling();
+                this.updateRoomInfo();
+                this.updateMinimap();
+                this.updateUIHotspots();
+                
+                // Rotate lights for dynamic lighting
+                this.directionalLight.position.x = Math.cos(Date.now() * 0.0005) * 30;
+                this.directionalLight.position.z = Math.sin(Date.now() * 0.0005) * 30;
+                
+                // Render main scene
+                this.renderer.render(this.scene, this.camera);
+                
+                // Render minimap
+                this.minimapRenderer.render(this.minimapScene, this.minimapCamera);
+            }
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            // Initialize clock for delta time
+            window.ArchitecturalWalkthrough = new ArchitecturalWalkthrough();
+            window.ArchitecturalWalkthrough.clock = new THREE.Clock();
+        });
+        
+        // Global error handling
+        window.addEventListener('error', (event) => {
+            console.error('Walkthrough error:', event.error);
+            document.getElementById('loading').innerHTML = 
+                'Error loading walkthrough. Please refresh the page.';
+        });
+    </script>
+</body>
+</html>

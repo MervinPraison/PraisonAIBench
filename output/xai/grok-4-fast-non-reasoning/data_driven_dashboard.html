@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Data Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        body.dark-theme {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #e0e0e0;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-group {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        body.dark-theme .control-group {
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            background: #4CAF50;
+            color: white;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        button.secondary {
+            background: #2196F3;
+        }
+
+        button.danger {
+            background: #f44336;
+        }
+
+        button.active {
+            background: #FF9800;
+        }
+
+        #theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        body.dark-theme #theme-toggle {
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        #tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 200;
+            display: none;
+            backdrop-filter: blur(10px);
+        }
+
+        body.dark-theme #tooltip {
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 300;
+            color: white;
+            font-size: 18px;
+            display: none;
+        }
+
+        .stats {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 100;
+        }
+
+        body.dark-theme .stats {
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="canvas"></canvas>
+        
+        <div id="loading">Generating 3D Analytics Dashboard...</div>
+        
+        <div id="controls" class="fade-in">
+            <div class="control-group">
+                <h3>Camera Views</h3>
+                <div class="control-buttons">
+                    <button id="view-top" class="secondary">Top View</button>
+                    <button id="view-side" class="secondary">Side View</button>
+                    <button id="view-front" class="secondary">Front View</button>
+                    <button id="view-3d" class="secondary active">3D View</button>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <h3>Data Actions</h3>
+                <div class="control-buttons">
+                    <button id="regenerate">Regenerate Data</button>
+                    <button id="export-csv" class="secondary">Export CSV</button>
+                </div>
+            </div>
+        </div>
+        
+        <button id="theme-toggle">🌙</button>
+        
+        <div id="tooltip"></div>
+        
+        <div id="stats" class="stats">
+            <div>Dataset: <span id="data-count">0</span> points</div>
+            <div>Bars: <span id="bar-count">0</span></div>
+            <div>Scatter: <span id="scatter-count">0</span></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.4/gsap.min.js"></script>
+    <script>
+        // Global variables
+        let scene, camera, renderer, raycaster, mouse;
+        let bars = [], scatterPoints = [], ribbons = [];
+        let axisHelpers = {};
+        let currentTheme = 'light';
+        let dataset = [];
+        let hoverObject = null;
+        let animationId;
+
+        // Initialize the application
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB); // Sky blue for light theme
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(15, 15, 15);
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Raycaster for mouse interaction
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // Lighting
+            setupLighting();
+
+            // Create grid and axes
+            createGridAndAxes();
+
+            // Generate initial data
+            generateDataset();
+
+            // Setup controls
+            setupControls();
+
+            // Setup event listeners
+            setupEventListeners();
+
+            // Start animation loop
+            animate();
+
+            // Hide loading
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function setupLighting() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+
+            // Directional light (sun)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(20, 20, 10);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+
+            // Point lights for additional illumination
+            const pointLight1 = new THREE.PointLight(0x4A90E2, 0.3, 50);
+            pointLight1.position.set(-10, 10, -10);
+            scene.add(pointLight1);
+
+            const pointLight2 = new THREE.PointLight(0x7ED321, 0.3, 50);
+            pointLight2.position.set(10, 10, -10);
+            scene.add(pointLight2);
+        }
+
+        function createGridAndAxes() {
+            // Grid
+            const gridHelper = new THREE.GridHelper(20, 20, 0x888888, 0x444444);
+            gridHelper.position.y = -5;
+            scene.add(gridHelper);
+
+            // X-axis
+            const xGeometry = new THREE.CylinderGeometry(0.1, 0.1, 20, 8);
+            const xMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+            const xAxis = new THREE.Mesh(xGeometry, xMaterial);
+            xAxis.rotation.z = Math.PI / 2;
+            xAxis.position.set(10, -5, 0);
+            xAxis.castShadow = true;
+            xAxis.receiveShadow = true;
+            scene.add(xAxis);
+            axisHelpers.x = xAxis;
+
+            // Y-axis
+            const yGeometry = new THREE.CylinderGeometry(0.1, 0.1, 20, 8);
+            const yMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+            const yAxis = new THREE.Mesh(yGeometry, yMaterial);
+            yAxis.position.set(0, 5, 0);
+            yAxis.castShadow = true;
+            yAxis.receiveShadow = true;
+            scene.add(yAxis);
+            axisHelpers.y = yAxis;
+
+            // Z-axis
+            const zGeometry = new THREE.CylinderGeometry(0.1, 0.1, 20, 8);
+            const zMaterial = new THREE.MeshLambertMaterial({ color: 0x0000ff });
+            const zAxis = new THREE.Mesh(zGeometry, zMaterial);
+            zAxis.rotation.x = Math.PI / 2;
+            zAxis.position.set(0, -5, 10);
+            zAxis.castShadow = true;
+            zAxis.receiveShadow = true;
+            scene.add(zAxis);
+            axisHelpers.z = zAxis;
+
+            // Axis labels
+            const loader = new THREE.FontLoader();
+            // Note: For a complete solution, you might want to use a font file
+            // For this example, we'll create simple text using sprites or skip for brevity
+        }
+
+        function generateDataset() {
+            // Clear existing visualizations
+            clearVisualizations();
+            
+            // Generate random dataset
+            dataset = [];
+            const numPoints = Math.floor(Math.random() * 50) + 30;
+            
+            for (let i = 0; i < numPoints; i++) {
+                dataset.push({
+                    id: i,
+                    x: (Math.random() - 0.5) * 18,
+                    y: Math.random() * 15,
+                    z: (Math.random() - 0.5) * 18,
+                    value: Math.random() * 100,
+                    category: Math.floor(Math.random() * 5),
+                    timestamp: Date.now() - Math.random() * 1000000
+                });
+            }
+
+            // Create visualizations
+            createBars();
+            createScatterPoints();
+            createRibbons();
+
+            // Update stats
+            updateStats();
+
+            console.log('Generated dataset:', dataset);
+        }
+
+        function clearVisualizations() {
+            // Remove bars
+            bars.forEach(bar => {
+                scene.remove(bar.mesh);
+                if (bar.group) scene.remove(bar.group);
+            });
+            bars = [];
+
+            // Remove scatter points
+            scatterPoints.forEach(point => scene.remove(point));
+            scatterPoints = [];
+
+            // Remove ribbons
+            ribbons.forEach(ribbon => scene.remove(ribbon));
+            ribbons = [];
+        }
+
+        function createBars() {
+            // Create bar chart visualization from dataset
+            dataset.forEach((data, index) => {
+                const barHeight = data.value;
+                const barWidth = 0.8;
+                const barDepth = 0.8;
+
+                const barGeometry = new THREE.BoxGeometry(barWidth, barHeight, barDepth);
+                const barMaterial = new THREE.MeshLambertMaterial({
+                    color: getCategoryColor(data.category),
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                const bar = new THREE.Mesh(barGeometry, barMaterial);
+                bar.position.set(
+                    data.x * 0.8 - 7,  // Scale and center X
+                    barHeight / 2 - 5, // Center Y
+                    data.z * 0.8 - 7   // Scale and center Z
+                );
+                bar.castShadow = true;
+                bar.receiveShadow = true;
+                bar.userData = { ...data, type: 'bar', index };
+
+                // Add hover effect
+                bar.userData.originalScale = bar.scale.clone();
+                bar.userData.originalColor = bar.material.color.clone();
+
+                scene.add(bar);
+                bars.push({ mesh: bar, data });
+
+                // Add subtle glow effect
+                const glowGeometry = new THREE.BoxGeometry(barWidth * 1.1, barHeight * 1.1, barDepth * 1.1);
+                const glowMaterial = new THREE.MeshBasicMaterial({
+                    color: getCategoryColor(data.category),
+                    transparent: true,
+                    opacity: 0.1
+                });
+                const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+                glow.position.copy(bar.position);
+                scene.add(glow);
+                bars[bars.length - 1].glow = glow;
+            });
+        }
+
+        function createScatterPoints() {
+            // Create scatter plot visualization
+            const scatterGeometry = new THREE.SphereGeometry(0.15, 8, 8);
+            
+            dataset.forEach((data, index) => {
+                const scatterMaterial = new THREE.MeshLambertMaterial({
+                    color: getCategoryColor(data.category)
+                });
+
+                const point = new THREE.Mesh(scatterGeometry, scatterMaterial);
+                point.position.set(data.x, data.y - 5, data.z);
+                point.castShadow = true;
+                point.userData = { ...data, type: 'scatter', index };
+
+                // Add hover effect
+                point.userData.originalScale = point.scale.clone();
+                point.userData.originalColor = point.material.color.clone();
+
+                scene.add(point);
+                scatterPoints.push(point);
+            });
+        }
+
+        function createRibbons() {
+            // Create ribbon visualization connecting data points by category
+            const categories = [...new Set(dataset.map(d => d.category))];
+            
+            categories.forEach(category => {
+                const categoryPoints = dataset.filter(d => d.category === category);
+                
+                if (categoryPoints.length > 1) {
+                    // Sort by timestamp for ribbon path
+                    categoryPoints.sort((a, b) => a.timestamp - b.timestamp);
+                    
+                    const ribbonPoints = categoryPoints.map(point => 
+                        new THREE.Vector3(point.x, point.y - 5, point.z)
+                    );
+
+                    // Create ribbon geometry
+                    const ribbonGeometry = createRibbonGeometry(ribbonPoints, 0.3);
+                    const ribbonMaterial = new THREE.MeshLambertMaterial({
+                        color: getCategoryColor(category),
+                        transparent: true,
+                        opacity: 0.6,
+                        side: THREE.DoubleSide
+                    });
+
+                    const ribbon = new THREE.Mesh(ribbonGeometry, ribbonMaterial);
+                    ribbon.userData = { type: 'ribbon', category, points: categoryPoints };
+                    scene.add(ribbon);
+                    ribbons.push(ribbon);
+                }
+            });
+        }
+
+        function createRibbonGeometry(points, width) {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            const indices = [];
+            const uvs = [];
+
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                const nextPoint = points[i + 1] || points[i];
+                const prevPoint = points[i - 1] || points[i];
+
+                // Calculate tangent
+                const tangent = new THREE.Vector3()
+                    .subVectors(nextPoint, prevPoint)
+                    .normalize();
+
+                // Calculate normal
+                const normal = new THREE.Vector3(0, 1, 0).cross(tangent).normalize();
+
+                // Create two vertices for the ribbon width
+                const offset = normal.clone().multiplyScalar(width / 2);
+
+                // Left side
+                vertices.push(
+                    point.x - offset.x, point.y - offset.y, point.z - offset.z,
+                    point.x + offset.x, point.y + offset.y, point.z + offset.z
+                );
+
+                // UV coordinates
+                uvs.push(i / (points.length - 1), 0);
+                uvs.push(i / (points.length - 1), 1);
+
+                // Create triangles
+                if (i > 0) {
+                    const a = (i - 1) * 2;
+                    const b = (i - 1) * 2 + 1;
+                    const c = i * 2;
+                    const d = i * 2 + 1;
+
+                    indices.push(a, b, c);
+                    indices.push(c, b, d);
+                }
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geometry.setIndex(indices);
+
+            return geometry;
+        }
+
+        function getCategoryColor(category) {
+            const colors = [
+                0xFF6B6B, // Red
+                0x4ECDC4, // Teal
+                0x45B7D1, // Blue
+                0xF7DC6F, // Yellow
+                0xBB8FCE  // Purple
+            ];
+            return colors[category % colors.length];
+        }
+
+        function setupControls() {
+            // Camera view buttons
+            document.getElementById('view-top').addEventListener('click', () => tweenCamera(0, 20, 0, 0, 0, 0));
+            document.getElementById('view-side').addEventListener('click', () => tweenCamera(20, 0, 0, 0, Math.PI / 2, 0));
+            document.getElementById('view-front').addEventListener('click', () => tweenCamera(0, 0, 20, 0, Math.PI, 0));
+            document.getElementById('view-3d').addEventListener('click', () => tweenCamera(15, 15, 15, 0, Math.PI / 4, 0));
+
+            // Data actions
+            document.getElementById('regenerate').addEventListener('click', generateDataset);
+            document.getElementById('export-csv').addEventListener('click', exportToCSV);
+
+            // Update active button
+            document.querySelectorAll('.secondary').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.secondary').forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                });
+            });
+        }
+
+        function setupEventListeners() {
+            // Mouse events
+            const canvas = document.getElementById('canvas');
+            
+            canvas.addEventListener('mousemove', onMouseMove);
+            canvas.addEventListener('click', onMouseClick);
+            canvas.addEventListener('mouseleave', onMouseLeave);
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Theme toggle
+            document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+        }
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Update raycaster
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects([...bars.map(b => b.mesh), ...scatterPoints], true);
+
+            if (intersects.length > 0) {
+                const intersected = intersects[0].object;
+                if (intersected.userData.type && intersected !== hoverObject) {
+                    // Mouse entered new object
+                    if (hoverObject) {
+                        resetObject(hoverObject);
+                    }
+                    hoverObject = intersected;
+                    highlightObject(hoverObject);
+                    showTooltip(hoverObject, intersects[0].point);
+                }
+            } else {
+                if (hoverObject) {
+                    resetObject(hoverObject);
+                    hideTooltip();
+                    hoverObject = null;
+                }
+            }
+        }
+
+        function onMouseClick(event) {
+            if (hoverObject) {
+                // Animate clicked object
+                gsap.to(hoverObject.rotation, {
+                    y: hoverObject.rotation.y + Math.PI * 2,
+                    duration: 1,
+                    ease: "power2.inOut"
+                });
+                
+                gsap.to(hoverObject.scale, {
+                    x: hoverObject.userData.originalScale.x * 1.5,
+                    y: hoverObject.userData.originalScale.y * 1.5,
+                    z: hoverObject.userData.originalScale.z * 1.5,
+                    duration: 0.3,
+                    yoyo: true,
+                    repeat: 1,
+                    ease: "power2.inOut"
+                });
+            }
+        }
+
+        function onMouseLeave() {
+            if (hoverObject) {
+                resetObject(hoverObject);
+                hideTooltip();
+                hoverObject = null;
+            }
+        }
+
+        function highlightObject(object) {
+            if (object.userData.originalScale) {
+                gsap.to(object.scale, {
+                    x: object.userData.originalScale.x * 1.2,
+                    y: object.userData.originalScale.y * 1.2,
+                    z: object.userData.originalScale.z * 1.2,
+                    duration: 0.2
+                });
+            }
+
+            if (object.userData.originalColor) {
+                gsap.to(object.material.color, {
+                    r: object.userData.originalColor.r * 1.3,
+                    g: object.userData.originalColor.g * 1.3,
+                    b: object.userData.originalColor.b * 1.3,
+                    duration: 0.2
+                });
+            }
+        }
+
+        function resetObject(object) {
+            if (object.userData.originalScale) {
+                gsap.to(object.scale, {
+                    x: object.userData.originalScale.x,
+                    y: object.userData.originalScale.y,
+                    z: object.userData.originalScale.z,
+                    duration: 0.2
+                });
+            }
+
+            if (object.userData.originalColor && object.material) {
+                gsap.to(object.material.color, {
+                    r: object.userData.originalColor.r,
+                    g: object.userData.originalColor.g,
+                    b: object.userData.originalColor.b,
+                    duration: 0.2
+                });
+            }
+        }
+
+        function showTooltip(object, position) {
+            const tooltip = document.getElementById('tooltip');
+            const data = object.userData;
+            
+            let tooltipContent = `
+                <div><strong>${data.type.toUpperCase()}</strong> #${data.id}</div>
+                <div>X: ${data.x.toFixed(2)}</div>
+                <div>Y: ${data.y.toFixed(2)}</div>
+                <div>Z: ${data.z.toFixed(2)}</div>
+            `;
+            
+            if (data.value !== undefined) {
+                tooltipContent += `<div>Value: ${data.value.toFixed(1)}</div>`;
+            }
+            
+            tooltipContent += `<div>Category: ${data.category}</div>`;
+            
+            tooltip.innerHTML = tooltipContent;
+            tooltip.style.display = 'block';
+            
+            // Position tooltip near mouse
+            const rect = renderer.domElement.getBoundingClientRect();
+            tooltip.style.left = (event.clientX - rect.left + 10) + 'px';
+            tooltip.style.top = (event.clientY - rect.top - 10) + 'px';
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.display = 'none';
+        }
+
+        function tweenCamera(x, y, z, rx, ry, rz) {
+            gsap.to(camera.position, {
+                x: x,
+                y: y,
+                z: z,
+                duration: 1.5,
+                ease: "power2.inOut"
+            });
+
+            gsap.to(camera.rotation, {
+                x: rx,
+                y: ry,
+                z: rz,
+                duration: 1.5,
+                ease: "power2.inOut"
+            });
+        }
+
+        function toggleTheme() {
+            const body = document.body;
+            const tooltip = document.getElementById('tooltip');
+            const toggleBtn = document.getElementById('theme-toggle');
+            
+            if (currentTheme === 'light') {
+                body.classList.add('dark-theme');
+                scene.background.setHex(0x1a1a2e);
+                toggleBtn.textContent = '☀️';
+                currentTheme = 'dark';
+            } else {
+                body.classList.remove('dark-theme');
+                scene.background.setHex(0x87CEEB);
+                toggleBtn.textContent = '🌙';
+                currentTheme = 'light';
+            }
+        }
+
+        function exportToCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "ID,X,Y,Z,Value,Category,Timestamp\n";
+            
+            dataset.forEach(data => {
+                csvContent += `${data.id},${data.x},${data.y},${data.z},${data.value},${data.category},${data.timestamp}\n`;
+            });
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `dataset_${new Date().getTime()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function updateStats() {
+            document.getElementById('data-count').textContent = dataset.length;
+            document.getElementById('bar-count').textContent = bars.length;
+            document.getElementById('scatter-count').textContent = scatterPoints.length;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+
+            // Rotate bars slightly for visual appeal
+            bars.forEach((bar, index) => {
+                if (bar.mesh) {
+                    bar.mesh.rotation.y += 0.005;
+                    if (bar.glow) {
+                        bar.glow.rotation.y += 0.005;
+                    }
+                }
+            });
+
+            // Animate ribbons
+            ribbons.forEach(ribbon => {
+                ribbon.rotation.y += 0.002;
+            });
+
+            // Update scatter points with subtle floating animation
+            scatterPoints.forEach((point, index) => {
+                point.rotation.y += 0.01;
+                point.position.y = point.userData.y - 5 + Math.sin(Date.now() * 0.001 + index) * 0.1;
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        // Orbit controls (simplified)
+        let isMouseDown = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        document.getElementById('canvas').addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        document.getElementById('canvas').addEventListener('mouseup', () => {
+            isMouseDown = false;
+        });
+
+        document.getElementById('canvas').addEventListener('mousemove', (e) => {
+            if (isMouseDown) {
+                const deltaMove = {
+                    x: e.clientX - previousMousePosition.x,
+                    y: e.clientY - previousMousePosition.y
+                };
+
+                // Rotate camera
+                camera.rotation.y -= deltaMove.x * 0.01;
+                camera.rotation.x -= deltaMove.y * 0.01;
+
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        // Initialize when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Molecular Explorer - 3D Molecule Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            overflow: hidden;
+        }
+
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-width: 280px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #e0e0e0;
+        }
+
+        select, button {
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        select:hover, button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        button {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            border: none;
+            font-weight: 500;
+            margin: 2px 0;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.danger {
+            background: linear-gradient(45deg, #f44336, #da190b);
+        }
+
+        #molecule-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            max-width: 300px;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 200;
+            background: rgba(0, 0, 0, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #export-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        #clipping-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            width: 200px;
+        }
+
+        .slider-container {
+            margin: 10px 0;
+        }
+
+        .slider-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin: 5px 0;
+        }
+
+        .mode-buttons {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 6px;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+
+        .mode-btn.active {
+            background: #4CAF50;
+        }
+
+        #status {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #status.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="canvas-container"></div>
+        
+        <!-- Loading Indicator -->
+        <div id="loading" style="display: none;">
+            <div class="spinner"></div>
+            <div>Loading molecule...</div>
+        </div>
+
+        <!-- Main Controls -->
+        <div id="controls">
+            <div class="control-group">
+                <label for="moleculeSelect">Select Molecule:</label>
+                <select id="moleculeSelect">
+                    <option value="water">Water (H₂O)</option>
+                    <option value="caffeine">Caffeine (C₈H₁₀N₄O₂)</option>
+                    <option value="dna">DNA Segment (10 base pairs)</option>
+                    <option value="random">Random Protein</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Display Mode:</label>
+                <div class="mode-buttons">
+                    <button class="mode-btn active" data-mode="ball-stick">Ball & Stick</button>
+                    <button class="mode-btn" data-mode="space-filling">Space Filling</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="clippingMode">Clipping:</label>
+                <select id="clippingMode">
+                    <option value="none">None</option>
+                    <option value="x">X-Plane</option>
+                    <option value="y">Y-Plane</option>
+                    <option value="z">Z-Plane</option>
+                </select>
+            </div>
+
+            <button onclick="loadMolecule()">Load Molecule</button>
+            <button onclick="explodeMolecule()">Explode/Collapse</button>
+            <button onclick="resetView()">Reset View</button>
+        </div>
+
+        <!-- Export Controls -->
+        <div id="export-controls">
+            <h4 style="margin-bottom: 10px; font-size: 14px;">Export</h4>
+            <button onclick="exportSnapshot('png')">Export PNG</button>
+            <button onclick="exportSnapshot('jpeg')">Export JPEG</button>
+            <button onclick="exportSnapshot('gltf')">Export GLTF</button>
+        </div>
+
+        <!-- Clipping Controls -->
+        <div id="clipping-controls" style="display: none;">
+            <h4 style="margin-bottom: 10px; font-size: 14px;">Section Clipping</h4>
+            <div class="slider-container">
+                <label for="clipPosition">Position:</label>
+                <input type="range" id="clipPosition" min="-10" max="10" value="0" step="0.1">
+                <span id="clipValue">0.0</span>
+            </div>
+            <div class="slider-container">
+                <label for="clipNormal">Normal:</label>
+                <input type="range" id="clipNormal" min="0" max="360" value="0" step="1">
+                <span id="normalValue">0°</span>
+            </div>
+        </div>
+
+        <!-- Status Message -->
+        <div id="status"></div>
+
+        <!-- Molecule Info -->
+        <div id="molecule-info">
+            <div id="info-content">
+                Select a molecule to begin exploration
+            </div>
+        </div>
+    </div>
+
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/exporters/GLTFExporter.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, controls;
+        let atoms = [], bonds = [];
+        let atomMeshes = [], bondMeshes = [];
+        let clipPlane, clipHelper;
+        let isExploded = false;
+        let explodeDistance = 2.0;
+        let currentMolecule = null;
+        let currentMode = 'ball-stick';
+        let clippingEnabled = false;
+
+        // Atom properties and colors
+        const atomColors = {
+            H: 0xffffff,    // White
+            C: 0x909090,    // Gray
+            N: 0x3050F8,    // Blue
+            O: 0xFF0D0D,    // Red
+            P: 0xFFA500,    // Orange
+            S: 0xFFFF00,    // Yellow
+            default: 0xAAAAAA
+        };
+
+        const atomicRadii = {
+            H: 0.3,
+            C: 0.7,
+            N: 0.65,
+            O: 0.6,
+            P: 1.0,
+            S: 0.9,
+            default: 0.5
+        };
+
+        const bondRadii = {
+            single: 0.15,
+            double: 0.2,
+            triple: 0.25
+        };
+
+        // Sample molecules data
+        const sampleMolecules = {
+            water: {
+                name: "Water (H₂O)",
+                atoms: [
+                    { element: "O", x: 0, y: 0, z: 0 },
+                    { element: "H", x: 0.757, y: 0.586, z: 0 },
+                    { element: "H", x: -0.757, y: 0.586, z: 0 }
+                ],
+                bonds: [
+                    { from: 0, to: 1, order: 1 },
+                    { from: 0, to: 2, order: 1 }
+                ]
+            },
+            caffeine: {
+                name: "Caffeine (C₈H₁₀N₄O₂)",
+                atoms: [
+                    // Simplified caffeine structure
+                    { element: "C", x: 0, y: 0, z: 0 },
+                    { element: "C", x: 1.4, y: 0, z: 0 },
+                    { element: "N", x: 2.8, y: 0, z: 0 },
+                    { element: "C", x: 4.2, y: 0, z: 0 },
+                    { element: "O", x: 5.0, y: 0, z: 0 },
+                    { element: "C", x: 0, y: 1.2, z: 0 },
+                    { element: "N", x: 1.4, y: 1.2, z: 0 },
+                    { element: "C", x: 2.8, y: 1.2, z: 0 },
+                    { element: "C", x: 0, y: 2.4, z: 0 },
+                    { element: "C", x: 1.4, y: 2.4, z: 0 },
+                    { element: "N", x: 2.8, y: 2.4, z: 0 },
+                    { element: "C", x: 0, y: 3.6, z: 0 },
+                    // Hydrogen atoms (simplified)
+                    { element: "H", x: -0.7, y: -0.6, z: 0 },
+                    { element: "H", x: 5.5, y: 0.6, z: 0 }
+                ],
+                bonds: [
+                    { from: 0, to: 1, order: 1 },
+                    { from: 1, to: 2, order: 1 },
+                    { from: 2, to: 3, order: 1 },
+                    { from: 3, to: 4, order: 1 },
+                    { from: 0, to: 5, order: 1 },
+                    { from: 5, to: 6, order: 1 },
+                    { from: 6, to: 7, order: 1 },
+                    { from: 5, to: 8, order: 1 },
+                    { from: 8, to: 9, order: 1 },
+                    { from: 9, to: 10, order: 1 },
+                    { from: 8, to: 11, order: 1 },
+                    { from: 0, to: 12, order: 1 },
+                    { from: 4, to: 13, order: 1 }
+                ]
+            },
+            dna: {
+                name: "DNA Segment (10 base pairs)",
+                atoms: [],
+                bonds: []
+            }
+        };
+
+        // Initialize the application
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0a);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(5, 5, 5);
+
+            // Create renderer
+            const canvasContainer = document.getElementById('canvas-container');
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            canvasContainer.appendChild(renderer.domElement);
+
+            // Create controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+
+            const pointLight1 = new THREE.PointLight(0x4CAF50, 0.5, 50);
+            pointLight1.position.set(5, 5, 5);
+            scene.add(pointLight1);
+
+            const pointLight2 = new THREE.PointLight(0x2196F3, 0.3, 50);
+            pointLight2.position.set(-5, -5, -5);
+            scene.add(pointLight2);
+
+            // Initialize clipping
+            initClipping();
+
+            // Event listeners
+            setupEventListeners();
+
+            // Load initial molecule
+            loadMolecule();
+
+            // Start render loop
+            animate();
+        }
+
+        function setupEventListeners() {
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Control events
+            document.getElementById('moleculeSelect').addEventListener('change', onMoleculeChange);
+            
+            // Mode buttons
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    setDisplayMode(e.target.dataset.mode);
+                });
+            });
+
+            // Clipping controls
+            document.getElementById('clippingMode').addEventListener('change', onClippingModeChange);
+            document.getElementById('clipPosition').addEventListener('input', onClipPositionChange);
+            document.getElementById('clipNormal').addEventListener('input', onClipNormalChange);
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', onKeyDown);
+        }
+
+        function initClipping() {
+            // Initialize clipping plane
+            clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+            
+            // Create clipping helper (for visualization)
+            const helperGeometry = new THREE.PlaneGeometry(20, 20);
+            const helperMaterial = new THREE.MeshBasicMaterial({
+                color: 0x00ff00,
+                transparent: true,
+                opacity: 0.1,
+                side: THREE.DoubleSide
+            });
+            clipHelper = new THREE.Mesh(helperGeometry, helperMaterial);
+            clipHelper.visible = false;
+            scene.add(clipHelper);
+        }
+
+        function setDisplayMode(mode) {
+            currentMode = mode;
+            
+            // Update button states
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.mode === mode);
+            });
+
+            // Clear existing meshes
+            clearMolecule();
+
+            // Re-render molecule in new mode
+            if (currentMolecule) {
+                renderMolecule(currentMolecule);
+            }
+
+            updateStatus(`Switched to ${mode.replace('-', ' ')} mode`, 1000);
+        }
+
+        function onMoleculeChange() {
+            loadMolecule();
+        }
+
+        function onClippingModeChange() {
+            const mode = document.getElementById('clippingMode').value;
+            const clippingControls = document.getElementById('clipping-controls');
+            
+            clippingEnabled = mode !== 'none';
+            clippingControls.style.display = clippingEnabled ? 'block' : 'none';
+            
+            updateClipping();
+        }
+
+        function onClipPositionChange() {
+            const value = parseFloat(document.getElementById('clipPosition').value);
+            document.getElementById('clipValue').textContent = value.toFixed(1);
+            updateClipping();
+        }
+
+        function onClipNormalChange() {
+            const value = parseInt(document.getElementById('clipNormal').value);
+            document.getElementById('normalValue').textContent = value + '°';
+            updateClipping();
+        }
+
+        function updateClipping() {
+            if (!clippingEnabled) {
+                renderer.localClippingEnabled = false;
+                clipHelper.visible = false;
+                return;
+            }
+
+            const mode = document.getElementById('clippingMode').value;
+            const position = parseFloat(document.getElementById('clipPosition').value);
+            const normalAngle = parseFloat(document.getElementById('clipNormal').value) * Math.PI / 180;
+
+            let normal = new THREE.Vector3(0, 0, 1);
+            if (mode === 'x') normal = new THREE.Vector3(1, 0, 0);
+            else if (mode === 'y') normal = new THREE.Vector3(0, 1, 0);
+
+            // Rotate normal
+            const rotationMatrix = new THREE.Matrix4().makeRotationZ(normalAngle);
+            normal.applyMatrix4(rotationMatrix);
+
+            clipPlane.setFromNormalAndCoplanarPoint(normal, new THREE.Vector3(0, 0, position));
+
+            // Update all materials
+            atomMeshes.forEach(mesh => {
+                mesh.material.clippingPlanes = [clipPlane];
+                mesh.material.clipShadows = true;
+            });
+
+            bondMeshes.forEach(mesh => {
+                mesh.material.clippingPlanes = [clipPlane];
+                mesh.material.clipShadows = true;
+            });
+
+            // Update helper
+            clipHelper.position.copy(new THREE.Vector3(0, 0, position));
+            clipHelper.lookAt(new THREE.Vector3().addVectors(
+                new THREE.Vector3(0, 0, position), 
+                normal
+            ));
+            clipHelper.visible = true;
+
+            renderer.localClippingEnabled = true;
+        }
+
+        function onKeyDown(event) {
+            switch(event.code) {
+                case 'Space':
+                    event.preventDefault();
+                    explodeMolecule();
+                    break;
+                case 'KeyR':
+                    event.preventDefault();
+                    resetView();
+                    break;
+                case 'KeyE':
+                    event.preventDefault();
+                    exportSnapshot('png');
+                    break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function loadMolecule() {
+            const loading = document.getElementById('loading');
+            const selectedMolecule = document.getElementById('moleculeSelect').value;
+            
+            loading.style.display = 'block';
+            updateStatus('Loading molecule...', 2000);
+
+            setTimeout(() => {
+                clearMolecule();
+                
+                if (selectedMolecule === 'random') {
+                    generateRandomMolecule();
+                } else if (selectedMolecule === 'dna') {
+                    generateDNASegment();
+                } else {
+                    currentMolecule = sampleMolecules[selectedMolecule];
+                    renderMolecule(currentMolecule);
+                }
+
+                updateMoleculeInfo();
+                centerCamera();
+                loading.style.display = 'none';
+                updateStatus(`${currentMolecule.name} loaded successfully`, 2000);
+            }, 500);
+        }
+
+        function clearMolecule() {
+            // Remove existing meshes
+            atomMeshes.forEach(mesh => scene.remove(mesh));
+            bondMeshes.forEach(mesh => scene.remove(mesh));
+            
+            atomMeshes = [];
+            bondMeshes = [];
+            atoms = [];
+            bonds = [];
+
+            // Reset clipping
+            renderer.localClippingEnabled = false;
+            document.getElementById('clipping-controls').style.display = 'none';
+            clipHelper.visible = false;
+        }
+
+        function generateRandomMolecule() {
+            // Generate a simple random organic molecule
+            const numAtoms = Math.floor(Math.random() * 20) + 5;
+            const elements = ['C', 'H', 'N', 'O'];
+            currentMolecule = {
+                name: "Random Organic Molecule",
+                atoms: [],
+                bonds: []
+            };
+
+            // Generate atoms in a roughly spherical distribution
+            for (let i = 0; i < numAtoms; i++) {
+                const element = elements[Math.floor(Math.random() * elements.length)];
+                const radius = Math.random() * 3;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                
+                currentMolecule.atoms.push({
+                    element: element,
+                    x: radius * Math.sin(phi) * Math.cos(theta),
+                    y: radius * Math.sin(phi) * Math.sin(theta),
+                    z: radius * Math.cos(phi)
+                });
+            }
+
+            // Generate simple bonds between nearby atoms
+            for (let i = 0; i < currentMolecule.atoms.length; i++) {
+                for (let j = i + 1; j < currentMolecule.atoms.length; j++) {
+                    const distance = getDistance(currentMolecule.atoms[i], currentMolecule.atoms[j]);
+                    if (distance < 2.0 && Math.random() > 0.5) {
+                        currentMolecule.bonds.push({
+                            from: i,
+                            to: j,
+                            order: 1
+                        });
+                    }
+                }
+            }
+        }
+
+        function generateDNASegment() {
+            currentMolecule = {
+                name: "DNA Segment (10 base pairs)",
+                atoms: [],
+                bonds: []
+            };
+
+            const basePairs = 10;
+            const helixRadius = 1.0;
+            const rise = 0.34; // nm per base pair
+            const turns = 10 * Math.PI * 2 / 10.4; // 10.4 bases per turn
+
+            let atomIndex = 0;
+
+            // Generate simplified DNA double helix
+            for (let i = 0; i < basePairs; i++) {
+                const angle1 = i * turns;
+                const angle2 = i * turns + Math.PI;
+                const z = i * rise;
+
+                // Strand 1 atoms
+                currentMolecule.atoms.push({
+                    element: 'C',
+                    x: helixRadius * Math.cos(angle1),
+                    y: helixRadius * Math.sin(angle1),
+                    z: z
+                });
+                currentMolecule.atoms.push({
+                    element: 'P',
+                    x: (helixRadius + 0.5) * Math.cos(angle1),
+                    y: (helixRadius + 0.5) * Math.sin(angle1),
+                    z: z + 0.2
+                });
+
+                // Strand 2 atoms
+                currentMolecule.atoms.push({
+                    element: 'C',
+                    x: helixRadius * Math.cos(angle2),
+                    y: helixRadius * Math.sin(angle2),
+                    z: z
+                });
+                currentMolecule.atoms.push({
+                    element: 'P',
+                    x: (helixRadius + 0.5) * Math.cos(angle2),
+                    y: (helixRadius + 0.5) * Math.sin(angle2),
+                    z: z + 0.2
+                });
+
+                // Base pair connections
+                if (i < basePairs - 1) {
+                    const prevIndex = atomIndex;
+                    atomIndex += 4;
+                    currentMolecule.bonds.push({ from: prevIndex, to: atomIndex, order: 1 });
+                    currentMolecule.bonds.push({ from: prevIndex + 1, to: atomIndex + 1, order: 1 });
+                }
+
+                atomIndex += 4;
+            }
+
+            // Add some hydrogen bonds between strands
+            for (let i = 0; i < basePairs; i++) {
+                const base1 = i * 4;
+                const base2 = i * 4 + 2;
+                if (Math.random() > 0.3) {
+                    currentMolecule.bonds.push({ from: base1, to: base2, order: 2 });
+                }
+            }
+        }
+
+        function renderMolecule(molecule) {
+            atoms = molecule.atoms;
+            bonds = inferBonds(atoms, molecule.bonds); // Use provided bonds or infer
+
+            // Create atom meshes
+            atoms.forEach((atom, index) => {
+                const geometry = new THREE.SphereGeometry(
+                    currentMode === 'space-filling' ? 
+                        atomicRadii[atom.element] || atomicRadii.default : 
+                        0.2, 16, 12
+                );
+                
+                const material = new THREE.MeshPhongMaterial({
+                    color: atomColors[atom.element] || atomColors.default,
+                    shininess: 100,
+                    clippingPlanes: clippingEnabled ? [clipPlane] : undefined,
+                    clipShadows: true
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(atom.x, atom.y, atom.z);
+                mesh.userData = { index: index, atom: atom };
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                scene.add(mesh);
+                atomMeshes.push(mesh);
+            });
+
+            // Create bond meshes
+            bonds.forEach(bond => {
+                const atom1 = atoms[bond.from];
+                const atom2 = atoms[bond.to];
+                const bondLength = getDistance(atom1, atom2);
+
+                if (currentMode === 'ball-stick') {
+                    createBondCylinders(atom1, atom2, bond.order, bondMeshes);
+                } else {
+                    // In space-filling mode, bonds are not visible
+                }
+            });
+
+            // Update clipping for new materials
+            updateClipping();
+        }
+
+        function inferBonds(atoms, existingBonds = []) {
+            if (existingBonds.length > 0) {
+                return existingBonds;
+            }
+
+            const inferredBonds = [];
+            const bondDistanceThresholds = {
+                H: { H: 0.8, C: 1.1, N: 1.0, O: 0.95 },
+                C: { H: 1.1, C: 1.5, N: 1.4, O: 1.4 },
+                N: { H: 1.0, C: 1.4, N: 1.4, O: 1.4 },
+                O: { H: 0.95, C: 1.4, N: 1.4, O: 1.4 }
+            };
+
+            for (let i = 0; i < atoms.length; i++) {
+                for (let j = i + 1; j < atoms.length; j++) {
+                    const distance = getDistance(atoms[i], atoms[j]);
+                    const elem1 = atoms[i].element;
+                    const elem2 = atoms[j].element;
+                    const threshold = bondDistanceThresholds[elem1]?.[elem2] || 1.5;
+
+                    if (distance < threshold) {
+                        let order = 1;
+                        if (distance < threshold * 0.8) order = 2;
+                        if (distance < threshold * 0.6) order = 3;
+
+                        inferredBonds.push({ from: i, to: j, order: order });
+                    }
+                }
+            }
+
+            return inferredBonds;
+        }
+
+        function createBondCylinders(atom1, atom2, order = 1, targetArray) {
+            const startPos = new THREE.Vector3(atom1.x, atom1.y, atom1.z);
+            const endPos = new THREE.Vector3(atom2.x, atom2.y, atom2.z);
+            const direction = new THREE.Vector3().subVectors(endPos, startPos).normalize();
+            const bondLength = startPos.distanceTo(endPos);
+            const radius = bondRadii[order === 2 ? 'double' : order === 3 ? 'triple' : 'single'];
+
+            // Create main bond cylinder
+            const bondGeometry = new THREE.CylinderGeometry(radius, radius, bondLength, 8);
+            const bondMaterial = new THREE.MeshPhongMaterial({
+                color: 0x888888,
+                transparent: true,
+                opacity: 0.8,
+                clippingPlanes: clippingEnabled ? [clipPlane] : undefined,
+                clipShadows: true
+            });
+
+            const bondMesh = new THREE.Mesh(bondGeometry, bondMaterial);
+            
+            // Position cylinder between atoms
+            bondMesh.position.copy(startPos).add(endPos).multiplyScalar(0.5);
+            bondMesh.lookAt(endPos);
+            bondMesh.rotateX(Math.PI / 2);
+            bondMesh.castShadow = true;
+            bondMesh.receiveShadow = true;
+
+            scene.add(bondMesh);
+            targetArray.push(bondMesh);
+
+            // Add multiple cylinders for double/triple bonds
+            if (order >= 2) {
+                for (let i = 1; i <= order - 1; i++) {
+                    const offset = 0.1 * i;
+                    const offsetDir = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 0, 1)).normalize();
+                    
+                    const offsetStart = startPos.clone().add(offsetDir.clone().multiplyScalar(offset));
+                    const offsetEnd = endPos.clone().add(offsetDir.clone().multiplyScalar(-offset));
+                    
+                    const offsetGeometry = new THREE.CylinderGeometry(radius * 0.7, radius * 0.7, bondLength, 6);
+                    const offsetMesh = new THREE.Mesh(offsetGeometry, bondMaterial.clone());
+                    
+                    offsetMesh.position.copy(offsetStart).add(offsetEnd).multiplyScalar(0.5);
+                    offsetMesh.lookAt(offsetEnd);
+                    offsetMesh.rotateX(Math.PI / 2);
+                    
+                    scene.add(offsetMesh);
+                    targetArray.push(offsetMesh);
+                }
+            }
+        }
+
+        function getDistance(atom1, atom2) {
+            const dx = atom1.x - atom2.x;
+            const dy = atom1.y - atom2.y;
+            const dz = atom1.z - atom2.z;
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+
+        function explodeMolecule() {
+            isExploded = !isExploded;
+            const targetDistance = isExploded ? explodeDistance : 0;
+
+            atoms.forEach((atom, index) => {
+                const mesh = atomMeshes[index];
+                if (mesh) {
+                    const targetPos = new THREE.Vector3(
+                        atom.x * (1 + targetDistance),
+                        atom.y * (1 + targetDistance),
+                        atom.z * (1 + targetDistance)
+                    );
+                    
+                    // Animate to target position
+                    animateMesh(mesh, mesh.position, targetPos, 500);
+                }
+            });
+
+            bonds.forEach(bond => {
+                // Update bond positions (simplified - could be more sophisticated)
+                const atom1Mesh = atomMeshes[bond.from];
+                const atom2Mesh = atomMeshes[bond.to];
+                if (atom1Mesh && atom2Mesh) {
+                    // This is a simplified approach - in a full implementation
+                    // you'd need to update the bond geometry positions
+                }
+            });
+
+            updateStatus(isExploded ? 'Exploded view' : 'Collapsed view', 1000);
+        }
+
+        function animateMesh(mesh, fromPos, toPos, duration) {
+            const startPos = fromPos.clone();
+            const startTime = Date.now();
+
+            function animate() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = 1 - Math.pow(1 - progress, 3); // Ease out cubic
+
+                mesh.position.lerpVectors(startPos, toPos, easeProgress);
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                }
+            }
+
+            animate();
+        }
+
+        function centerCamera() {
+            if (atomMeshes.length === 0) return;
+
+            // Calculate bounding sphere
+            const boundingSphere = new THREE.Sphere();
+            const positions = atomMeshes.map(mesh => mesh.position);
+            
+            if (positions.length > 0) {
+                boundingSphere.setFromPoints(positions);
+                
+                // Position camera to view the molecule
+                const distance = boundingSphere.radius * 3;
+                camera.position.copy(boundingSphere.center).add(new THREE.Vector3(distance, distance, distance));
+                controls.target.copy(boundingSphere.center);
+                controls.update();
+            }
+        }
+
+        function resetView() {
+            centerCamera();
+            controls.reset();
+            isExploded = false;
+            
+            // Collapse if exploded
+            if (atomMeshes.length > 0) {
+                explodeMolecule(); // This will toggle back to collapsed
+            }
+            
+            updateStatus('View reset', 1000);
+        }
+
+        function exportSnapshot(format) {
+            if (format === 'gltf') {
+                exportGLTF();
+            } else {
+                // Create temporary canvas for image export
+                const link = document.createElement('a');
+                
+                // For image export, we need to render to a canvas
+                renderer.render(scene, camera);
+                link.download = `molecule_${Date.now()}.${format}`;
+                
+                if (format === 'png') {
+                    link.href = renderer.domElement.toDataURL('image/png');
+                } else {
+                    link.href = renderer.domElement.toDataURL('image/jpeg', 0.8);
+                }
+                
+                link.click();
+                
+                updateStatus(`Exported as ${format.toUpperCase()}`, 2000);
+            }
+        }
+
+        function exportGLTF() {
+            const exporter = new THREE.GLTFExporter();
+            
+            // Prepare scene for export (remove controls, helpers, etc.)
+            const exportScene = scene.clone();
+            
+            // Remove clipping helper
+            exportScene.remove(clipHelper);
+            
+            exporter.parse(
+                exportScene,
+                function(result) {
+                    const output = JSON.stringify(result, null, 2);
+                    const blob = new Blob([output], { type: 'application/json' });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(blob);
+                    link.download = `molecule_${Date.now()}.gltf`;
+                    link.click();
+                    URL.revokeObjectURL(link.href);
+                    updateStatus('GLTF model exported', 2000);
+                },
+                function(error) {
+                    console.error('Export error:', error);
+                    updateStatus('Export failed', 3000);
+                },
+                { binary: false }
+            );
+        }
+
+        function updateMoleculeInfo() {
+            const infoDiv = document.getElementById('info-content');
+            if (currentMolecule) {
+                let info = `<strong>${currentMolecule.name}</strong><br>`;
+                info += `Atoms: ${currentMolecule.atoms.length}<br>`;
+                info += `Bonds: ${bonds.length}<br>`;
+                info += `Mode: ${currentMode.replace('-', ' ').toUpperCase()}`;
+                
+                infoDiv.innerHTML = info;
+            }
+        }
+
+        function updateStatus(message, duration = 2000) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.classList.add('show');
+            
+            setTimeout(() => {
+                statusDiv.classList.remove('show');
+            }, duration);
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            controls.update();
+            
+            // Rotate clipping helper if visible
+            if (clipHelper.visible) {
+                clipHelper.rotation.z += 0.01;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', init);
+
+        // Expose functions to global scope for HTML buttons
+        window.loadMolecule = loadMolecule;
+        window.explodeMolecule = explodeMolecule;
+        window.resetView = resetView;
+        window.exportSnapshot = exportSnapshot;
+        window.setDisplayMode = setDisplayMode;
+
+        // Set initial display mode
+        function setInitialMode() {
+            setDisplayMode('ball-stick');
+        }
+
+        // Call after init
+        setTimeout(setInitialMode, 100);
+    </script>
+</body>
+</html>

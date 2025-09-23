@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle System with Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Particle system parameters
+        const particleCount = 1000;
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        const ages = new Float32Array(particleCount);
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const material = new THREE.PointsMaterial({
+            size: 0.05,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+
+        // Mouse interaction
+        let mouseX = 0;
+        let mouseZ = 0;
+        document.addEventListener('mousemove', (event) => {
+            mouseX = ((event.clientX / window.innerWidth) * 2 - 1) * 5;
+            mouseZ = -((event.clientY / window.innerHeight) * 2 - 1) * 5;
+        });
+
+        // Clock for delta time
+        const clock = new THREE.Clock();
+
+        // Initialize particles
+        for (let i = 0; i < particleCount; i++) {
+            const i3 = i * 3;
+            // Initial positions scattered around
+            positions[i3] = (Math.random() - 0.5) * 20;
+            positions[i3 + 1] = (Math.random() - 0.5) * 20;
+            positions[i3 + 2] = (Math.random() - 0.5) * 20;
+
+            // Initial velocities
+            velocities[i3] = (Math.random() - 0.5) * 4;
+            velocities[i3 + 1] = (Math.random() - 0.5) * 4;
+            velocities[i3 + 2] = (Math.random() - 0.5) * 4;
+
+            ages[i] = Math.random() * 2;
+
+            // Initial colors
+            const progress = (ages[i] % 1);
+            const h = progress * 0.8 + 0.1; // Rainbow cycle
+            const rgb = new THREE.Color().setHSL(h, 1, 0.5);
+            colors[i3] = rgb.r;
+            colors[i3 + 1] = rgb.g;
+            colors[i3 + 2] = rgb.b;
+        }
+        geometry.attributes.position.needsUpdate = true;
+        geometry.attributes.color.needsUpdate = true;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+
+        // Camera position
+        camera.position.set(0, 0, 30);
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            const posArray = geometry.attributes.position.array;
+            const colorArray = geometry.attributes.color.array;
+
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+
+                // Update position
+                posArray[i3] += velocities[i3] * delta;
+                posArray[i3 + 1] += velocities[i3 + 1] * delta;
+                posArray[i3 + 2] += velocities[i3 + 2] * delta;
+
+                // Apply gravity (realistic physics)
+                velocities[i3 + 1] -= 9.8 * delta;
+
+                // Check for respawn (fountain effect: reset when below ground)
+                if (posArray[i3 + 1] < -10) {
+                    // Emit new particle at mouse-influenced position
+                    posArray[i3] = mouseX + (Math.random() - 0.5) * 2;
+                    posArray[i3 + 1] = -10;
+                    posArray[i3 + 2] = mouseZ + (Math.random() - 0.5) * 2;
+
+                    // Upward velocity with some randomness (fountain)
+                    velocities[i3] = (Math.random() - 0.5) * 4;
+                    velocities[i3 + 1] = 15 + Math.random() * 10; // Strong upward burst
+                    velocities[i3 + 2] = (Math.random() - 0.5) * 4;
+
+                    ages[i] = 0;
+                } else {
+                    // Increment age for color change
+                    ages[i] += delta * 2; // Color cycle speed (1 second per cycle)
+                }
+
+                // Update color based on age (changes over time)
+                const progress = (ages[i] % 1);
+                let h = progress * 0.8 + 0.1; // Varying hue for colorful effect
+                const s = 1;
+                const l = 0.5;
+                const rgb = new THREE.Color().setHSL(h, s, l);
+                colorArray[i3] = rgb.r;
+                colorArray[i3 + 1] = rgb.g;
+                colorArray[i3 + 2] = rgb.b;
+            }
+
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

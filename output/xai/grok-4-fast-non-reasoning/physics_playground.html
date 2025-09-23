@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Playground</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #222;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            min-width: 200px;
+        }
+        
+        #ui h3 {
+            margin: 0 0 10px 0;
+            color: #4CAF50;
+        }
+        
+        button, input[type="range"] {
+            margin: 5px 0;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background: #444;
+            color: white;
+        }
+        
+        button {
+            cursor: pointer;
+            width: 100%;
+        }
+        
+        button:hover {
+            background: #555;
+        }
+        
+        input[type="range"] {
+            width: 100%;
+        }
+        
+        label {
+            display: block;
+            margin: 5px 0 2px 0;
+            font-size: 12px;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            max-width: 300px;
+        }
+        
+        #add-buttons {
+            margin: 10px 0;
+        }
+        
+        #add-buttons button {
+            margin: 2px;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="ui">
+            <h3>Physics Playground</h3>
+            
+            <div id="add-buttons">
+                <button onclick="addBox()">Add Box</button>
+                <button onclick="addSphere()">Add Sphere</button>
+                <button onclick="createRagdoll()">Add Ragdoll</button>
+                <button onclick="addHingeJoint()">Add Hinge</button>
+            </div>
+            
+            <label>Gravity:</label>
+            <input type="range" id="gravitySlider" min="-20" max="20" value="0" step="0.5">
+            <span id="gravityValue">0</span>
+            
+            <br>
+            <button onclick="resetScene()">Reset Scene</button>
+            
+            <br>
+            <label>
+                <input type="checkbox" id="slowMotion"> Slow Motion
+            </label>
+        </div>
+        
+        <div id="instructions">
+            <strong>Controls:</strong><br>
+            • Click and drag objects to move them<br>
+            • Mouse wheel to zoom<br>
+            • Use buttons above to add objects<br>
+            • Adjust gravity with slider<br>
+            • Right-click to pan<br>
+        </div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Cannon-es from CDN -->
+    <script src="https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"></script>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, world;
+        let mouseBody, mouseConstraint;
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
+        let intersectedObjects = [];
+        let selectedObject = null;
+        let timeScale = 1.0;
+        let initialGravity = 0;
+        
+        // Ragdoll references
+        let ragdollBodies = [];
+        let ragdollJoints = [];
+
+        // Initialize the scene
+        function init() {
+            // Scene setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 15, 20);
+            camera.lookAt(0, 0, 0);
+
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('container').appendChild(renderer.domElement);
+
+            // Physics world setup
+            world = new CANNON.World();
+            world.broadphase = new CANNON.NaiveBroadphase();
+            world.solver.iterations = 10;
+            initialGravity = world.gravity.y;
+            world.gravity.set(0, initialGravity, 0);
+
+            // Materials
+            const groundMaterial = new CANNON.Material("ground");
+            const boxMaterial = new CANNON.Material("box");
+            const sphereMaterial = new CANNON.Material("sphere");
+            
+            // Contact materials
+            const ground_box = new CANNON.ContactMaterial(groundMaterial, boxMaterial, {
+                friction: 0.4,
+                restitution: 0.3
+            });
+            const ground_sphere = new CANNON.ContactMaterial(groundMaterial, sphereMaterial, {
+                friction: 0.4,
+                restitution: 0.3
+            });
+            const box_box = new CANNON.ContactMaterial(boxMaterial, boxMaterial, {
+                friction: 0.2,
+                restitution: 0.3
+            });
+            world.addContactMaterial(ground_box);
+            world.addContactMaterial(ground_sphere);
+            world.addContactMaterial(box_box);
+
+            // Ground
+            createGround();
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            scene.add(directionalLight);
+
+            // Event listeners
+            setupEventListeners();
+
+            // Initial objects
+            createStackOfBoxes();
+
+            // Start animation loop
+            animate();
+        }
+
+        function createGround() {
+            // Visual ground
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshLambertMaterial({ color: 0x90EE90 });
+            const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+            groundMesh.rotation.x = -Math.PI / 2;
+            groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+
+            // Physics ground
+            const groundShape = new CANNON.Plane();
+            const groundBody = new CANNON.Body({ mass: 0, material: new CANNON.Material("ground") });
+            groundBody.addShape(groundShape);
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+            world.addBody(groundBody);
+        }
+
+        function createStackOfBoxes() {
+            const boxCount = 5;
+            const boxSize = 1;
+            const spacing = boxSize * 1.1;
+            
+            for (let i = 0; i < boxCount; i++) {
+                const x = (Math.random() - 0.5) * 4;
+                const z = (Math.random() - 0.5) * 4;
+                
+                createBox(x, i * spacing + boxSize / 2, z, boxSize, boxSize, boxSize, Math.random() * 0xFFFFFF);
+            }
+        }
+
+        function createBox(x = 0, y = 1, z = 0, width = 1, height = 1, depth = 1, color = 0xFF6B6B) {
+            // Visual box
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            const material = new THREE.MeshLambertMaterial({ color: color });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            // Physics box
+            const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
+            const body = new CANNON.Body({ mass: 1, material: new CANNON.Material("box") });
+            body.addShape(shape);
+            body.position.set(x, y, z);
+            world.addBody(body);
+
+            // Store reference
+            mesh.userData.physicsBody = body;
+            body.userData.mesh = mesh;
+            body.userData.isDraggable = true;
+
+            return { mesh, body };
+        }
+
+        function createSphere(x = 0, y = 3, z = 0, radius = 0.5, color = 0x4ECDC4) {
+            // Visual sphere
+            const geometry = new THREE.SphereGeometry(radius, 32, 32);
+            const material = new THREE.MeshLambertMaterial({ color: color });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            scene.add(mesh);
+
+            // Physics sphere
+            const shape = new CANNON.Sphere(radius);
+            const body = new CANNON.Body({ mass: 1, material: new CANNON.Material("sphere") });
+            body.addShape(shape);
+            body.position.set(x, y, z);
+            world.addBody(body);
+
+            // Store reference
+            mesh.userData.physicsBody = body;
+            body.userData.mesh = mesh;
+            body.userData.isDraggable = true;
+
+            return { mesh, body };
+        }
+
+        function addHingeJoint() {
+            // Create two boxes connected by a hinge
+            const box1 = createBox(-2, 3, 0, 0.5, 2, 0.5, 0xFF6B6B);
+            const box2 = createBox(0, 3, 0, 0.5, 2, 0.5, 0x4ECDC4);
+            
+            // Create hinge constraint
+            const hinge = new CANNON.HingeConstraint(
+                box1.body,
+                box2.body,
+                {
+                    pivotA: new CANNON.Vec3(0.25, 0, 0),
+                    axisA: new CANNON.Vec3(0, 1, 0),
+                    pivotB: new CANNON.Vec3(-0.25, 0, 0),
+                    axisB: new CANNON.Vec3(0, 1, 0)
+                }
+            );
+            
+            world.addConstraint(hinge);
+            
+            // Store reference for cleanup
+            ragdollJoints.push(hinge);
+        }
+
+        function createRagdoll(x = 0, y = 5, z = 0) {
+            const ragdoll = [];
+            const joints = [];
+            
+            // Create torso
+            const torso = createBox(x, y, z, 0.8, 1.2, 0.3, 0x8B4513);
+            torso.body.mass = 2;
+            ragdoll.push(torso);
+            
+            // Create head
+            const head = createSphere(x, y + 1.5, z, 0.4, 0xFDBCB4);
+            head.body.mass = 0.5;
+            ragdoll.push(head);
+            
+            // Create arms
+            const leftArm = createBox(x - 0.8, y + 0.3, z, 0.3, 1, 0.2, 0xDDA0DD);
+            leftArm.body.mass = 0.3;
+            ragdoll.push(leftArm);
+            
+            const rightArm = createBox(x + 0.8, y + 0.3, z, 0.3, 1, 0.2, 0xDDA0DD);
+            rightArm.body.mass = 0.3;
+            ragdoll.push(rightArm);
+            
+            // Create legs
+            const leftLeg = createBox(x - 0.3, y - 1.5, z, 0.25, 1.5, 0.2, 0x4682B4);
+            leftLeg.body.mass = 0.8;
+            ragdoll.push(leftLeg);
+            
+            const rightLeg = createBox(x + 0.3, y - 1.5, z, 0.25, 1.5, 0.2, 0x4682B4);
+            rightLeg.body.mass = 0.8;
+            ragdoll.push(rightLeg);
+            
+            // Create joints
+            // Head to torso
+            const headJoint = new CANNON.SphericalSwingAndTwistConstraint(
+                head.body, torso.body,
+                new CANNON.Vec3(0, -0.4, 0),
+                new CANNON.Vec3(0, 0.6, 0)
+            );
+            world.addConstraint(headJoint);
+            joints.push(headJoint);
+            
+            // Arms to torso
+            const leftArmJoint = new CANNON.SphericalSwingAndTwistConstraint(
+                leftArm.body, torso.body,
+                new CANNON.Vec3(0, 0, -0.15),
+                new CANNON.Vec3(-0.4, 0, 0)
+            );
+            world.addConstraint(leftArmJoint);
+            joints.push(leftArmJoint);
+            
+            const rightArmJoint = new CANNON.SphericalSwingAndTwistConstraint(
+                rightArm.body, torso.body,
+                new CANNON.Vec3(0, 0, -0.15),
+                new CANNON.Vec3(0.4, 0, 0)
+            );
+            world.addConstraint(rightArmJoint);
+            joints.push(rightArmJoint);
+            
+            // Legs to torso
+            const leftLegJoint = new CANNON.HingeConstraint(
+                leftLeg.body, torso.body,
+                {
+                    pivotA: new CANNON.Vec3(0, -0.15, 0),
+                    axisA: new CANNON.Vec3(1, 0, 0),
+                    pivotB: new CANNON.Vec3(-0.3, -0.6, 0),
+                    axisB: new CANNON.Vec3(1, 0, 0)
+                }
+            );
+            world.addConstraint(leftLegJoint);
+            joints.push(leftLegJoint);
+            
+            const rightLegJoint = new CANNON.HingeConstraint(
+                rightLeg.body, torso.body,
+                {
+                    pivotA: new CANNON.Vec3(0, -0.15, 0),
+                    axisA: new CANNON.Vec3(1, 0, 0),
+                    pivotB: new CANNON.Vec3(0.3, -0.6, 0),
+                    axisB: new CANNON.Vec3(1, 0, 0)
+                }
+            );
+            world.addConstraint(rightLegJoint);
+            joints.push(rightLegJoint);
+            
+            // Store for cleanup
+            ragdollBodies.push(...ragdoll.map(item => item.body));
+            ragdollJoints.push(...joints);
+        }
+
+        function addBox() {
+            const x = (Math.random() - 0.5) * 10;
+            const z = (Math.random() - 0.5) * 10;
+            createBox(x, 5, z, 1, 1, 1, Math.random() * 0xFFFFFF);
+        }
+
+        function addSphere() {
+            const x = (Math.random() - 0.5) * 10;
+            const z = (Math.random() - 0.5) * 10;
+            createSphere(x, 5, z, 0.5 + Math.random() * 0.5, Math.random() * 0xFFFFFF);
+        }
+
+        function setupEventListeners() {
+            // Mouse events
+            renderer.domElement.addEventListener('mousedown', onMouseDown, false);
+            renderer.domElement.addEventListener('mouseup', onMouseUp, false);
+            renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+            
+            // Keyboard events
+            document.addEventListener('keydown', onKeyDown, false);
+            
+            // Window resize
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Mouse wheel for zoom
+            renderer.domElement.addEventListener('wheel', onMouseWheel, false);
+        }
+
+        function onMouseDown(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            
+            // Check for draggable objects
+            const intersects = raycaster.intersectObjects(scene.children);
+            let hit = false;
+            
+            for (let intersect of intersects) {
+                const body = intersect.object.userData.physicsBody;
+                if (body && body.userData.isDraggable !== false) {
+                    selectedObject = intersect.object;
+                    createMouseConstraint(body);
+                    hit = true;
+                    break;
+                }
+            }
+            
+            if (!hit && selectedObject) {
+                removeMouseConstraint();
+                selectedObject = null;
+            }
+        }
+
+        function onMouseUp() {
+            if (mouseConstraint) {
+                world.removeConstraint(mouseConstraint);
+                mouseConstraint = null;
+                selectedObject = null;
+            }
+        }
+
+        function onMouseMove(event) {
+            if (mouseConstraint) {
+                const mousePos = getMousePos(event);
+                mouseConstraint.target.set(mousePos.x, mousePos.y, mousePos.z);
+            }
+        }
+
+        function onMouseWheel(event) {
+            const zoomSpeed = 0.1;
+            camera.position.z += event.deltaY * zoomSpeed;
+            camera.position.z = Math.max(5, Math.min(50, camera.position.z));
+        }
+
+        function onKeyDown(event) {
+            switch(event.keyCode) {
+                case 32: // Spacebar - reset camera
+                    camera.position.set(0, 15, 20);
+                    camera.lookAt(0, 0, 0);
+                    break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function getMousePos(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            // Create a direction vector from camera to mouse position
+            const direction = new THREE.Vector3();
+            raycaster.ray.direction.clone().multiplyScalar(100).add(raycaster.ray.origin);
+
+            return {
+                x: raycaster.ray.origin.x,
+                y: raycaster.ray.origin.y,
+                z: raycaster.ray.origin.z
+            };
+        }
+
+        function createMouseConstraint(body) {
+            // Create a spring constraint to the mouse position
+            mouseConstraint = new CANNON.PointToPointConstraint(
+                body,
+                new CANNON.Vec3(0, 0, 0),
+                new CANNON.Body({ mass: 0 }), // Static body
+                new CANNON.Vec3(0, 0, 0)
+            );
+            
+            // Set up spring
+            mouseConstraint.equations[0].minForce = -100;
+            mouseConstraint.equations[0].maxForce = 100;
+            
+            world.addConstraint(mouseConstraint);
+        }
+
+        function removeMouseConstraint() {
+            if (mouseConstraint) {
+                world.removeConstraint(mouseConstraint);
+                mouseConstraint = null;
+            }
+        }
+
+        function resetScene() {
+            // Remove all dynamic bodies and meshes
+            world.bodies.forEach(body => {
+                if (body.mass > 0 && !body.userData.isStatic) {
+                    world.removeBody(body);
+                }
+            });
+            
+            // Remove constraints
+            ragdollJoints.forEach(joint => world.removeConstraint(joint));
+            ragdollJoints = [];
+            ragdollBodies = [];
+            
+            // Remove meshes
+            scene.children.forEach(child => {
+                if (child.userData.physicsBody && child.userData.physicsBody.mass > 0) {
+                    scene.remove(child);
+                }
+            });
+            
+            // Recreate ground and initial stack
+            createGround();
+            createStackOfBoxes();
+        }
+
+        function updateUI() {
+            // Gravity slider
+            const gravitySlider = document.getElementById('gravitySlider');
+            const gravityValue = document.getElementById('gravityValue');
+            
+            gravitySlider.addEventListener('input', (e) => {
+                const gravity = parseFloat(e.target.value);
+                world.gravity.set(0, gravity, 0);
+                gravityValue.textContent = gravity.toFixed(1);
+            });
+            
+            // Slow motion toggle
+            const slowMotionToggle = document.getElementById('slowMotion');
+            slowMotionToggle.addEventListener('change', (e) => {
+                timeScale = e.target.checked ? 0.2 : 1.0;
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update physics
+            const deltaTime = Math.min(1/60, 1/60 * timeScale);
+            world.step(deltaTime, deltaTime * 1000, 3);
+            
+            // Update visual meshes
+            world.bodies.forEach(body => {
+                if (body.userData.mesh) {
+                    body.userData.mesh.position.copy(body.position);
+                    body.userData.mesh.quaternion.copy(body.quaternion);
+                }
+            });
+            
+            // Update camera controls (simple orbit)
+            if (mouseConstraint) {
+                // Optional: add camera following when dragging
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', () => {
+            init();
+            updateUI();
+        });
+
+        // Expose functions to global scope for UI buttons
+        window.addBox = addBox;
+        window.addSphere = addSphere;
+        window.createRagdoll = createRagdoll;
+        window.addHingeJoint = addHingeJoint;
+        window.resetScene = resetScene;
+    </script>
+</body>
+</html>

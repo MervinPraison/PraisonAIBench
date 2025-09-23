@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Chair Configurator</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #ui {
+            position: absolute; top: 10px; left: 10px; width: 280px; background: rgba(255, 255, 255, 0.9);
+            color: black; padding: 15px; border-radius: 8px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            z-index: 100; overflow-y: auto; max-height: calc(100vh - 20px);
+        }
+        button { display: block; width: 100%; margin: 5px 0; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #e0e0e0; }
+        label { display: block; margin: 8px 0; }
+        input[type="color"], select { margin-left: 10px; padding: 2px; }
+        h2 { margin-top: 0; }
+        h3 { margin: 15px 0 10px 0; font-size: 14px; }
+        div > div { border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <h2>Chair Configurator</h2>
+        <div>
+            <h3>Parts</h3>
+            <button id="toggle-legs">Legs <span id="legs-vis">On</span></button>
+            <button id="toggle-seat">Seat <span id="seat-vis">On</span></button>
+            <button id="toggle-back">Back <span id="back-vis">On</span></button>
+        </div>
+        <div>
+            <h3>Legs</h3>
+            <label>Color: <input type="color" id="legs-color" value="#8B4513"></label>
+            <label>Material: <select id="legs-material">
+                <option value="lambert" selected>Lambert</option>
+                <option value="phong">Phong</option>
+                <option value="standard">Standard</option>
+            </select></label>
+            <label>Texture: <select id="legs-texture">
+                <option value="none" selected>None</option>
+                <option value="checker">Checker</option>
+                <option value="wood">Wood</option>
+            </select></label>
+        </div>
+        <div>
+            <h3>Seat</h3>
+            <label>Color: <input type="color" id="seat-color" value="#A0522D"></label>
+            <label>Material: <select id="seat-material">
+                <option value="lambert">Lambert</option>
+                <option value="phong" selected>Phong</option>
+                <option value="standard">Standard</option>
+            </select></label>
+            <label>Texture: <select id="seat-texture">
+                <option value="none" selected>None</option>
+                <option value="checker">Checker</option>
+                <option value="wood">Wood</option>
+            </select></label>
+        </div>
+        <div>
+            <h3>Backrest</h3>
+            <label>Color: <input type="color" id="back-color" value="#CD853F"></label>
+            <label>Material: <select id="back-material">
+                <option value="lambert">Lambert</option>
+                <option value="phong">Phong</option>
+                <option value="standard" selected>Standard</option>
+            </select></label>
+            <label>Texture: <select id="back-texture">
+                <option value="none" selected>None</option>
+                <option value="checker">Checker</option>
+                <option value="wood">Wood</option>
+            </select></label>
+        </div>
+        <div>
+            <h3>Views</h3>
+            <button id="view-front">Front</button>
+            <button id="view-side">Side</button>
+            <button id="view-top">Top</button>
+            <button id="view-iso">Iso</button>
+        </div>
+        <div>
+            <h3>Export</h3>
+            <button id="export-json">Export Config JSON</button>
+            <button id="take-snapshot">Take PNG Snapshot</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xbfd1e5);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0.3, 1.5);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.target.set(0, 0.2, 0);
+        controls.update();
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.1;
+        directionalLight.shadow.camera.far = 50;
+        directionalLight.shadow.camera.left = -5;
+        directionalLight.shadow.camera.right = 5;
+        directionalLight.shadow.camera.top = 5;
+        directionalLight.shadow.camera.bottom = -5;
+        scene.add(directionalLight);
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(10, 10);
+        const groundMaterial = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.y = -0.3;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Chair model
+        const chairGroup = new THREE.Group();
+        const parts = {};
+
+        // Legs
+        parts.legs = [];
+        const legGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.4);
+        const legPositions = [
+            [-0.15, -0.2, -0.15],
+            [0.15, -0.2, -0.15],
+            [-0.15, -0.2, 0.15],
+            [0.15, -0.2, 0.15]
+        ];
+        legPositions.forEach(pos => {
+            const leg = new THREE.Mesh(legGeometry, null);
+            leg.position.set(...pos);
+            leg.castShadow = true;
+            leg.receiveShadow = true;
+            parts.legs.push(leg);
+            chairGroup.add(leg);
+        });
+
+        // Seat
+        const seatGeometry = new THREE.BoxGeometry(0.3, 0.05, 0.3);
+        parts.seat = new THREE.Mesh(seatGeometry, null);
+        parts.seat.position.set(0, 0, 0);
+        parts.seat.castShadow = true;
+        parts.seat.receiveShadow = true;
+        chairGroup.add(parts.seat);
+
+        // Backrest
+        const backGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.05);
+        parts.back = new THREE.Mesh(backGeometry, null);
+        parts.back.position.set(0, 0.2, 0.175);
+        parts.back.castShadow = true;
+        parts.back.receiveShadow = true;
+        chairGroup.add(parts.back);
+
+        scene.add(chairGroup);
+
+        // Config
+        const config = {
+            parts: { legs: true, seat: true, back: true },
+            colors: { legs: '#8B4513', seat: '#A0522D', back: '#CD853F' },
+            materials: { legs: 'lambert', seat: 'phong', back: 'standard' },
+            textures: { legs: 'none', seat: 'none', back: 'none' }
+        };
+
+        const materialInstances = {}; // Shared materials per part
+
+        // Texture generator
+        function getTexture(type, color) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            let tex;
+
+            if (type === 'checker') {
+                canvas.width = canvas.height = 256;
+                const darkColor = color.clone().multiplyScalar(0.7);
+                for (let x = 0; x < 256; x += 64) {
+                    for (let y = 0; y < 256; y += 64) {
+                        const isDark = ((Math.floor(x / 64) + Math.floor(y / 64)) % 2 === 0);
+                        ctx.fillStyle = isDark ? '#' + darkColor.getHexString() : '#' + color.getHexString();
+                        ctx.fillRect(x, y, 64, 64);
+                    }
+                }
+                tex = new THREE.CanvasTexture(canvas);
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(4, 4);
+            } else if (type === 'wood') {
+                canvas.width = 512;
+                canvas.height = 256;
+                const darkColor = color.clone().multiplyScalar(0.6);
+                ctx.fillStyle = '#' + darkColor.getHexString();
+                ctx.fillRect(0, 0, 512, 256);
+                ctx.strokeStyle = '#' + color.getHexString();
+                ctx.lineWidth = 3;
+                for (let i = 0; i < 20; i++) {
+                    const y = (i * 13) % 256;
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    let wave = 0;
+                    for (let x = 0; x < 512; x += 4) {
+                        wave += 0.3;
+                        const dy = Math.sin(wave) * 8;
+                        ctx.lineTo(x, y + dy);
+                    }
+                    ctx.stroke();
+                }
+                tex = new THREE.CanvasTexture(canvas);
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.MirroredRepeatWrapping;
+                tex.repeat.set(2, 1);
+            } else {
+                return null;
+            }
+            return tex;
+        }
+
+        // Update part
+        function updatePart(part) {
+            const color = new THREE.Color(config.colors[part]);
+            const type = config.materials[part];
+            const texType = config.textures[part];
+            const matClass = type === 'lambert' ? THREE.MeshLambertMaterial :
+                             type === 'phong' ? THREE.MeshPhongMaterial :
+                             THREE.MeshStandardMaterial;
+            const opts = { color: color };
+            if (texType !== 'none') {
+                opts.map = getTexture(texType, color);
+                opts.color.setHex(0xffffff);
+            }
+            if (type === 'standard') {
+                opts.envMapIntensity = 1.0;
+            }
+            const newMat = new matClass(opts);
+            materialInstances[part] = newMat;
+
+            const meshes = Array.isArray(parts[part]) ? parts[part] : [parts[part]];
+            meshes.forEach(m => {
+                m.material = newMat;
+                m.material.needsUpdate = true;
+            });
+        }
+
+        // Init materials
+        ['legs', 'seat', 'back'].forEach(part => updatePart(part));
+
+        // Environment
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        const rgbeLoader = new THREE.RGBELoader();
+        rgbeLoader.load('https://threejs.org/examples/textures/equirectangular/royal_esplanade_1k.hdr', (texture) => {
+            const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+            scene.background = envMap;
+            scene.environment = envMap;
+            texture.dispose();
+            pmremGenerator.dispose();
+            // Update standard materials
+            ['legs', 'seat', 'back'].forEach(part => {
+                if (config.materials[part] === 'standard') {
+                    updatePart(part);
+                }
+            });
+        });
+
+        // UI Event Listeners
+        const partNames = ['legs', 'seat', 'back'];
+        partNames.forEach(part => {
+            // Toggle
+            document.getElementById(`toggle-${part}`).addEventListener('click', () => {
+                config.parts[part] = !config.parts[part];
+                const meshes = Array.isArray(parts[part]) ? parts[part] : [parts[part]];
+                meshes.forEach(m => m.visible = config.parts[part]);
+                document.getElementById(`${part}-vis`).textContent = config.parts[part] ? 'On' : 'Off';
+            });
+
+            // Color
+            const colorInput = document.getElementById(`${part}-color`);
+            colorInput.value = config.colors[part];
+            colorInput.addEventListener('input', (e) => {
+                config.colors[part] = e.target.value;
+                updatePart(part);
+            });
+
+            // Material
+            const matSelect = document.getElementById(`${part}-material`);
+            matSelect.value = config.materials[part];
+            matSelect.addEventListener('change', (e) => {
+                config.materials[part] = e.target.value;
+                updatePart(part);
+            });
+
+            // Texture
+            const texSelect = document.getElementById(`${part}-texture`);
+            texSelect.value = config.textures[part];
+            texSelect.addEventListener('change', (e) => {
+                config.textures[part] = e.target.value;
+                updatePart(part);
+            });
+        });
+
+        // Views
+        const bookmarks = {
+            front: { pos: new THREE.Vector3(0, 0.3, 1.5), tar: new THREE.Vector3(0, 0.2, 0) },
+            side: { pos: new THREE.Vector3(1.5, 0.5, 0), tar: new THREE.Vector3(0, 0.2, 0) },
+            top: { pos: new THREE.Vector3(0, 2, 0), tar: new THREE.Vector3(0, 0.2, 0) },
+            iso: { pos: new THREE.Vector3(1, 0.5, 1), tar: new THREE.Vector3(0, 0.2, 0) }
+        };
+        ['front', 'side', 'top', 'iso'].forEach(view => {
+            document.getElementById(`view-${view}`).addEventListener('click', () => {
+                const b = bookmarks[view];
+                camera.position.copy(b.pos);
+                controls.target.copy(b.tar);
+                controls.update();
+            });
+        });
+
+        // Export
+        document.getElementById('export-json').addEventListener('click', () => {
+            const jsonStr = JSON.stringify(config, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'chair-config.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        document.getElementById('take-snapshot').addEventListener('click', () => {
+            const dataUrl = renderer.domElement.toDataURL('image/png');
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = 'chair-snapshot.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

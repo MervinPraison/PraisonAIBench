@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Solar System</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #container { width: 100vw; height: 100vh; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 1; background: rgba(0,0,0,0.5); color: white; padding: 10px; border-radius: 5px; }
+        #speed { width: 200px; }
+        #facts { position: absolute; top: 10px; right: 10px; background: white; padding: 15px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.5); display: none; max-width: 300px; z-index: 1; }
+        #facts h3 { margin-top: 0; }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div id="ui">
+        <label for="speed">Time Speed: <span id="speedValue">1</span>x</label><br>
+        <input type="range" id="speed" min="0.1" max="10" step="0.1" value="1">
+    </div>
+    <div id="facts"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Scene setup
+        var scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000011);
+        var camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        var renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        camera.position.set(0, 50, 150);
+        controls.update();
+
+        // Clock for delta time
+        var clock = new THREE.Clock();
+        var time = 0;
+        var timeSpeed = 1;
+
+        // Starfield
+        var starsGeometry = new THREE.BufferGeometry();
+        var starsVertices = [];
+        for (var i = 0; i < 10000; i++) {
+            starsVertices.push(THREE.MathUtils.randFloatSpread(2000), THREE.MathUtils.randFloatSpread(2000), THREE.MathUtils.randFloatSpread(2000));
+        }
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+        var starsMaterial = new THREE.PointsMaterial({ color: 0x888888, size: 0.5 });
+        var stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+
+        // Lighting
+        var ambientLight = new THREE.AmbientLight(0x404040, 0.2);
+        scene.add(ambientLight);
+
+        // Sun
+        var sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+        var sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        var sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+        var sunLight = new THREE.PointLight(0xffffff, 2, 0);
+        sun.add(sunLight);
+
+        // Planet data (approximate values: radius relative, a=semi-major axis, e=eccentricity, period in Earth days, rotSpeed, color, facts)
+        var planetsData = [
+            { name: 'Mercury', radius: 0.38, a: 10, e: 0.205, period: 88, rotSpeed: 0.003, color: 0x8c7853, facts: 'The smallest planet in the Solar System and the one closest to the Sun.' },
+            { name: 'Venus', radius: 0.95, a: 15, e: 0.007, period: 225, rotSpeed: -0.004, color: 0xffc649, facts: 'The hottest planet, with a thick atmosphere of mostly carbon dioxide.' },
+            { name: 'Earth', radius: 1, a: 20, e: 0.017, period: 365, rotSpeed: 0.02, color: 0x6b93d6, facts: 'The only known planet with life. It has one natural satellite, the Moon.' },
+            { name: 'Mars', radius: 0.53, a: 30, e: 0.093, period: 687, rotSpeed: 0.018, color: 0xc1440e, facts: 'Known as the Red Planet due to iron oxide on its surface. Has the largest volcano in the Solar System.' },
+            { name: 'Jupiter', radius: 11.2, a: 50, e: 0.049, period: 4333, rotSpeed: 0.041, color: 0xd8ca9d, facts: 'The largest planet, a gas giant with a Great Red Spot storm larger than Earth.' },
+            { name: 'Saturn', radius: 9.45, a: 70, e: 0.052, period: 10759, rotSpeed: 0.045, color: 0xfad5a5, facts: 'Famous for its extensive ring system composed mostly of ice particles.' },
+            { name: 'Uranus', radius: 4, a: 90, e: 0.047, period: 30687, rotSpeed: 0.03, color: 0x4fd0e7, facts: 'An ice giant that rotates on its side, possibly due to a massive collision.' },
+            { name: 'Neptune', radius: 3.88, a: 110, e: 0.009, period: 60190, rotSpeed: 0.032, color: 0x4b70dd, facts: 'The windiest planet, with the fastest winds reaching up to 2,100 km/h.' }
+        ];
+
+        // Create planets and orbits
+        var planets = [];
+        var orbitLines = [];
+        for (var i = 0; i < planetsData.length; i++) {
+            var data = planetsData[i];
+            var geometry = new THREE.SphereGeometry(data.radius, 32, 32);
+            var material = new THREE.MeshPhongMaterial({ color: data.color });
+            var planet = new THREE.Mesh(geometry, material);
+            planet.castShadow = true;
+            planet.receiveShadow = true;
+            planet.userData = { name: data.name, facts: data.facts, theta: 0, rotSpeed: data.rotSpeed, period: data.period, a: data.a, e: data.e };
+            scene.add(planet);
+            planets.push(planet);
+
+            // Orbit line (elliptical, focus at origin)
+            var points = [];
+            for (var j = 0; j <= 100; j++) {
+                var angle = (j / 100) * Math.PI * 2;
+                var r = data.a * (1 - data.e * data.e) / (1 + data.e * Math.cos(angle));
+                points.push(new THREE.Vector3(r * Math.cos(angle), 0, r * Math.sin(angle)));
+            }
+            var orbitGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            var orbitMaterial = new THREE.LineBasicMaterial({ color: 0x444444 });
+            var orbitLine = new THREE.Line(orbitGeometry, orbitMaterial);
+            scene.add(orbitLine);
+            orbitLines.push(orbitLine);
+        }
+
+        // UI for time speed
+        var speedSlider = document.getElementById('speed');
+        var speedValue = document.getElementById('speedValue');
+        speedSlider.oninput = function () {
+            timeSpeed = parseFloat(this.value);
+            speedValue.textContent = this.value;
+        };
+
+        // Raycaster for planet clicks
+        var raycaster = new THREE.Raycaster();
+        var mouse = new THREE.Vector2();
+        var factsDiv = document.getElementById('facts');
+        function onMouseClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            var intersects = raycaster.intersectObjects(planets);
+            if (intersects.length > 0) {
+                var planet = intersects[0].object;
+                factsDiv.innerHTML = '<h3>' + planet.userData.name + '</h3><p>' + planet.userData.facts + '</p><button onclick="this.parentElement.style.display=\'none\'">Close</button>';
+                factsDiv.style.display = 'block';
+            } else {
+                factsDiv.style.display = 'none';
+            }
+        }
+        window.addEventListener('click', onMouseClick, false);
+
+        // Window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        window.addEventListener('resize', onWindowResize, false);
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            var delta = clock.getDelta();
+            time += delta;
+
+            // Update planets
+            for (var i = 0; i < planets.length; i++) {
+                var planet = planets[i];
+                var data = planet.userData;
+                var theta = (time * timeSpeed * 2 * Math.PI) / data.period;
+                var r = data.a * (1 - data.e * data.e) / (1 + data.e * Math.cos(theta));
+                planet.position.x = r * Math.cos(theta);
+                planet.position.z = r * Math.sin(theta);
+                planet.position.y = 0;
+                planet.rotation.y += data.rotSpeed * timeSpeed * delta * 60; // Scaled for visibility
+            }
+
+            // Rotate sun slightly
+            sun.rotation.y += 0.005 * timeSpeed * delta;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Particle System</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 100;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Interactive Particle Fountain</h3>
+        <p>Move your mouse to direct the particle flow!</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x0a0a0a);
+        document.body.appendChild(renderer.domElement);
+
+        // Particle system parameters
+        const PARTICLE_COUNT = 2000;
+        const fountainHeight = 8;
+        const gravity = new THREE.Vector3(0, -0.02, 0);
+        const damping = 0.98;
+
+        // Mouse interaction
+        let mouseX = 0;
+        let mouseY = 0;
+        let mouseInfluence = new THREE.Vector3(0, 0, 0);
+
+        // Particle arrays for CPU-based physics
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const velocities = new Float32Array(PARTICLE_COUNT * 3);
+        const ages = new Float32Array(PARTICLE_COUNT);
+        const lifeTimes = new Float32Array(PARTICLE_COUNT);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+        // Initialize particles
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            // Random initial position at bottom
+            positions[i * 3] = (Math.random() - 0.5) * 2;
+            positions[i * 3 + 1] = Math.random() * 0.5 - 1;
+            positions[i * 3 + 2] = (Math.random() - 0.5) * 2;
+
+            // Initial upward velocity (fountain effect)
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 0.1 + Math.random() * 0.15;
+            velocities[i * 3] = Math.cos(angle) * speed;
+            velocities[i * 3 + 1] = 0.15 + Math.random() * 0.1;
+            velocities[i * 3 + 2] = Math.sin(angle) * speed;
+
+            ages[i] = 0;
+            lifeTimes[i] = 3 + Math.random() * 2;
+
+            // Initial color (warm tones)
+            colors[i * 3] = Math.random() * 0.5 + 0.5;      // Red
+            colors[i * 3 + 1] = Math.random() * 0.3;        // Green
+            colors[i * 3 + 2] = Math.random() * 0.2;        // Blue
+        }
+
+        // Create particle geometry
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        // Particle material with vertex colors
+        const material = new THREE.PointsMaterial({
+            size: 0.03,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending,
+            depthTest: false
+        });
+
+        const particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(0, 5, 0);
+        scene.add(pointLight);
+
+        // Camera position
+        camera.position.set(5, 3, 5);
+        camera.lookAt(0, 0, 0);
+
+        // Mouse event handlers
+        document.addEventListener('mousemove', onMouseMove, false);
+
+        function onMouseMove(event) {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            // Create mouse influence vector
+            mouseInfluence.x = mouseX * 0.5;
+            mouseInfluence.y = mouseY * 0.3;
+            mouseInfluence.z = 0;
+        }
+
+        // Particle physics update
+        function updateParticles() {
+            const positions = geometry.attributes.position.array;
+            const velocities = this.velocities; // Reference to our velocity array
+            const agesArray = this.ages;
+            const lifeTimesArray = this.lifeTimes;
+            const colorsArray = geometry.attributes.color.array;
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const i3 = i * 3;
+
+                // Update age
+                agesArray[i] += 0.016; // ~60fps
+
+                // Check if particle should be reset (fountain effect)
+                if (agesArray[i] > lifeTimesArray[i] || positions[i3 + 1] < -2) {
+                    // Reset particle to fountain base
+                    positions[i3] = (Math.random() - 0.5) * 2;
+                    positions[i3 + 1] = -1;
+                    positions[i3 + 2] = (Math.random() - 0.5) * 2;
+
+                    // New random direction influenced by mouse
+                    const angle = Math.random() * Math.PI * 2;
+                    const speed = 0.08 + Math.random() * 0.12;
+                    const mouseInfluenceStrength = 0.3;
+
+                    velocities[i3] = (Math.cos(angle) * speed) + (mouseInfluence.x * mouseInfluenceStrength);
+                    velocities[i3 + 1] = 0.15 + Math.random() * 0.1 + (mouseInfluence.y * mouseInfluenceStrength * 0.5);
+                    velocities[i3 + 2] = (Math.sin(angle) * speed) + (mouseInfluence.z * mouseInfluenceStrength);
+
+                    agesArray[i] = 0;
+                    lifeTimesArray[i] = 2.5 + Math.random() * 1.5;
+
+                    // Reset color to warm tones
+                    colorsArray[i3] = 0.8 + Math.random() * 0.2;
+                    colorsArray[i3 + 1] = Math.random() * 0.4;
+                    colorsArray[i3 + 2] = Math.random() * 0.2;
+                } else {
+                    // Apply physics
+                    const vx = velocities[i3];
+                    const vy = velocities[i3 + 1];
+                    const vz = velocities[i3 + 2];
+
+                    // Apply gravity
+                    velocities[i3 + 1] += gravity.y;
+
+                    // Apply mouse influence (gentle attraction/repulsion)
+                    const distanceToMouse = new THREE.Vector3(
+                        positions[i3] - mouseInfluence.x * 3,
+                        positions[i3 + 1] - mouseInfluence.y * 3,
+                        positions[i3 + 2] - mouseInfluence.z * 3
+                    );
+                    
+                    const mouseForce = distanceToMouse.normalize().multiplyScalar(-0.005);
+                    velocities[i3] += mouseForce.x;
+                    velocities[i3 + 1] += mouseForce.y;
+                    velocities[i3 + 2] += mouseForce.z;
+
+                    // Apply air resistance
+                    velocities[i3] *= damping;
+                    velocities[i3 + 1] *= damping;
+                    velocities[i3 + 2] *= damping;
+
+                    // Update position
+                    positions[i3] += velocities[i3];
+                    positions[i3 + 1] += velocities[i3 + 1];
+                    positions[i3 + 2] += velocities[i3 + 2];
+
+                    // Color animation based on age and height
+                    const lifeProgress = agesArray[i] / lifeTimesArray[i];
+                    const heightProgress = Math.max(0, positions[i3 + 1] / fountainHeight);
+
+                    // Fade from warm to cool colors
+                    colorsArray[i3] = 0.8 * (1 - lifeProgress) + 0.2 * lifeProgress;
+                    colorsArray[i3 + 1] = 0.3 * heightProgress + 0.1 * (1 - heightProgress);
+                    colorsArray[i3 + 2] = 0.1 + 0.4 * heightProgress * lifeProgress;
+
+                    // Pulse effect
+                    const pulse = Math.sin(agesArray[i] * 8) * 0.2 + 0.8;
+                    colorsArray[i3] *= pulse;
+                    colorsArray[i3 + 1] *= pulse;
+                    colorsArray[i3 + 2] *= pulse;
+                }
+            }
+
+            // Update geometry attributes
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true;
+        }
+
+        // Store particle data in a closure
+        (function() {
+            window.particleData = {
+                velocities: velocities,
+                ages: ages,
+                lifeTimes: lifeTimes
+            };
+        })();
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update particles
+            updateParticles.call(particleData);
+
+            // Rotate camera slightly for better view
+            camera.position.x = Math.sin(Date.now() * 0.0002) * 7;
+            camera.position.z = Math.cos(Date.now() * 0.0002) * 7;
+            camera.lookAt(0, 2, 0);
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>

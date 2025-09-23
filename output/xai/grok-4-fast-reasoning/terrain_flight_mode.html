@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrain Flight Simulator</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        Controls:<br>
+        W/S: Pitch up/down<br>
+        A/D: Roll left/right<br>
+        Q/E: Yaw left/right<br>
+        Arrow Up/Down: Forward/Backward<br>
+        Arrow Left/Right: Strafe left/right<br>
+        Space/Shift: Up/Down<br>
+        Hold Shift + W: Speed boost<br>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Perlin Noise Implementation (Classic Perlin Noise)
+        // Copied from a public domain implementation for simplicity
+        class Perlin {
+            constructor() {
+                this.p = new Uint8Array(512);
+                this.permutation = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+                    190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,
+                    175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,
+                    65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,
+                    217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,
+                    248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,
+                    246,97,228,251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,
+                    184,84,204,176,115,121,50,45,127,4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+                for (let i = 0; i < 256; i++) {
+                    this.p[256 + i] = this.p[i] = this.permutation[i];
+                }
+            }
+
+            fade(t) {
+                return t * t * t * (t * (t * 6 - 15) + 10);
+            }
+
+            lerp(t, a, b) {
+                return a + t * (b - a);
+            }
+
+            grad(hash, x, y, z) {
+                const h = hash & 15;
+                const u = h < 8 ? x : y;
+                const v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+                return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+            }
+
+            noise(x, y, z) {
+                const X = Math.floor(x) & 255;
+                const Y = Math.floor(y) & 255;
+                const Z = Math.floor(z) & 255;
+                x -= Math.floor(x);
+                y -= Math.floor(y);
+                z -= Math.floor(z);
+                const u = this.fade(x);
+                const v = this.fade(y);
+                const w = this.fade(z);
+                const A = this.p[X] + Y;
+                const AA = this.p[A] + Z;
+                const AB = this.p[A + 1] + Z;
+                const B = this.p[X + 1] + Y;
+                const BA = this.p[B] + Z;
+                const BB = this.p[B + 1] + Z;
+                return this.lerp(w, this.lerp(v, this.lerp(u, this.grad(this.p[AA], x, y, z),
+                    this.grad(this.p[BA], x - 1, y, z)),
+                    this.lerp(u, this.grad(this.p[AB], x, y - 1, z),
+                    this.grad(this.p[BB], x - 1, y - 1, z))),
+                    this.lerp(v, this.lerp(u, this.grad(this.p[AA + 1], x, y, z - 1),
+                    this.grad(this.p[BA + 1], x - 1, y, z - 1)),
+                    this.lerp(u, this.grad(this.p[AB + 1], x, y - 1, z - 1),
+                    this.grad(this.p[BB + 1], x - 1, y - 1, z - 1))));
+            }
+        }
+
+        const perlin = new Perlin();
+
+        // Terrain parameters
+        const TERRAIN_SIZE = 512;
+        const TERRAIN_SEGMENTS = 128;
+        const NOISE_SCALE = 0.01;
+        const HEIGHT_SCALE = 50;
+        const RIVER_WIDTH = 20;
+        const RIVER_DEPTH = 10;
+        const TREE_COUNT = 1000;
+        const TREE_HEIGHT = 10;
+
+        // Drone parameters
+        const DRONE_SPEED = 2;
+        const BOOST_SPEED = 5;
+        const SENSITIVITY = 0.01;
+
+        // Global variables
+        let scene, camera, renderer;
+        let terrain, trees;
+        let dronePosition = new THREE.Vector3(0, 100, 0);
+        let droneVelocity = new THREE.Vector3(0, 0, 0);
+        let droneEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+        let keys = {};
+        let isBoosting = false;
+        let currentSpeed = DRONE_SPEED;
+
+        // Initialize scene
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 100, 1000);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.copy(dronePosition);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(100, 100, 50);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+
+            generateTerrain();
+            generateTrees();
+
+            // Event listeners
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            window.addEventListener('resize', onWindowResize);
+
+            animate();
+        }
+
+        // Generate heightmap using Perlin noise with rivers
+        function generateHeightmap() {
+            const heightmap = new Float32Array((TERRAIN_SEGMENTS + 1) * (TERRAIN_SEGMENTS + 1));
+
+            for (let z = 0; z <= TERRAIN_SEGMENTS; z++) {
+                for (let x = 0; x <= TERRAIN_SEGMENTS; x++) {
+                    const worldX = (x / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+                    const worldZ = (z / TERRAIN_SEGMENTS - 0.5) * TERRAIN_SIZE;
+
+                    // Base terrain height with multiple octaves
+                    let height = 0;
+                    let amplitude = 1;
+                    let frequency = NOISE_SCALE;
+                    for (let i = 0; i < 4; i++) {
+                        height += perlin.noise(worldX * frequency, worldZ * frequency, 0) * amplitude;
+                        amplitude *= 0.5;
+                        frequency *= 2;
+                    }
+                    height *= HEIGHT_SCALE;
+
+                    // River: simple sinusoidal river along Z axis in the middle
+                    const riverDist = Math.abs(worldX) / RIVER_WIDTH;
+                    if (riverDist < 1) {
+                        const riverHeight = Math.sin(worldZ * 0.1) * 5 - RIVER_DEPTH * (1 - riverDist);
+                        height = Math.min(height, riverHeight);
+                    }
+
+                    heightmap[z * (TERRAIN_SEGMENTS + 1) + x] = height;
+                }
+            }
+
+            return heightmap;
+        }
+
+        // Get height at world position (bilinear interpolation)
+        function getHeightAt(worldX, worldZ) {
+            const size = TERRAIN_SIZE / 2;
+            const segSize = TERRAIN_SIZE / TERRAIN_SEGMENTS;
+            const x = Math.max(0, Math.min(TERRAIN_SEGMENTS, Math.floor((worldX + size) / segSize)));
+            const z = Math.max(0, Math.min(TERRAIN_SEGMENTS, Math.floor((worldZ + size) / segSize)));
+
+            const heights = [
+                heightmap[z * (TERRAIN_SEGMENTS + 1) + x],
+                heightmap[z * (TERRAIN_SEGMENTS + 1) + Math.min(x + 1, TERRAIN_SEGMENTS)],
+                heightmap[Math.min(z + 1, TERRAIN_SEGMENTS) * (TERRAIN_SEGMENTS + 1) + x],
+                heightmap[Math.min(z + 1, TERRAIN_SEGMENTS) * (TERRAIN_SEGMENTS + 1) + Math.min(x + 1, TERRAIN_SEGMENTS)]
+            ];
+
+            const fx = ((worldX + size) / segSize) - x;
+            const fz = ((worldZ + size) / segSize) - z;
+
+            const hx0 = THREE.MathUtils.lerp(heights[0], heights[1], fx);
+            const hx1 = THREE.MathUtils.lerp(heights[2], heights[3], fx);
+            return THREE.MathUtils.lerp(hx0, hx1, fz);
+        }
+
+        let heightmap; // Global for access in getHeightAt
+
+        function generateTerrain() {
+            heightmap = generateHeightmap();
+
+            const geometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, TERRAIN_SEGMENTS, TERRAIN_SEGMENTS);
+            geometry.rotateX(-Math.PI / 2);
+
+            const vertices = geometry.attributes.position.array;
+            for (let i = 0, j = 0; j < vertices.length; i++, j += 3) {
+                const x = (i % (TERRAIN_SEGMENTS + 1)) / TERRAIN_SEGMENTS * TERRAIN_SIZE - TERRAIN_SIZE / 2;
+                const z = Math.floor(i / (TERRAIN_SEGMENTS + 1)) / TERRAIN_SEGMENTS * TERRAIN_SIZE - TERRAIN_SIZE / 2;
+                vertices[j + 2] = getHeightAt(x, z); // Use interpolated height
+            }
+            geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshLambertMaterial({ color: 0x228B22, flatShading: false });
+            terrain = new THREE.Mesh(geometry, material);
+            terrain.receiveShadow = true;
+            scene.add(terrain);
+
+            // LOD for terrain (simple: add a low-res version for distance)
+            const lowResGeometry = new THREE.PlaneGeometry(TERRAIN_SIZE, TERRAIN_SIZE, 32, 32);
+            lowResGeometry.rotateX(-Math.PI / 2);
+
+            const lowVertices = lowResGeometry.attributes.position.array;
+            for (let i = 0, j = 0; j < lowVertices.length; i++, j += 3) {
+                const x = (i % 33) / 32 * TERRAIN_SIZE - TERRAIN_SIZE / 2;
+                const z = Math.floor(i / 33) / 32 * TERRAIN_SIZE - TERRAIN_SIZE / 2;
+                lowVertices[j + 2] = getHeightAt(x, z);
+            }
+            lowResGeometry.attributes.position.needsUpdate = true;
+            lowResGeometry.computeVertexNormals();
+
+            const lowResMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+            const lowResTerrain = new THREE.Mesh(lowResGeometry, lowResMaterial);
+            lowResTerrain.position.copy(terrain.position);
+            lowResTerrain.visible = false;
+            scene.add(lowResTerrain);
+
+            // LOD group for terrain (switch based on camera distance)
+            const lod = new THREE.LOD();
+            lod.addLevel(terrain, 0);
+            lod.addLevel(lowResTerrain, 300); // Switch to low res beyond 300 units
+            lod.position.set(0, 0, 0);
+            scene.add(lod);
+            terrain = lod; // Replace terrain with LOD
+        }
+
+        function generateTrees() {
+            const treeGeometry = new THREE.CylinderGeometry(0.5, 1, TREE_HEIGHT, 8);
+            treeGeometry.translate(0, TREE_HEIGHT / 2, 0);
+
+            // Simple leaves: another cylinder or sphere, but keep simple
+            const leavesGeometry = new THREE.SphereGeometry(3, 8, 6);
+            leavesGeometry.translate(0, TREE_HEIGHT + 2, 0);
+
+            const treeMaterial = new THREE.MeshLambertMaterial({ color: 0x8B4513 });
+            const leavesMaterial = new THREE.MeshLambertMaterial({ color: 0x228B22 });
+
+            const instancedTrees = new THREE.Group();
+            const trunk = new THREE.Mesh(treeGeometry, treeMaterial);
+            const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+
+            const matrix = new THREE.Matrix4();
+            for (let i = 0; i < TREE_COUNT; i++) {
+                const tree = new THREE.Group();
+                tree.add(trunk.clone());
+                tree.add(leaves.clone());
+
+                const x = (Math.random() - 0.5) * TERRAIN_SIZE * 0.8;
+                const z = (Math.random() - 0.5) * TERRAIN_SIZE * 0.8;
+                const y = getHeightAt(x, z) + TREE_HEIGHT / 2;
+
+                tree.position.set(x, y, z);
+
+                // Avoid rivers (height low)
+                if (y > -5) {
+                    instancedTrees.add(tree);
+                }
+            }
+
+            // For LOD on trees: simple distance culling (hide if far)
+            instancedTrees.userData.lodDistance = 200;
+            scene.add(instancedTrees);
+            trees = instancedTrees;
+        }
+
+        // Keyboard controls
+        function onKeyDown(event) {
+            keys[event.code] = true;
+            if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') isBoosting = true;
+        }
+
+        function onKeyUp(event) {
+            keys[event.code] = false;
+            if (event.code === 'ShiftLeft' || event.code === 'ShiftRight') isBoosting = false;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Update drone
+        function updateDrone() {
+            // Speed
+            currentSpeed = isBoosting ? BOOST_SPEED : DRONE_SPEED;
+
+            // Input handling
+            const forward = new THREE.Vector3(0, 0, -1).applyEuler(droneEuler);
+            const right = new THREE.Vector3(1, 0, 0).applyEuler(droneEuler);
+            const up = new THREE.Vector3(0, 1, 0).applyEuler(droneEuler);
+
+            if (keys['KeyW']) droneEuler.x -= SENSITIVITY; // Pitch up
+            if (keys['KeyS']) droneEuler.x += SENSITIVITY; // Pitch down
+            if (keys['KeyA']) droneEuler.z += SENSITIVITY; // Roll left
+            if (keys['KeyD']) droneEuler.z -= SENSITIVITY; // Roll right
+            if (keys['KeyQ']) droneEuler.y += SENSITIVITY; // Yaw left
+            if (keys['KeyE']) droneEuler.y -= SENSITIVITY; // Yaw right
+
+            // Movement
+            if (keys['ArrowUp']) droneVelocity.add(forward.clone().multiplyScalar(currentSpeed));
+            if (keys['ArrowDown']) droneVelocity.add(forward.clone().multiplyScalar(-currentSpeed * 0.5));
+            if (keys['ArrowLeft']) droneVelocity.add(right.clone().multiplyScalar(-currentSpeed * 0.5));
+            if (keys['ArrowRight']) droneVelocity.add(right.clone().multiplyScalar(currentSpeed * 0.5));
+            if (keys['Space']) droneVelocity.add(up.clone().multiplyScalar(currentSpeed * 0.5));
+            if (keys['ShiftLeft'] && !isBoosting) droneVelocity.add(up.clone().multiplyScalar(-currentSpeed * 0.5)); // Use Shift for down if not boosting
+
+            // Apply velocity to position
+            dronePosition.add(droneVelocity);
+            droneVelocity.multiplyScalar(0.9); // Damping
+
+            // Collision avoidance: sample height below drone
+            const checkPos = dronePosition.clone();
+            checkPos.y = 0; // Project to ground plane
+            const terrainHeight = getHeightAt(checkPos.x, checkPos.z);
+            const clearance = 20; // Min height above terrain
+            if (dronePosition.y < terrainHeight + clearance) {
+                dronePosition.y = terrainHeight + clearance;
+                droneVelocity.y = 0; // Stop downward velocity
+            }
+
+            // Limit pitch/roll
+            droneEuler.x = THREE.MathUtils.clamp(droneEuler.x, -Math.PI/2, Math.PI/2);
+            droneEuler.z = THREE.MathUtils.clamp(droneEuler.z, -Math.PI/4, Math.PI/4);
+
+            // Update camera
+            camera.position.copy(dronePosition);
+            camera.quaternion.setFromEuler(droneEuler);
+
+            // LOD updates
+            if (terrain) {
+                terrain.update(camera);
+            }
+            if (trees) {
+                const dist = camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
+                trees.visible = dist < trees.userData.lodDistance;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            updateDrone();
+            renderer.render(scene, camera);
+        }
+
+        init();
+    </script>
+</body>
+</html>

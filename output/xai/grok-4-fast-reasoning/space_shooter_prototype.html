@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Space Shooter</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { margin: 0; overflow: hidden; background: black; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; font-family: Arial; z-index: 100; }
+        #score { font-size: 24px; }
+        #health { font-size: 24px; margin-top: 10px; }
+        #gameover { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; text-align: center; display: none; font-family: Arial; }
+        #gameover h1 { font-size: 48px; margin: 0; }
+        #gameover p { font-size: 24px; }
+        #gameover button { font-size: 20px; padding: 10px 20px; background: #333; color: white; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="score">Score: 0</div>
+        <div id="health">Health: 100</div>
+    </div>
+    <div id="gameover">
+        <h1>Game Over</h1>
+        <p>Final Score: <span id="finalscore">0</span></p>
+        <button onclick="location.reload()">Restart</button>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+        }
+    }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        let scene, camera, renderer, composer;
+        let ship;
+        let stars;
+        let enemies;
+        let lasers = [];
+        let particles = [];
+        let score = 0;
+        let health = 100;
+        let gameRunning = true;
+        let enemySpeed = 20; // units per second
+        let laserSpeed = 100;
+        let starSpeed = 30;
+        let waveTimer = 0;
+        let waveInterval = 5000; // ms
+        let mouse = new THREE.Vector2();
+        let lastShoot = 0;
+        let shootCooldown = 200; // ms
+        const clock = new THREE.Clock();
+        const nullMatrix = new THREE.Matrix4();
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x000000, 10, 1000);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = -10;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // Post-processing
+            composer = new EffectComposer(renderer);
+            const renderPass = new RenderPass(scene, camera);
+            composer.addPass(renderPass);
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5, 0.4, 0.85
+            );
+            composer.addPass(bloomPass);
+
+            // Starfield
+            const starCount = 5000;
+            const starGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(starCount * 3);
+            for (let i = 0; i < starCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 2000;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * 2000;
+                positions[i * 3 + 2] = Math.random() * 500 + 50;
+            }
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: true });
+            stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+
+            // Player ship
+            const shipGeometry = new THREE.BoxGeometry(1, 0.5, 2);
+            const shipMaterial = new THREE.MeshLambertMaterial({ color: 0x00ff00 });
+            ship = new THREE.Mesh(shipGeometry, shipMaterial);
+            ship.position.z = 0;
+            scene.add(ship);
+
+            // Lighting for basic
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            // Enemies instanced
+            const enemyCount = 200;
+            const enemyGeometry = new THREE.BoxGeometry(1, 1, 1);
+            const enemyMaterial = new THREE.MeshLambertMaterial({ color: 0xff0000 });
+            enemies = new THREE.InstancedMesh(enemyGeometry, enemyMaterial, enemyCount);
+            // Hide all initially
+            for (let i = 0; i < enemyCount; i++) {
+                enemies.setMatrixAt(i, nullMatrix);
+            }
+            scene.add(enemies);
+
+            // Initial wave
+            spawnWave();
+
+            // Events
+            window.addEventListener('pointermove', onPointerMove);
+            window.addEventListener('click', onShoot);
+            window.addEventListener('pointerdown', onShoot);
+            window.addEventListener('resize', onResize);
+
+            updateUI();
+            animate();
+        }
+
+        function getFreeInstance() {
+            for (let i = 0; i < enemies.count; i++) {
+                let isFree = true;
+                for (let e of activeEnemies) {
+                    if (e.index === i) {
+                        isFree = false;
+                        break;
+                    }
+                }
+                if (isFree) return i;
+            }
+            return -1;
+        }
+
+        let activeEnemies = [];
+
+        function spawnWave() {
+            const numEnemies = 3 + Math.floor(Math.sqrt(score / 100));
+            for (let i = 0; i < numEnemies; i++) {
+                const index = getFreeInstance();
+                if (index !== -1) {
+                    const pos = new THREE.Vector3(
+                        (Math.random() - 0.5) * 40,
+                        (Math.random() - 0.5) * 20,
+                        100 + Math.random() * 50
+                    );
+                    const matrix = new THREE.Matrix4().setPosition(pos);
+                    enemies.setMatrixAt(index, matrix);
+                    activeEnemies.push({ index, pos: pos.clone() });
+                }
+            }
+        }
+
+        const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 1 });
+
+        function onShoot() {
+            const now = Date.now();
+            if (now - lastShoot < shootCooldown || !gameRunning) return;
+            lastShoot = now;
+
+            const laserGeometry = new THREE.BoxGeometry(0.2, 0.2, 1);
+            const laser = new THREE.Mesh(laserGeometry, laserMaterial);
+            laser.position.copy(ship.position);
+            laser.position.z += 1;
+            scene.add(laser);
+            lasers.push(laser);
+        }
+
+        function createHitParticles(hitPos) {
+            const particleCount = 50;
+            const pGeometry = new THREE.BufferGeometry();
+            const pPositions = new Float32Array(particleCount * 3);
+            const velocities = [];
+            const ages = new Array(particleCount).fill(0);
+            for (let i = 0; i < particleCount; i++) {
+                const dir = new THREE.Vector3(
+                    Math.random() - 0.5,
+                    Math.random() - 0.5,
+                    Math.random() - 0.5
+                ).normalize();
+                dir.multiplyScalar(10 + Math.random() * 20); // per second
+                velocities.push(dir);
+                pPositions[i * 3] = hitPos.x + (Math.random() - 0.5) * 0.5;
+                pPositions[i * 3 + 1] = hitPos.y + (Math.random() - 0.5) * 0.5;
+                pPositions[i * 3 + 2] = hitPos.z + (Math.random() - 0.5) * 0.5;
+            }
+            pGeometry.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
+            const pMaterial = new THREE.PointsMaterial({
+                color: 0xffff00,
+                size: 0.2,
+                transparent: true,
+                opacity: 1,
+                sizeAttenuation: true
+            });
+            const particleSystem = new THREE.Points(pGeometry, pMaterial);
+            scene.add(particleSystem);
+
+            particles.push({
+                system: particleSystem,
+                positionsAttr: pGeometry.attributes.position,
+                velocities,
+                ages
+            });
+        }
+
+        function updateParticles(delta) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                let alive = false;
+                const positions = p.positionsAttr.array;
+                for (let j = 0; j < p.ages.length; j++) {
+                    p.ages[j] += delta;
+                    if (p.ages[j] < 1.5) {
+                        alive = true;
+                        const idx = j * 3;
+                        const vel = p.velocities[j];
+                        positions[idx] += vel.x * delta;
+                        positions[idx + 1] += vel.y * delta;
+                        positions[idx + 2] += vel.z * delta;
+                    }
+                }
+                p.positionsAttr.needsUpdate = true;
+                const avgAge = p.ages.reduce((a, b) => a + b, 0) / p.ages.length;
+                p.system.material.opacity = Math.max(0, 1 - avgAge / 1.5);
+                if (!alive) {
+                    scene.remove(p.system);
+                    p.positionsAttr.array = null; // cleanup
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function onPointerMove(event) {
+            if (!gameRunning) return;
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = `Score: ${score}`;
+            document.getElementById('health').textContent = `Health: ${health}`;
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            document.getElementById('finalscore').textContent = score;
+            document.getElementById('gameover').style.display = 'block';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!gameRunning) return;
+
+            const delta = clock.getDelta();
+            const deltaMs = delta * 1000;
+
+            // Ship position
+            ship.position.x = THREE.MathUtils.clamp(mouse.x * 10, -8, 8);
+            ship.position.y = THREE.MathUtils.clamp(mouse.y * 8, -6, 6);
+
+            // Stars
+            const starPos = stars.geometry.attributes.position.array;
+            for (let i = 0; i < starPos.length; i += 3) {
+                starPos[i + 2] -= starSpeed * delta;
+                if (starPos[i + 2] < -50) {
+                    starPos[i + 2] = 200 + Math.random() * 100;
+                    starPos[i] = (Math.random() - 0.5) * 200;
+                    starPos[i + 1] = (Math.random() - 0.5) * 200;
+                }
+            }
+            stars.geometry.attributes.position.needsUpdate = true;
+
+            // Lasers
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                const l = lasers[i];
+                l.position.z += laserSpeed * delta;
+                if (l.position.z > 200) {
+                    scene.remove(l);
+                    lasers.splice(i, 1);
+                }
+            }
+
+            // Enemies
+            for (let i = activeEnemies.length - 1; i >= 0; i--) {
+                const e = activeEnemies[i];
+                e.pos.z -= enemySpeed * delta;
+                const matrix = new THREE.Matrix4().setPosition(e.pos);
+                enemies.setMatrixAt(e.index, matrix);
+                enemies.instanceMatrix.needsUpdate = true;
+
+                // Hit player?
+                if (e.pos.distanceTo(ship.position) < 2) {
+                    health -= 10;
+                    updateUI();
+                    enemies.setMatrixAt(e.index, nullMatrix);
+                    activeEnemies.splice(i, 1);
+                    enemies.instanceMatrix.needsUpdate = true;
+                    if (health <= 0) {
+                        gameOver();
+                        return;
+                    }
+                    continue;
+                }
+            }
+
+            // Collisions
+            for (let li = lasers.length - 1; li >= 0; li--) {
+                const l = lasers[li];
+                for (let ei = activeEnemies.length - 1; ei >= 0; ei--) {
+                    const e = activeEnemies[ei];
+                    if (l.position.distanceTo(e.pos) < 1.5) {
+                        score += 10;
+                        updateUI();
+                        createHitParticles(e.pos.clone());
+                        enemies.setMatrixAt(e.index, nullMatrix);
+                        activeEnemies.splice(ei, 1);
+                        enemies.instanceMatrix.needsUpdate = true;
+                        scene.remove(l);
+                        lasers.splice(li, 1);
+                        break;
+                    }
+                }
+            }
+
+            // Waves
+            waveTimer += deltaMs;
+            if (waveTimer > waveInterval) {
+                spawnWave();
+                waveTimer = 0;
+                // Difficulty scaling
+                enemySpeed += 2;
+                waveInterval = Math.max(1000, waveInterval - 500);
+            }
+
+            // Particles
+            updateParticles(delta);
+
+            composer.render();
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Molecular Explorer</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 100;
+            background: rgba(255,255,255,0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #ui button { margin: 2px; }
+        #pdbInput { width: 400px; height: 100px; margin-top: 10px; }
+        #clipZ { width: 100px; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <button onclick="loadSample('water')">Water</button>
+        <button onclick="loadSample('caffeine')">Caffeine</button>
+        <button onclick="loadSample('dna')">DNA Segment</button>
+        <button onclick="randomMolecule()">Random Chain</button>
+        <button onclick="toggleMode()">Toggle Mode (Ball-and-Stick / Space-Filling)</button>
+        <button onclick="explode()">Explode</button>
+        <button onclick="resetExplode()">Reset Explode</button>
+        <button onclick="exportSnapshot()">Export Snapshot</button>
+        <br>
+        <label>Clip Plane Z: <input type="range" id="clipZ" min="-20" max="20" value="0" step="0.1" oninput="updateClip()"></label>
+        <br>
+        <button onclick="loadFromInput()">Load Provided PDB</button>
+        <textarea id="pdbInput" placeholder="Paste PDB content here..."></textarea>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        let scene, camera, renderer, controls;
+        let moleculeGroup, atomsGroup, bondsGroup;
+        let isBallStick = true;
+        let exploded = false;
+        let explodeStartTime = 0;
+        let currentAtomsData, currentBondsData;
+        let clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
+        const elementColors = {
+            'H': 0xffffff,
+            'C': 0x333333,
+            'N': 0x8F8FFF,
+            'O': 0xFF8C00,  // corrected to orange-red for O
+            'P': 0xFFA500,
+            // Add more as needed
+        };
+
+        const atomicRadii = {  // Ball-and-stick radii (scaled)
+            'H': 0.2,
+            'C': 0.3,
+            'N': 0.3,
+            'O': 0.3,
+            'P': 0.4,
+        };
+
+        const vdwRadii = {  // Space-filling (van der Waals, scaled down for view)
+            'H': 0.6,
+            'C': 0.85,
+            'N': 0.75,
+            'O': 0.7,
+            'P': 1.0,
+        };
+
+        const samplePDB = {
+            water: `
+ATOM      1  O   WAT A   1       0.000   0.000   0.000  1.00  0.00           O
+ATOM      2  H1  WAT A   1       0.757   0.000   0.586  1.00  0.00           H
+ATOM      3  H2  WAT A   1      -0.757   0.000   0.586  1.00  0.00           H
+            `,
+            caffeine: `
+ATOM      1  C1  CAF A   1      -0.440   0.031  -0.100  1.00 20.00           C
+ATOM      2  C2  CAF A   1       0.641   0.022   0.922  1.00 20.00           C
+ATOM      3  N3  CAF A   1       1.628   0.035   0.782  1.00 20.00           N
+ATOM      4  C4  CAF A   1       1.732  -0.939   0.069  1.00 20.00           C
+ATOM      5  C5  CAF A   1       2.819  -0.950  -0.749  1.00 20.00           C
+ATOM      6  C6  CAF A   1       3.652  -0.043  -0.850  1.00 20.00           C
+ATOM      7  N7  CAF A   1       3.764   1.019  -0.161  1.00 20.00           N
+ATOM      8  C8  CAF A   1       2.803   1.010  -0.932  1.00 20.00           C
+ATOM      9  N9  CAF A   1       1.968   0.977  -0.561  1.00 20.00           N
+ATOM     10  C10  CAF A   1       0.199   1.016   0.171  1.00 20.00           C
+ATOM     11  O11  CAF A   1      -0.771   1.035   0.305  1.00 20.00           O
+ATOM     12  N12  CAF A   1      -0.921  -1.053   0.115  1.00 20.00           N
+ATOM     13  C13  CAF A   1      -2.007  -1.058  -0.653  1.00 20.00           C
+ATOM     14  C14  CAF A   1      -2.899  -0.144  -0.754  1.00 20.00           C
+ATOM     15  N15  CAF A   1      -3.023   0.882  -0.065  1.00 20.00           N
+ATOM     16  C16  CAF A   1      -2.062   0.881  -0.630  1.00 20.00           C
+ATOM     17  C17  CAF A   1      -1.170   0.012  -0.431  1.00 20.00           C
+ATOM     18  C18  CAF A   1      -2.007  -2.047  -1.337  1.00 20.00           C
+ATOM     19  O19  CAF A   1      -3.011  -2.060  -1.472  1.00 20.00           O
+ATOM     20  C20  CAF A   1      -0.938  -2.046  -0.797  1.00 20.00           C
+ATOM     21  C21  CAF A   1       0.011  -1.035  -0.896  1.00 20.00           C
+ATOM     22  N22  CAF A   1       0.032   0.018  -1.627  1.00 20.00           N
+ATOM     23  C23  CAF A   1       1.107  -0.975  -1.719  1.00 20.00           C
+ATOM     24  C24  CAF A   1       1.136   0.046  -2.867  1.00 20.00           C
+            `,
+            dna: `
+ATOM      1  P   DT  A   1       0.000   0.000   0.000  1.00  0.00           P
+ATOM      2  O1P DT  A   1      -1.500   0.000   0.000  1.00  0.00           O
+ATOM      3  O2P DT  A   1       1.500   0.000   0.000  1.00  0.00           O
+ATOM      4  O5' DT  A   1       0.000   2.000   0.000  1.00  0.00           O
+ATOM      5  C5' DT  A   1       0.000   3.000   0.000  1.00  0.00           C
+ATOM      6  C4' DT  A   1       0.000   3.500   1.000  1.00  0.00           C
+ATOM      7  N1  DT  A   1       0.000   5.000   2.000  1.00  0.00           N
+ATOM      8  C2  DT  A   1       0.000   5.500   3.000  1.00  0.00           C
+ATOM      9  O2  DT  A   1       0.000   6.000   4.000  1.00  0.00           O
+ATOM     10  N3  DT  A   1       1.000   5.000   2.000  1.00  0.00           N
+ATOM     11  C4  DT  A   1       2.000   5.500   2.000  1.00  0.00           C
+ATOM     12  O4  DT  A   1       3.000   5.000   2.000  1.00  0.00           O
+# Simplified thymine base pair segment (H atoms omitted)
+            `
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f0f0);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.localClippingEnabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 10, 5);
+            scene.add(directionalLight);
+
+            camera.position.set(0, 0, 10);
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+
+            loadSample('water');
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            if (exploded) {
+                const elapsed = (Date.now() - explodeStartTime) / 1000;
+                const progress = Math.min(elapsed, 1);
+                if (atomsGroup) {
+                    atomsGroup.children.forEach((atom) => {
+                        if (atom.userData.originalPos && atom.userData.explodeDir) {
+                            const target = atom.userData.originalPos.clone().add(atom.userData.explodeDir);
+                            atom.position.lerpVectors(atom.userData.originalPos, target, progress);
+                        }
+                    });
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function parsePDB(pdbString) {
+            const atoms = [];
+            const lines = pdbString.split('\n').filter(line => line.trim());
+            lines.forEach(line => {
+                if (line.substring(0, 6).trim() === 'ATOM' || line.substring(0, 6).trim() === 'HETATM') {
+                    const x = parseFloat(line.substring(30, 38));
+                    const y = parseFloat(line.substring(38, 46));
+                    const z = parseFloat(line.substring(46, 54));
+                    const atomName = line.substring(12, 16).replace(/\s/g, '');
+                    let el;
+                    if (atomName.length >= 2 && /[a-z]/.test(atomName[1])) {
+                        el = atomName.substring(0, 2).toUpperCase();
+                    } else {
+                        el = atomName.substring(0, 1).toUpperCase();
+                    }
+                    atoms.push({ el, pos: [x * 0.5, y * 0.5, z * 0.5] });  // Scale for better view
+                }
+            });
+            return { atoms, bonds: null };
+        }
+
+        function inferBonds(positions, maxDist = 1.8) {
+            const bonds = [];
+            for (let i = 0; i < positions.length; i++) {
+                for (let j = i + 1; j < positions.length; j++) {
+                    if (positions[i].distanceTo(positions[j]) < maxDist) {
+                        bonds.push([i, j]);
+                    }
+                }
+            }
+            return bonds;
+        }
+
+        function createAtom(el, pos, radius) {
+            const geometry = new THREE.SphereGeometry(radius, 24, 24);
+            const color = elementColors[el] || 0x808080;
+            const material = new THREE.MeshLambertMaterial({ color });
+            material.clippingPlanes = [clipPlane];
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.fromArray(pos);
+            return sphere;
+        }
+
+        function createBond(atom1, atom2, bondRadius = 0.15) {
+            const pos1 = atom1.position.clone();
+            const pos2 = atom2.position.clone();
+            const midPoint = pos1.clone().add(pos2).divideScalar(2);
+            const direction = pos2.clone().sub(pos1).normalize();
+            const distance = pos1.distanceTo(pos2);
+
+            const geometry = new THREE.CylinderGeometry(bondRadius, bondRadius, 1, 8);
+            const material = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            material.clippingPlanes = [clipPlane];
+            const cylinder = new THREE.Mesh(geometry, material);
+
+            cylinder.position.copy(midPoint);
+            cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+            cylinder.scale.y = distance;
+
+            return cylinder;
+        }
+
+        function loadMolecule(atomsData, bondsData, mode = 'ballstick') {
+            if (moleculeGroup) {
+                scene.remove(moleculeGroup);
+            }
+            moleculeGroup = new THREE.Group();
+            atomsGroup = new THREE.Group();
+            bondsGroup = new THREE.Group();
+            moleculeGroup.add(atomsGroup);
+            moleculeGroup.add(bondsGroup);
+
+            const atomMeshes = [];
+            for (const atomData of atomsData) {
+                let radius = mode === 'spacefilling' ? (vdwRadii[atomData.el] || 1.0) : (atomicRadii[atomData.el] || 0.5);
+                const atom = createAtom(atomData.el, atomData.pos, radius);
+                atomMeshes.push(atom);
+                atomsGroup.add(atom);
+            }
+
+            if (mode === 'ballstick') {
+                let finalBonds = bondsData;
+                if (!finalBonds) {
+                    const positions = atomsData.map(d => new THREE.Vector3(...d.pos));
+                    finalBonds = inferBonds(positions);
+                }
+                for (const bond of finalBonds) {
+                    const b = createBond(atomMeshes[bond[0]], atomMeshes[bond[1]]);
+                    bondsGroup.add(b);
+                }
+                bondsGroup.visible = true;
+            } else {
+                bondsGroup.visible = false;
+            }
+
+            // Center the molecule
+            const center = new THREE.Vector3();
+            atomsData.forEach(d => center.add(new THREE.Vector3(...d.pos)));
+            center.divideScalar(atomsData.length);
+            moleculeGroup.position.sub(center);
+
+            scene.add(moleculeGroup);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        }
+
+        function loadSample(name) {
+            const pdb = samplePDB[name];
+            if (pdb) {
+                const data = parsePDB(pdb);
+                currentAtomsData = data.atoms;
+                currentBondsData = data.bonds;
+                loadMolecule(currentAtomsData, currentBondsData, isBallStick ? 'ballstick' : 'spacefilling');
+            }
+        }
+
+        function randomMolecule() {
+            const numAtoms = Math.floor(Math.random() * 15) + 5;
+            const atoms = [];
+            let prevPos = new THREE.Vector3(0, 0, 0);
+            const els = ['C', 'N', 'O', 'H'];
+            for (let i = 0; i < numAtoms; i++) {
+                const el = els[Math.floor(Math.random() * els.length)];
+                const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+                prevPos.add(dir.multiplyScalar(1.2 + Math.random() * 0.6));
+                atoms.push({ el, pos: [prevPos.x, prevPos.y, prevPos.z] });
+            }
+            currentAtomsData = atoms;
+            currentBondsData = null;  // Will infer
+            loadMolecule(atoms, null, isBallStick ? 'ballstick' : 'spacefilling');
+        }
+
+        function toggleMode() {
+            isBallStick = !isBallStick;
+            if (currentAtomsData) {
+                loadMolecule(currentAtomsData, currentBondsData, isBallStick ? 'ballstick' : 'spacefilling');
+            }
+        }
+
+        function explode() {
+            if (exploded || !atomsGroup) return;
+            exploded = true;
+            explodeStartTime = Date.now();
+            const center = new THREE.Vector3();
+            atomsGroup.children.forEach(a => center.add(a.position));
+            center.divideScalar(atomsGroup.children.length);
+            atomsGroup.children.forEach(atom => {
+                atom.userData.originalPos = atom.position.clone();
+                const dirVec = atom.position.clone().sub(center).normalize().multiplyScalar(4);  // Explode distance
+                atom.userData.explodeDir = dirVec;
+            });
+            bondsGroup.visible = false;  // Hide bonds during explode
+        }
+
+        function resetExplode() {
+            exploded = false;
+            if (atomsGroup) {
+                atomsGroup.children.forEach(atom => {
+                    if (atom.userData.originalPos) {
+                        atom.position.copy(atom.userData.originalPos);
+                    }
+                });
+            }
+            if (bondsGroup && isBallStick) {
+                bondsGroup.visible = true;
+            }
+            controls.update();
+        }
+
+        function updateClip() {
+            const z = parseFloat(document.getElementById('clipZ').value);
+            clipPlane.constant = -z;
+            // Re-apply to materials if needed, but since set on create, okay for static.
+        }
+
+        function exportSnapshot() {
+            renderer.render(scene, camera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = 'molecule_snapshot.png';
+            link.href = dataURL;
+            link.click();
+        }
+
+        function loadFromInput() {
+            const input = document.getElementById('pdbInput').value;
+            if (input.trim()) {
+                const data = parsePDB(input);
+                currentAtomsData = data.atoms;
+                currentBondsData = data.bonds;
+                loadMolecule(currentAtomsData, data.bonds, isBallStick ? 'ballstick' : 'spacefilling');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

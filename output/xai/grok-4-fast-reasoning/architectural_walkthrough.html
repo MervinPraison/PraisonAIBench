@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Architectural Walkthrough</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #minimap {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 200px;
+            height: 200px;
+            border: 1px solid black;
+            background: white;
+        }
+        #instructions {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: Arial;
+            font-size: 20px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">Click to start walkthrough<br/>WASD to move, Mouse to look around<br/>Click on green hotspots to interact with furniture</div>
+    <canvas id="minimap"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // Simple IBL setup with procedural equirectangular texture
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 256);
+        gradient.addColorStop(0, '#87ceeb');
+        gradient.addColorStop(1, '#443322');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 512, 256);
+        const equiTexture = new THREE.CanvasTexture(canvas);
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        const envMap = pmremGenerator.fromEquirectangular(equiTexture).texture;
+        scene.environment = envMap;
+        scene.background = new THREE.Color(0x87ceeb);
+        pmremGenerator.dispose();
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+        scene.add(ambientLight);
+        const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x443322, 0.6);
+        scene.add(hemisphereLight);
+
+        // Light probe
+        const lightProbe = new THREE.LightProbe();
+        lightProbe.position.set(0, 1.5, 0);
+        scene.add(lightProbe);
+
+        // Procedurally generated house (simple layout with 3 rooms)
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+        const walls = [];
+        const floors = [];
+        const furnitures = [];
+        const hotspots = [];
+        const rooms = [
+            { id: 0, min: new THREE.Vector3(-15, -1, -6), max: new THREE.Vector3(-5, 4, 6), adjacent: [1] },
+            { id: 1, min: new THREE.Vector3(-5, -1, -6), max: new THREE.Vector3(5, 4, 6), adjacent: [0, 2] },
+            { id: 2, min: new THREE.Vector3(5, -1, -6), max: new THREE.Vector3(15, 4, 6), adjacent: [1] }
+        ];
+
+        // Full floor and ceiling
+        const fullFloorGeo = new THREE.PlaneGeometry(30, 12);
+        const fullFloor = new THREE.Mesh(fullFloorGeo, floorMat);
+        fullFloor.rotation.x = -Math.PI / 2;
+        fullFloor.position.y = 0;
+        scene.add(fullFloor);
+        floors.push(fullFloor);
+        fullFloor.userData.roomId = -1;
+
+        const ceiling = fullFloor.clone();
+        ceiling.position.y = 3;
+        scene.add(ceiling);
+        floors.push(ceiling);
+        ceiling.userData.roomId = -1;
+
+        // Outer walls
+        const backWallGeo = new THREE.BoxGeometry(30, 3, 0.2);
+        const backWall = new THREE.Mesh(backWallGeo, wallMat);
+        backWall.position.set(0, 1.5, -6);
+        scene.add(backWall);
+        walls.push(backWall);
+        backWall.userData.roomId = -1;
+
+        const frontWall = backWall.clone();
+        frontWall.position.z = 6;
+        scene.add(frontWall);
+        walls.push(frontWall);
+        frontWall.userData.roomId = -1;
+
+        const sideWallGeo = new THREE.BoxGeometry(0.2, 3, 12);
+        const leftWall = new THREE.Mesh(sideWallGeo, wallMat);
+        leftWall.position.set(-15, 1.5, 0);
+        scene.add(leftWall);
+        walls.push(leftWall);
+        leftWall.userData.roomId = -1;
+
+        const rightWall = leftWall.clone();
+        rightWall.position.x = 15;
+        scene.add(rightWall);
+        walls.push(rightWall);
+        rightWall.userData.roomId = -1;
+
+        // Internal walls with door gaps (at x=-5 and x=5, gap z=-1 to 1)
+        const internalWallGeo = new THREE.BoxGeometry(0.2, 3, 5);
+        // Wall at x=-5, lower segment
+        const internalLeft1 = new THREE.Mesh(internalWallGeo, wallMat);
+        internalLeft1.position.set(-5, 1.5, -3.5);
+        scene.add(internalLeft1);
+        walls.push(internalLeft1);
+        internalLeft1.userData.roomId = -1;
+
+        // Upper segment
+        const internalLeft2 = internalLeft1.clone();
+        internalLeft2.position.z = 3.5;
+        scene.add(internalLeft2);
+        walls.push(internalLeft2);
+        internalLeft2.userData.roomId = -1;
+
+        // Wall at x=5
+        const internalRight1 = internalLeft1.clone();
+        internalRight1.position.x = 5;
+        internalRight1.position.z = -3.5;
+        scene.add(internalRight1);
+        walls.push(internalRight1);
+        internalRight1.userData.roomId = -1;
+
+        const internalRight2 = internalRight1.clone();
+        internalRight2.position.z = 3.5;
+        scene.add(internalRight2);
+        walls.push(internalRight2);
+        internalRight2.userData.roomId = -1;
+
+        // Furniture
+        // Table in room 0 (living room)
+        const tableOriginalMat = new THREE.MeshStandardMaterial({ color: 0x654321 });
+        const tableAltMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const tableTopGeo = new THREE.BoxGeometry(2, 0.1, 2);
+        const tableTop = new THREE.Mesh(tableTopGeo, tableOriginalMat);
+        tableTop.position.set(-10, 1.05, 0);
+        scene.add(tableTop);
+        furnitures.push(tableTop);
+        tableTop.userData.roomId = 0;
+
+        const tableLegGeo = new THREE.BoxGeometry(0.1, 1, 0.1);
+        const tableLeg1 = new THREE.Mesh(tableLegGeo, tableOriginalMat);
+        tableLeg1.position.set(-10.75, 0.5, -0.75);
+        scene.add(tableLeg1);
+        furnitures.push(tableLeg1);
+        tableLeg1.userData.roomId = 0;
+
+        const tableLeg2 = tableLeg1.clone();
+        tableLeg2.position.x = -9.25;
+        scene.add(tableLeg2);
+        furnitures.push(tableLeg2);
+        tableLeg2.userData.roomId = 0;
+
+        const tableLeg3 = tableLeg1.clone();
+        tableLeg3.position.z = 0.75;
+        scene.add(tableLeg3);
+        furnitures.push(tableLeg3);
+        tableLeg3.userData.roomId = 0;
+
+        const tableLeg4 = tableLeg3.clone();
+        tableLeg4.position.x = -9.25;
+        scene.add(tableLeg4);
+        furnitures.push(tableLeg4);
+        tableLeg4.userData.roomId = 0;
+
+        // Chair in room 1 (kitchen)
+        const chair = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.5), new THREE.MeshStandardMaterial({ color: 0x8B4513 }));
+        chair.position.set(0, 0.5, 3);
+        scene.add(chair);
+        furnitures.push(chair);
+        chair.userData.roomId = 1;
+
+        // Bed in room 2 (bedroom)
+        const bedOriginalMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        const bedAltMat = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+        const bed = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 2), bedOriginalMat);
+        bed.position.set(10, 0.25, 0);
+        scene.add(bed);
+        furnitures.push(bed);
+        bed.userData.roomId = 2;
+
+        // Hotspots (invisible spheres for interaction)
+        const hotspotGeo = new THREE.SphereGeometry(1);
+        const hotspotMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0 });
+
+        // Table hotspot (toggle material)
+        const tableHotspot = new THREE.Mesh(hotspotGeo, hotspotMat);
+        tableHotspot.position.set(-10, 1, 0);
+        scene.add(tableHotspot);
+        hotspots.push({
+            mesh: tableHotspot,
+            meshes: [tableTop, tableLeg1, tableLeg2, tableLeg3, tableLeg4],
+            originalMat: tableOriginalMat,
+            altMat: tableAltMat,
+            isAlt: false
+        });
+        tableHotspot.userData.roomId = 0;
+
+        // Chair hotspot (toggle visibility)
+        const chairHotspot = new THREE.Mesh(hotspotGeo, hotspotMat);
+        chairHotspot.position.set(0, 0.5, 3);
+        scene.add(chairHotspot);
+        hotspots.push({
+            mesh: chairHotspot,
+            target: chair,
+            type: 'toggle'
+        });
+        chairHotspot.userData.roomId = 1;
+
+        // Bed hotspot (toggle material)
+        const bedHotspot = new THREE.Mesh(hotspotGeo, hotspotMat);
+        bedHotspot.position.set(10, 0.25, 0);
+        scene.add(bedHotspot);
+        hotspots.push({
+            mesh: bedHotspot,
+            meshes: [bed],
+            originalMat: bedOriginalMat,
+            altMat: bedAltMat,
+            isAlt: false
+        });
+        bedHotspot.userData.roomId = 2;
+
+        // Colliders
+        const colliders = walls.map(w => {
+            const box = new THREE.Box3().setFromObject(w);
+            return box;
+        });
+
+        // Room-based culling
+        function getCurrentRoom(pos) {
+            for (let room of rooms) {
+                if (pos.x >= room.min.x && pos.x <= room.max.x &&
+                    pos.z >= room.min.z && pos.z <= room.max.z) {
+                    return room.id;
+                }
+            }
+            return 0;
+        }
+
+        function updateCulling() {
+            const pos = camera.position;
+            const cur = getCurrentRoom(pos);
+            const visibleRooms = [cur, ...rooms[cur].adjacent];
+            scene.traverse((obj) => {
+                if (obj.userData.roomId !== undefined) {
+                    if (obj.userData.roomId === -1) {
+                        obj.visible = true;
+                    } else {
+                        obj.visible = visibleRooms.includes(obj.userData.roomId);
+                    }
+                }
+            });
+        }
+
+        // First-person controls with collision
+        camera.position.set(0, 1.6, 0);
+        const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        const direction = new THREE.Vector3();
+        const keys = {};
+        const clock = new THREE.Clock();
+        let isLocked = false;
+
+        document.addEventListener('keydown', (e) => { keys[e.code] = true; });
+        document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        document.addEventListener('click', () => {
+            document.body.requestPointerLock();
+            document.getElementById('instructions').style.display = 'none';
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            isLocked = document.pointerLockElement === document.body;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isLocked) {
+                const sensitivity = 0.002;
+                euler.y -= e.movementX * sensitivity;
+                euler.x -= e.movementY * sensitivity;
+                euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, euler.x));
+                camera.quaternion.setFromEuler(euler);
+            }
+        });
+
+        function canMove(newPos) {
+            const playerBox = new THREE.Box3().setFromCenterAndSize(
+                new THREE.Vector3(newPos.x, 1, newPos.z),
+                new THREE.Vector3(0.3, 1.8, 0.3)
+            );
+            for (let collider of colliders) {
+                if (playerBox.intersectsBox(collider)) {
+                    return false;
+                }
+            }
+            // Boundary check
+            if (newPos.x < -14.7 || newPos.x > 14.7 || newPos.z < -5.8 || newPos.z > 5.8) {
+                return false;
+            }
+            return true;
+        }
+
+        // Minimap
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+        const scale = 6;
+        const minX = -15, maxX = 15, minZ = -6, maxZ = 6;
+        const houseWidth = maxX - minX;
+        const houseDepth = maxZ - minZ;
+        const offsetX = (200 - houseWidth * scale) / 2;
+        const offsetZ = (200 - houseDepth * scale) / 2;
+
+        function worldToMap(wx, wz) {
+            const mx = offsetX + (wx - minX) * scale;
+            const my = offsetZ + (wz - minZ) * scale;
+            return { x: mx, y: my };
+        }
+
+        function updateMinimap() {
+            minimapCtx.clearRect(0, 0, 200, 200);
+            minimapCtx.strokeStyle = 'black';
+            minimapCtx.lineWidth = 2;
+
+            // Draw outer walls
+            // Back (z=-6)
+            let p1 = worldToMap(minX, minZ);
+            let p2 = worldToMap(maxX, minZ);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Front (z=6)
+            p1 = worldToMap(minX, maxZ);
+            p2 = worldToMap(maxX, maxZ);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Left (x=-15)
+            p1 = worldToMap(minX, minZ);
+            p2 = worldToMap(minX, maxZ);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Right (x=15)
+            p1 = worldToMap(maxX, minZ);
+            p2 = worldToMap(maxX, maxZ);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Internal wall at x=-5
+            // Lower segment z=-6 to -1
+            p1 = worldToMap(-5, -6);
+            p2 = worldToMap(-5, -1);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Upper segment z=1 to 6
+            p1 = worldToMap(-5, 1);
+            p2 = worldToMap(-5, 6);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Internal wall at x=5
+            // Lower
+            p1 = worldToMap(5, -6);
+            p2 = worldToMap(5, -1);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Upper
+            p1 = worldToMap(5, 1);
+            p2 = worldToMap(5, 6);
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(p1.x, p1.y);
+            minimapCtx.lineTo(p2.x, p2.y);
+            minimapCtx.stroke();
+
+            // Player dot
+            const playerPos = worldToMap(camera.position.x, camera.position.z);
+            minimapCtx.fillStyle = 'red';
+            minimapCtx.beginPath();
+            minimapCtx.arc(playerPos.x, playerPos.y, 3, 0, Math.PI * 2);
+            minimapCtx.fill();
+        }
+
+        // Raycaster for hotspots
+        const raycaster = new THREE.Raycaster();
+
+        document.addEventListener('click', (e) => {
+            if (isLocked) {
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = raycaster.intersectObjects(hotspots.map(h => h.mesh), true);
+                if (intersects.length > 0) {
+                    const clickedMesh = intersects[0].object;
+                    const hotspotData = hotspots.find(h => h.mesh === clickedMesh);
+                    if (hotspotData) {
+                        if (hotspotData.type === 'toggle') {
+                            hotspotData.target.visible = !hotspotData.target.visible;
+                        } else if (hotspotData.meshes) {
+                            hotspotData.isAlt = !hotspotData.isAlt;
+                            hotspotData.meshes.forEach(mesh => {
+                                mesh.material = hotspotData.isAlt ? hotspotData.altMat : hotspotData.originalMat;
+                            });
+                        }
+                    }
+                }
+            }
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Movement
+            direction.z = Number(keys['KeyW']) - Number(keys['KeyS']);
+            direction.x = Number(keys['KeyD']) - Number(keys['KeyA']);
+            if (direction.length() > 0) {
+                direction.normalize();
+                const moveDir = new THREE.Vector3();
+                const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, euler.y, 0));
+                moveDir.set(direction.x, 0, direction.z).applyQuaternion(quaternion);
+                moveDir.y = 0;
+                moveDir.normalize();
+                const speed = 20 * delta;
+                moveDir.multiplyScalar(speed);
+                const newPos = camera.position.clone().add(moveDir);
+                if (canMove(newPos)) {
+                    camera.position.copy(newPos);
+                }
+            }
+
+            updateCulling();
+            updateMinimap();
+            renderer.render(scene, camera);
+        }
+
+        // Initial culling
+        updateCulling();
+        animate();
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

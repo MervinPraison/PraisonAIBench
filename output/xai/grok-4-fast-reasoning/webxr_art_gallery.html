@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Art Gallery</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        canvas { display: block; }
+        #info-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            max-width: 300px;
+            z-index: 100;
+            display: none;
+        }
+        #close-info { position: absolute; top: 5px; right: 10px; cursor: pointer; }
+        #loading { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; z-index: 200; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading Gallery...</div>
+    <div id="info-panel">
+        <span id="close-info" onclick="document.getElementById('info-panel').style.display='none';">&times;</span>
+        <h2 id="art-title"></h2>
+        <p id="art-description"></p>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.158.0/build/three.module.js?module",
+                "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { BoxLineGeometry } from 'three/addons/geometries/BoxLineGeometry.js';
+
+        let container, renderer, scene, camera, dolly;
+        let controls = null;
+        let raycaster, intersectedObject = null;
+        let artworks = [];
+        let artInfos = [
+            { title: 'Abstract Blue', description: 'A vibrant abstract painting in blue tones representing the ocean depths.' },
+            { title: 'Red Sunset', description: 'A serene sunset over mountains, capturing the warmth of the evening sky.' },
+            { title: 'Green Forest', description: 'A lush forest scene with detailed foliage and sunlight filtering through trees.' },
+            { title: 'Yellow Fields', description: 'Vast fields of golden wheat under a bright sun, evoking rural tranquility.' }
+        ];
+        let audioListener, sounds = [];
+        let controller1, controller2, controllerGrip1, controllerGrip2;
+        let line1, line2, teleportLine;
+        let floorIntersects = [];
+        let isTeleporting = false;
+        let teleportDirection = new THREE.Vector3();
+        let teleportPosition = new THREE.Vector3();
+
+        init();
+        animate();
+
+        function init() {
+            container = document.body;
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x505050);
+            scene.fog = new THREE.Fog(0x505050, 0, 100);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.6, 0); // Eye level
+
+            dolly = new THREE.Group();
+            dolly.position.set(0, 0, 10);
+            dolly.add(camera);
+            scene.add(dolly);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1;
+            renderer.xr.enabled = true;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Lighting - Simulate baked lighting with ambient and directional
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 0);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            scene.add(directionalLight);
+
+            // Audio setup
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+
+            // Room - Simple baked-like room using textured boxes (procedural textures for self-contained)
+            createRoom();
+
+            // Artworks
+            createArtworks();
+
+            // Spatial Audio - Generate simple tones for each artwork
+            createSpatialAudio();
+
+            // Raycaster for selection
+            raycaster = new THREE.Raycaster();
+
+            // Controllers for VR
+            setupControllers();
+
+            // VR Button
+            const button = VRButton.createButton(renderer);
+            if (button) {
+                document.body.appendChild(button);
+            }
+
+            // Fallback for non-VR (desktop mouse controls)
+            if (!navigator.xr) {
+                controls = new OrbitControls(camera, renderer.domElement);
+                controls.target.set(0, 1.6, 0);
+                controls.update();
+                setupMouseControls();
+                document.getElementById('loading').style.display = 'none';
+            } else {
+                document.getElementById('loading').style.display = 'none';
+            }
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function createRoom() {
+            const roomSize = 20;
+            const roomHeight = 5;
+
+            // Floor
+            const floorGeometry = new THREE.PlaneGeometry(roomSize, roomSize);
+            const floorMaterial = new THREE.MeshLambertMaterial({ color: 0xaaaaaa }); // Simulate baked floor
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // Walls - Simple colored for baked look
+            const wallMaterial = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+            const wallGeometry = new THREE.PlaneGeometry(roomSize, roomHeight);
+
+            // Back wall
+            const backWall = new THREE.Mesh(wallGeometry, wallMaterial);
+            backWall.position.set(0, roomHeight / 2, -roomSize / 2);
+            scene.add(backWall);
+
+            // Side walls
+            const leftWall = new THREE.Mesh(wallGeometry, wallMaterial);
+            leftWall.rotation.y = Math.PI / 2;
+            leftWall.position.set(-roomSize / 2, roomHeight / 2, 0);
+            scene.add(leftWall);
+
+            const rightWall = new THREE.Mesh(wallGeometry, wallMaterial);
+            rightWall.rotation.y = -Math.PI / 2;
+            rightWall.position.set(roomSize / 2, roomHeight / 2, 0);
+            scene.add(rightWall);
+
+            // Ceiling
+            const ceilingGeometry = new THREE.PlaneGeometry(roomSize, roomSize);
+            const ceiling = new THREE.Mesh(ceilingGeometry, wallMaterial);
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.set(0, roomHeight, 0);
+            scene.add(ceiling);
+        }
+
+        function createArtworks() {
+            const artPositions = [
+                { x: -4, z: -4 },
+                { x: 4, z: -4 },
+                { x: -4, z: 4 },
+                { x: 4, z: 4 }
+            ];
+
+            artPositions.forEach((pos, index) => {
+                // Create simple "art" as colored planes (procedural for self-contained)
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = `hsl(${index * 90}, 70%, 50%)`;
+                ctx.fillRect(0, 0, 256, 256);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText(artInfos[index].title, 80, 130);
+                const texture = new THREE.CanvasTexture(canvas);
+
+                const artGeometry = new THREE.PlaneGeometry(2, 2);
+                const artMaterial = new THREE.MeshLambertMaterial({ map: texture });
+                const art = new THREE.Mesh(artGeometry, artMaterial);
+                art.position.set(pos.x, 2, pos.z);
+                art.lookAt(0, 2, 0); // Face center
+                art.userData = { index };
+                scene.add(art);
+                artworks.push(art);
+            });
+        }
+
+        function createSpatialAudio() {
+            // Generate a simple tone buffer using Web Audio API
+            function generateTone(frequency, duration) {
+                const sampleRate = 44100;
+                const bufferSize = sampleRate * duration;
+                const offlineContext = new OfflineAudioContext(1, bufferSize, sampleRate);
+                const oscillator = offlineContext.createOscillator();
+                oscillator.frequency.setValueAtTime(frequency, 0);
+                oscillator.connect(offlineContext.destination);
+                oscillator.start(0);
+                oscillator.stop(duration);
+                return offlineContext.startRendering();
+            }
+
+            Promise.all(artInfos.map((_, index) => generateTone(200 + index * 100, 2))).then(buffers => {
+                buffers.forEach((buffer, index) => {
+                    const sound = new THREE.PositionalAudio(audioListener);
+                    sound.setBuffer(buffer);
+                    sound.setRefDistance(5);
+                    sound.setDirectionalCone(180, 230, 0.1);
+                    artworks[index].add(sound);
+                    sounds.push(sound);
+                    // Play on hover/select, but for demo, play once on load with delay
+                    setTimeout(() => sound.play(), index * 1000);
+                });
+            });
+        }
+
+        function setupControllers() {
+            controller1 = renderer.xr.getController(0); // Left - Select
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            scene.add(controller1);
+
+            controller2 = renderer.xr.getController(1); // Right - Teleport
+            controller2.addEventListener('selectstart', onTeleportStart);
+            controller2.addEventListener('selectend', onTeleportEnd);
+            scene.add(controller2);
+
+            // Grips for models
+            controllerGrip1 = renderer.xr.getControllerGrip(0);
+            controllerGrip2 = renderer.xr.getControllerGrip(1);
+            const controllerModelFactory = new XRControllerModelFactory();
+
+            controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+            controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+            scene.add(controllerGrip1);
+            scene.add(controllerGrip2);
+
+            // Selection ray (laser) for left controller
+            const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
+            const material = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+            line1 = new THREE.Line(geometry, material);
+            controller1.add(line1.clone());
+
+            // Teleport ray for right controller (blue)
+            const teleportMaterial = new THREE.LineBasicMaterial({ color: 0x0000ff });
+            teleportLine = new THREE.Line(geometry, teleportMaterial);
+            controller2.add(teleportLine.clone());
+        }
+
+        function onSelectStart(event) {
+            const controller = event.target;
+            if (controller === controller1) {
+                selectArtwork();
+            }
+        }
+
+        function onSelectEnd() {
+            // End selection if needed
+        }
+
+        function onTeleportStart(event) {
+            const controller = event.target;
+            if (controller === controller2) {
+                performTeleport();
+            }
+        }
+
+        function onTeleportEnd() {}
+
+        function selectArtwork() {
+            const tempMatrix = new THREE.Matrix4();
+            controller1.updateMatrixWorld();
+            tempMatrix.extractRotation(controller1.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller1.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+            const intersects = raycaster.intersectObjects(artworks);
+            if (intersects.length > 0) {
+                const selectedArt = intersects[0].object;
+                showInfoPanel(selectedArt.userData.index);
+                // Play sound
+                if (sounds[selectedArt.userData.index]) {
+                    sounds[selectedArt.userData.index].play();
+                }
+            }
+        }
+
+        function performTeleport() {
+            if (isTeleporting) return;
+
+            const tempMatrix = new THREE.Matrix4();
+            controller2.updateMatrixWorld();
+            tempMatrix.extractRotation(controller2.matrixWorld);
+            raycaster.ray.origin.setFromMatrixPosition(controller2.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+            // Raycast to floor (y=0 plane)
+            raycaster.ray.origin.y = 1.6; // Controller height
+            raycaster.ray.direction.y = -1;
+            const distanceToFloor = (1.6 - 0) / 1;
+            const floorPos = raycaster.ray.origin.clone().add(raycaster.ray.direction.clone().multiplyScalar(distanceToFloor));
+
+            // Limit teleport distance
+            const teleportDist = 5;
+            if (floorPos.distanceTo(camera.position) > teleportDist) return;
+
+            teleportPosition.copy(floorPos);
+            teleportPosition.y = 0;
+            dolly.position.copy(teleportPosition);
+            camera.position.set(0, 1.6, 0); // Reset camera relative to dolly
+        }
+
+        function showInfoPanel(index) {
+            document.getElementById('art-title').textContent = artInfos[index].title;
+            document.getElementById('art-description').textContent = artInfos[index].description;
+            document.getElementById('info-panel').style.display = 'block';
+        }
+
+        function setupMouseControls() {
+            const mouse = new THREE.Vector2();
+            window.addEventListener('click', onMouseClick);
+
+            function onMouseClick(event) {
+                mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(artworks);
+                if (intersects.length > 0) {
+                    const selectedArt = intersects[0].object;
+                    showInfoPanel(selectedArt.userData.index);
+                }
+            }
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            if (controls) controls.update();
+
+            // Update rays in VR
+            if (renderer.xr.isPresenting) {
+                // Selection ray update
+                const positions1 = line1.geometry.attributes.position;
+                positions1.array[3] = positions1.array[0]; // x
+                positions1.array[4] = positions1.array[1]; // y
+                positions1.array[5] = positions1.array[2] - 5; // z
+                line1.geometry.attributes.position.needsUpdate = true;
+
+                // Teleport ray similar
+                const positions2 = teleportLine.geometry.attributes.position;
+                positions2.array[3] = positions2.array[0];
+                positions2.array[4] = positions2.array[1];
+                positions2.array[5] = positions2.array[2] - 10; // Longer for floor
+                teleportLine.geometry.attributes.position.needsUpdate = true;
+
+                // Check intersections for hover
+                if (controller1) {
+                    const tempMatrix = new THREE.Matrix4();
+                    controller1.updateMatrixWorld();
+                    tempMatrix.extractRotation(controller1.matrixWorld);
+                    raycaster.ray.origin.setFromMatrixPosition(controller1.matrixWorld);
+                    raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+                    const intersects = raycaster.intersectObjects(artworks);
+                    if (intersects.length > 0) {
+                        if (intersectedObject !== intersects[0].object) {
+                            // Hover effect: scale up
+                            if (intersectedObject) intersectedObject.scale.set(1, 1, 1);
+                            intersectedObject = intersects[0].object;
+                            intersectedObject.scale.set(1.1, 1.1, 1.1);
+                        }
+                    } else {
+                        if (intersectedObject) {
+                            intersectedObject.scale.set(1, 1, 1);
+                            intersectedObject = null;
+                        }
+                    }
+                }
+            }
+
+            // Performance: Limit FPS if needed, but Three.js handles
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            if (controls) controls.update();
+        }
+    </script>
+</body>
+</html>

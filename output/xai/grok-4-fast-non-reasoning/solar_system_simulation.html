@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            z-index: 100;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Solar System Simulation</h3>
+        <p>Controls: Mouse to rotate camera, Scroll to zoom</p>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000011);
+        document.body.appendChild(renderer.domElement);
+
+        // Orbit controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // Add stars background
+        function createStars() {
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7 });
+            
+            const starsVertices = [];
+            for (let i = 0; i < 10000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                starsVertices.push(x, y, z);
+            }
+            
+            starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+            const stars = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(stars);
+        }
+
+        // Create Sun
+        function createSun() {
+            const sunGeometry = new THREE.SphereGeometry(3, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xffff00,
+                emissive: 0x444400
+            });
+            const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+            
+            // Add some glow effect with point light
+            const sunLight = new THREE.PointLight(0xffffff, 2, 50);
+            sun.add(sunLight);
+            
+            scene.add(sun);
+            return sun;
+        }
+
+        // Create Earth
+        function createEarth() {
+            const earthGeometry = new THREE.SphereGeometry(1, 32, 32);
+            const earthMaterial = new THREE.MeshLambertMaterial({ color: 0x4a90e2 });
+            const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            earth.position.set(10, 0, 0);
+            return earth;
+        }
+
+        // Create Moon
+        function createMoon() {
+            const moonGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+            const moonMaterial = new THREE.MeshLambertMaterial({ color: 0x888888 });
+            const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+            moon.position.set(2, 0, 0);
+            return moon;
+        }
+
+        // Create orbital paths (visual guides)
+        function createOrbitPath(radius, color, segments = 64) {
+            const curve = new THREE.EllipseCurve(0, 0, radius, radius);
+            const points = curve.getPoints(segments);
+            const pathGeometry = new THREE.BufferGeometry().setFromPoints(points);
+            const pathMaterial = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.3 });
+            const orbitPath = new THREE.Line(pathGeometry, pathMaterial);
+            orbitPath.rotation.x = Math.PI / 2;
+            scene.add(orbitPath);
+            return orbitPath;
+        }
+
+        // Initialize objects
+        const sun = createSun();
+        const earth = createEarth();
+        const moon = createMoon();
+        
+        // Add Earth to scene
+        scene.add(earth);
+        earth.add(moon); // Moon orbits Earth
+
+        // Create orbit paths
+        const earthOrbit = createOrbitPath(10, 0x4444ff);
+        const moonOrbit = createOrbitPath(2, 0xcccccc);
+
+        // Realistic orbital speeds (simplified ratios)
+        // Earth: 1 year = 365.25 days
+        // Moon: 1 lunar month = 27.3 days
+        // Speed ratio: Earth orbit / Moon orbit = 365.25 / 27.3 ≈ 13.38
+        const earthOrbitSpeed = 0.01;  // radians per frame for Earth
+        const moonOrbitSpeed = 0.13;   // faster for Moon relative to Earth
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
+        scene.add(ambientLight);
+
+        // Camera position
+        camera.position.set(20, 10, 20);
+        camera.lookAt(0, 0, 0);
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Rotate Sun (day rotation)
+            sun.rotation.y += 0.005;
+
+            // Earth orbit around Sun
+            earth.position.x = 10 * Math.cos(Date.now() * earthOrbitSpeed);
+            earth.position.z = 10 * Math.sin(Date.now() * earthOrbitSpeed);
+            
+            // Earth rotation
+            earth.rotation.y += 0.02;
+
+            // Moon orbit around Earth
+            const moonAngle = Date.now() * moonOrbitSpeed;
+            moon.position.x = 2 * Math.cos(moonAngle);
+            moon.position.z = 2 * Math.sin(moonAngle);
+            
+            // Moon rotation
+            moon.rotation.y += 0.01;
+
+            // Rotate orbit paths for visual effect
+            earthOrbit.rotation.z += earthOrbitSpeed * 0.1;
+            moonOrbit.rotation.z += moonOrbitSpeed * 0.1;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialize stars and start animation
+        createStars();
+        animate();
+    </script>
+</body>
+</html>

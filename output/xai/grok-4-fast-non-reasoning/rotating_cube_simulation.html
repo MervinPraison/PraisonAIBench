@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotating 3D Cube - Three.js</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 100;
+        }
+        
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="info">
+            <h3>Rotating 3D Cube</h3>
+            <p>Click and drag to rotate camera | Scroll to zoom</p>
+        </div>
+    </div>
+
+    <!-- Three.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // Scene setup
+        let scene, camera, renderer, cube, controls;
+        let animationId;
+
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x222222);
+
+            // Create camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(3, 3, 3);
+
+            // Create renderer
+            const container = document.getElementById('container');
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Create cube with different colored faces
+            createCube();
+
+            // Add lighting
+            addLighting();
+
+            // Add camera controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.enableZoom = true;
+            controls.minDistance = 2;
+            controls.maxDistance = 10;
+
+            // Start animation
+            animate();
+        }
+
+        function createCube() {
+            // Cube geometry
+            const geometry = new THREE.BoxGeometry(2, 2, 2);
+
+            // Create materials for each face with different colors
+            const materials = [
+                new THREE.MeshLambertMaterial({ color: 0xff6b6b }), // Red
+                new THREE.MeshLambertMaterial({ color: 0x4ecdc4 }), // Teal
+                new THREE.MeshLambertMaterial({ color: 0x45b7d1 }), // Blue
+                new THREE.MeshLambertMaterial({ color: 0xf9ca24 }), // Yellow
+                new THREE.MeshLambertMaterial({ color: 0x6c5ce7 }), // Purple
+                new THREE.MeshLambertMaterial({ color: 0xa29bfe })  // Light Purple
+            ];
+
+            // Create mesh with multiple materials
+            cube = new THREE.Mesh(geometry, materials);
+            cube.castShadow = true;
+            cube.receiveShadow = true;
+
+            scene.add(cube);
+        }
+
+        function addLighting() {
+            // Ambient light for overall illumination
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambientLight);
+
+            // Directional light (sun-like)
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 2048;
+            directionalLight.shadow.mapSize.height = 2048;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 50;
+            scene.add(directionalLight);
+
+            // Point light for additional highlights
+            const pointLight = new THREE.PointLight(0xffffff, 0.5, 100);
+            pointLight.position.set(-5, 5, -5);
+            pointLight.castShadow = true;
+            scene.add(pointLight);
+
+            // Add a subtle colored light for atmosphere
+            const coloredLight = new THREE.PointLight(0x4ecdc4, 0.3, 50);
+            coloredLight.position.set(0, 10, 0);
+            scene.add(coloredLight);
+        }
+
+        function animate() {
+            animationId = requestAnimationFrame(animate);
+
+            // Rotate the cube continuously
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.015;
+            cube.rotation.z += 0.005;
+
+            // Update controls
+            controls.update();
+
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Event listeners
+        window.addEventListener('resize', onWindowResize, false);
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        });
+
+        // Initialize the scene when page loads
+        window.addEventListener('load', init);
+
+        // Handle errors
+        window.addEventListener('error', function(e) {
+            console.error('An error occurred:', e.error);
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        });
+    </script>
+</body>
+</html>

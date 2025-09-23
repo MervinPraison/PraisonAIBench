@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: black; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
+        scene.add(ambientLight);
+        const sunLight = new THREE.PointLight(0xffffff, 2, 100);
+        sunLight.position.set(0, 0, 0);
+        scene.add(sunLight);
+
+        // Sun
+        const sunGeometry = new THREE.SphereGeometry(2, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+
+        // Earth
+        const earthGeometry = new THREE.SphereGeometry(0.5, 32, 32);
+        const earthMaterial = new THREE.MeshPhongMaterial({ color: 0x0000ff });
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        scene.add(earth);
+
+        // Moon
+        const moonGeometry = new THREE.SphereGeometry(0.2, 32, 32);
+        const moonMaterial = new THREE.MeshPhongMaterial({ color: 0x808080 });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        scene.add(moon);
+
+        // Stars background
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsVertices = [];
+        for (let i = 0; i < 10000; i++) {
+            const x = (Math.random() - 0.5) * 2000;
+            const y = (Math.random() - 0.5) * 2000;
+            const z = (Math.random() - 0.5) * 2000;
+            starsVertices.push(x, y, z);
+        }
+        starsGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starsVertices, 3));
+        const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 1 });
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+
+        // Orbital parameters (scaled for visibility; relative speeds approximate real ratios)
+        const earthRadius = 10;
+        const moonRadius = 1.5;
+        const earthPeriod = 30; // seconds for one Earth orbit (arbitrary for visibility)
+        const moonPeriod = earthPeriod / 13.5; // Approximate 365/27 ratio
+
+        // Camera position
+        camera.position.set(0, 15, 30);
+        camera.lookAt(0, 0, 0);
+
+        // Animation loop
+        const clock = new THREE.Clock();
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            // Earth orbit around sun
+            const earthAngle = (2 * Math.PI * t) / earthPeriod;
+            earth.position.x = earthRadius * Math.cos(earthAngle);
+            earth.position.z = earthRadius * Math.sin(earthAngle);
+            earth.position.y = 0;
+
+            // Moon orbit around Earth
+            const moonAngle = (2 * Math.PI * t) / moonPeriod;
+            moon.position.x = earth.position.x + moonRadius * Math.cos(moonAngle);
+            moon.position.y = earth.position.y + 0.2 * Math.sin(moonAngle * 1.2); // Slight inclination for realism
+            moon.position.z = earth.position.z + moonRadius * Math.sin(moonAngle);
+
+            // Rotate sun slightly for effect
+            sun.rotation.y += 0.01;
+
+            // Rotate Earth and Moon for self-rotation
+            earth.rotation.y += 0.02;
+            moon.rotation.y += 0.01;
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

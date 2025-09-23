@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Procedural 3D City</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; }
+        #ui { position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; color: white; }
+        #minimap { position: absolute; top: 10px; right: 10px; width: 200px; height: 200px; background: black; border: 1px solid white; z-index: 100; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <label for="seed">Seed:</label>
+        <input type="number" id="seed" value="123" style="width: 60px;">
+        <button id="gen">Generate City</button>
+        <br>
+        <small>Click to lock mouse. WASD to move.</small>
+    </div>
+    <canvas id="minimap"></canvas>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer;
+        let cityGroup, roadGroup, buildingGroup, lightGroup;
+        let trafficLights = [];
+        let rand;
+        let mapScale, mapOffset;
+        let gridSize = 10;
+        let blockSize = 50;
+        let roadWidth = 10;
+        let miniCanvas, miniCtx;
+
+        function seededRandom(seed) {
+            const m = 2147483647;
+            const a = 16807;
+            let s = Math.abs(seed) % m;
+            return function() {
+                s = (a * s) % m;
+                return s / m;
+            };
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x87CEEB, 100, 1000);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+            camera.position.set(0, 50, 100);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Procedural sky shader
+            const skyGeometry = new THREE.SphereGeometry(1000, 32, 32);
+            const skyMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 }
+                },
+                vertexShader: `
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                        vWorldPosition = worldPosition.xyz;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform float time;
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec3 dir = normalize(vWorldPosition);
+                        float t = time * 0.0005;
+                        vec3 sunDir = normalize(vec3(sin(t * 6.28), cos(t * 6.28) * 0.5 + 0.5, 0.3));
+                        float sunDot = max(dot(dir, sunDir), 0.0);
+                        vec3 dayColor = mix(vec3(0.1, 0.3, 0.8), vec3(0.8, 0.9, 1.0), pow(sunDot, 2.0));
+                        vec3 nightColor = vec3(0.0, 0.0, 0.1);
+                        float sunIntensity = max(0.0, sunDir.y);
+                        vec3 color = mix(nightColor, dayColor, sunIntensity);
+                        gl_FragColor = vec4(color, 1.0);
+                    }
+                `,
+                side: THREE.BackSide
+            });
+            const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+            scene.add(sky);
+
+            // Lights
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+            sunLight.position.set(100, 100, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+
+            const ambient = new THREE.AmbientLight(0x404040, 0.4);
+            scene.add(ambient);
+
+            // Free-fly controls
+            let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+            let prevTime = performance.now();
+            const velocity = new THREE.Vector3();
+            const direction = new THREE.Vector3();
+            const euler = new THREE.Euler(0, 0, 0, 'YXZ');
+            const PI_2 = Math.PI / 2;
+
+            const onMouseMove = (event) => {
+                if (document.pointerLockElement === renderer.domElement || document.mozPointerLockElement === renderer.domElement) {
+                    camera.rotation.y -= event.movementX * 0.002;
+                    camera.rotation.x -= event.movementY * 0.002;
+                    camera.rotation.x = Math.max(-PI_2, Math.min(PI_2, camera.rotation.x));
+                }
+            };
+
+            const onKeyDown = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp':
+                    case 'KeyW': moveForward = true; break;
+                    case 'ArrowLeft':
+                    case 'KeyA': moveLeft = true; break;
+                    case 'ArrowDown':
+                    case 'KeyS': moveBackward = true; break;
+                    case 'ArrowRight':
+                    case 'KeyD': moveRight = true; break;
+                }
+            };
+
+            const onKeyUp = (event) => {
+                switch (event.code) {
+                    case 'ArrowUp':
+                    case 'KeyW': moveForward = false; break;
+                    case 'ArrowLeft':
+                    case 'KeyA': moveLeft = false; break;
+                    case 'ArrowDown':
+                    case 'KeyS': moveBackward = false; break;
+                    case 'ArrowRight':
+                    case 'KeyD': moveRight = false; break;
+                }
+            };
+
+            renderer.domElement.addEventListener('click', () => renderer.domElement.requestPointerLock());
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            // Minimap
+            miniCanvas = document.getElementById('minimap');
+            miniCtx = miniCanvas.getContext('2d');
+
+            // Events
+            document.getElementById('gen').addEventListener('click', generateCity);
+            window.addEventListener('resize', onWindowResize);
+
+            generateCity();
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function generateCity() {
+            const seedValue = document.getElementById('seed').value;
+            const seed = parseInt(seedValue) || 123;
+            rand = seededRandom(seed);
+
+            // Clear
+            if (cityGroup) scene.remove(cityGroup);
+            cityGroup = new THREE.Group();
+            scene.add(cityGroup);
+            trafficLights = [];
+            buildingGroup = new THREE.Group();
+            cityGroup.add(buildingGroup);
+
+            const step = blockSize + roadWidth;
+            const numBlocks = gridSize;
+            const halfBlocks = numBlocks / 2;
+            const citySize = numBlocks * step;
+            mapScale = 180 / citySize;
+            mapOffset = citySize / 2;
+
+            // Roads
+            roadGroup = new THREE.Group();
+            cityGroup.add(roadGroup);
+            const roadMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+            for (let i = 0; i <= numBlocks; i++) {
+                // Horizontal
+                const hPosZ = (i - halfBlocks) * step;
+                const hGeometry = new THREE.PlaneGeometry(citySize, roadWidth);
+                const hRoad = new THREE.Mesh(hGeometry, roadMaterial);
+                hRoad.rotation.x = -Math.PI / 2;
+                hRoad.position.set(0, 0.01, hPosZ);
+                roadGroup.add(hRoad);
+
+                // Vertical
+                const vPosX = (i - halfBlocks) * step;
+                const vGeometry = new THREE.PlaneGeometry(roadWidth, citySize);
+                const vRoad = new THREE.Mesh(vGeometry, roadMaterial);
+                vRoad.rotation.x = -Math.PI / 2;
+                vRoad.position.set(vPosX, 0.01, 0);
+                roadGroup.add(vRoad);
+            }
+
+            // Buildings
+            for (let ix = 0; ix < numBlocks; ix++) {
+                for (let iz = 0; iz < numBlocks; iz++) {
+                    const blockX = (ix - halfBlocks + 0.5) * step;
+                    const blockZ = (iz - halfBlocks + 0.5) * step;
+                    const width = blockSize * (0.4 + rand() * 0.6);
+                    const depth = blockSize * (0.4 + rand() * 0.6);
+                    const height = 20 + rand() * 80;
+                    const geometry = new THREE.BoxGeometry(width, height, depth);
+                    const material = new THREE.MeshLambertMaterial({ color: new THREE.Color().setHSL(rand(), 0.5 + rand() * 0.5, 0.4 + rand() * 0.4) });
+                    const building = new THREE.Mesh(geometry, material);
+                    building.position.set(blockX, height / 2, blockZ);
+                    building.castShadow = true;
+                    building.receiveShadow = true;
+                    buildingGroup.add(building);
+                }
+            }
+
+            // Traffic lights
+            lightGroup = new THREE.Group();
+            cityGroup.add(lightGroup);
+            for (let ix = 0; ix <= numBlocks; ix++) {
+                for (let iz = 0; iz <= numBlocks; iz++) {
+                    const posX = (ix - halfBlocks) * step;
+                    const posZ = (iz - halfBlocks) * step;
+                    // Pole
+                    const poleGeometry = new THREE.CylinderGeometry(0.2, 0.2, 6);
+                    const poleMaterial = new THREE.MeshLambertMaterial({ color: 0x333333 });
+                    const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+                    pole.position.set(posX, 3, posZ);
+                    lightGroup.add(pole);
+
+                    // Light head
+                    const headGeometry = new THREE.BoxGeometry(1, 3, 0.5);
+                    const head = new THREE.Mesh(headGeometry, new THREE.MeshLambertMaterial({ color: 0x444444 }));
+                    head.position.set(pole.position.x, pole.position.y + 3.5, pole.position.z);
+                    lightGroup.add(head);
+
+                    // Bulbs
+                    const bulbGeometry = new THREE.SphereGeometry(0.3);
+                    const redBulb = new THREE.Mesh(bulbGeometry, new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0 }));
+                    redBulb.position.set(head.position.x, head.position.y + 0.75, head.position.z + 0.6);
+                    lightGroup.add(redBulb);
+
+                    const yellowBulb = new THREE.Mesh(bulbGeometry, new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0 }));
+                    yellowBulb.position.set(head.position.x, head.position.y, head.position.z + 0.6);
+                    lightGroup.add(yellowBulb);
+
+                    const greenBulb = new THREE.Mesh(bulbGeometry, new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0 }));
+                    greenBulb.position.set(head.position.x, head.position.y - 0.75, head.position.z + 0.6);
+                    lightGroup.add(greenBulb);
+
+                    const tl = { red: redBulb, yellow: yellowBulb, green: greenBulb, phase: rand() * 30 };
+                    trafficLights.push(tl);
+                }
+            }
+
+            updateMinimap();
+        }
+
+        function updateTrafficLights(currentTime) {
+            trafficLights.forEach(tl => {
+                let phase = ((currentTime * 0.001) % 30 + tl.phase) % 30;
+                tl.red.material.opacity = (phase < 12) ? 1 : 0;
+                tl.yellow.material.opacity = (phase >= 10 && phase < 13) ? 1 : 0;
+                tl.green.material.opacity = (phase >= 13 && phase < 25) ? 1 : 0;
+            });
+        }
+
+        function updateMinimap() {
+            miniCtx.fillStyle = '#000';
+            miniCtx.fillRect(0, 0, 200, 200);
+
+            // Roads
+            miniCtx.strokeStyle = '#333';
+            miniCtx.lineWidth = 1;
+            const step = blockSize + roadWidth;
+            const numBlocks = gridSize;
+            for (let i = 0; i <= numBlocks; i++) {
+                const mapZ = ( (i - numBlocks / 2) * step - mapOffset ) * mapScale + 100;
+                miniCtx.beginPath();
+                miniCtx.moveTo(10, mapZ);
+                miniCtx.lineTo(190, mapZ);
+                miniCtx.stroke();
+
+                const mapX = ( (i - numBlocks / 2) * step - mapOffset ) * mapScale + 100;
+                miniCtx.beginPath();
+                miniCtx.moveTo(mapX, 10);
+                miniCtx.lineTo(mapX, 190);
+                miniCtx.stroke();
+            }
+
+            // Buildings
+            miniCtx.fillStyle = '#666';
+            buildingGroup.children.forEach(building => {
+                const mapX = (building.position.x - mapOffset) * mapScale + 100;
+                const mapZ = (building.position.z - mapOffset) * mapScale + 100;
+                const halfW = building.geometry.parameters.width * mapScale / 2;
+                const halfD = building.geometry.parameters.depth * mapScale / 2;
+                miniCtx.fillRect(mapX - halfW, mapZ - halfD, halfW * 2, halfD * 2);
+            });
+
+            // Camera
+            const camMapX = (camera.position.x - mapOffset) * mapScale + 100;
+            const camMapZ = (camera.position.z - mapOffset) * mapScale + 100;
+            miniCtx.fillStyle = '#f00';
+            miniCtx.fillRect(camMapX - 2, camMapZ - 2, 4, 4);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            // Movement
+            velocity.x -= velocity.x * 10 * delta;
+            velocity.z -= velocity.z * 10 * delta;
+            direction.z = Number(moveForward) - Number(moveBackward);
+            direction.x = Number(moveRight) - Number(moveLeft);
+            direction.normalize();
+            if (moveForward || moveBackward) velocity.z -= direction.z * 400 * delta;
+            if (moveLeft || moveRight) velocity.x -= direction.x * 400 * delta;
+            euler.setFromRotationMatrix(camera.matrix);
+            const updatedVelocity = velocity.clone().applyEuler(euler);
+            camera.position.add(updatedVelocity.multiplyScalar(delta));
+            prevTime = time;
+
+            // Day/night cycle
+            const skyMat = scene.children[0].material; // sky
+            skyMat.uniforms.time.value = time;
+            const sunAngle = (time * 0.0005) % (Math.PI * 2);
+            const sunPos = new THREE.Vector3(500 * Math.cos(sunAngle), 500 * Math.sin(sunAngle), 0);
+            sunLight.position.copy(sunPos);
+            sunLight.intensity = Math.max(0, Math.sin(sunAngle));
+            ambient.intensity = 0.2 + 0.6 * Math.max(0, Math.sin(sunAngle));
+
+            updateTrafficLights(time);
+            updateMinimap();
+            renderer.render(scene, camera);
+        }
+
+        // Global prevTime
+        let prevTime = performance.now();
+        init();
+    </script>
+</body>
+</html>
