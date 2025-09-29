@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Particle System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            font-family: 'Arial', sans-serif;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        #info h2 {
+            margin-bottom: 10px;
+            color: #00d4ff;
+            font-size: 18px;
+        }
+        
+        #info p {
+            margin: 5px 0;
+            line-height: 1.5;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            background: rgba(0, 212, 255, 0.3);
+            color: white;
+            border: 2px solid #00d4ff;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .btn:hover {
+            background: rgba(0, 212, 255, 0.6);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.5);
+        }
+        
+        .btn.active {
+            background: rgba(0, 212, 255, 0.8);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>🎆 Advanced Particle System</h2>
+        <p><strong>Move your mouse</strong> to attract particles</p>
+        <p><strong>Click</strong> to create explosions</p>
+        <p>Particles: <span id="particleCount">2000</span></p>
+        <p>Mode: <span id="currentMode">Fountain</span></p>
+    </div>
+    
+    <div class="controls">
+        <button class="btn active" onclick="setMode('fountain')">💧 Fountain</button>
+        <button class="btn" onclick="setMode('explosion')">💥 Explosion</button>
+        <button class="btn" onclick="setMode('vortex')">🌀 Vortex</button>
+        <button class="btn" onclick="setMode('wave')">🌊 Wave</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        let scene, camera, renderer;
+        let particles = [];
+        let particleSystem;
+        let mouse = { x: 0, y: 0, z: 0 };
+        let mouseInfluence = 0;
+        let clock = new THREE.Clock();
+        let currentMode = 'fountain';
+        let explosionForce = 0;
+        
+        const PARTICLE_COUNT = 2000;
+        const MOUSE_RADIUS = 3;
+        const MOUSE_STRENGTH = 0.05;
+        
+        class Particle {
+            constructor(mode = 'fountain') {
+                this.reset(mode);
+            }
+            
+            reset(mode = currentMode) {
+                switch(mode) {
+                    case 'fountain':
+                        this.position = new THREE.Vector3(
+                            (Math.random() - 0.5) * 0.5,
+                            -5,
+                            (Math.random() - 0.5) * 0.5
+                        );
+                        this.velocity = new THREE.Vector3(
+                            (Math.random() - 0.5) * 0.3,
+                            Math.random() * 3 + 2,
+                            (Math.random() - 0.5) * 0.3
+                        );
+                        break;
+                    
+                    case 'explosion':
+                        const phi = Math.random() * Math.PI * 2;
+                        const theta = Math.random() * Math.PI;
+                        const radius = Math.random() * 0.5;
+                        this.position = new THREE.Vector3(
+                            radius * Math.sin(theta) * Math.cos(phi),
+                            radius * Math.sin(theta) * Math.sin(phi),
+                            radius * Math.cos(theta)
+                        );
+                        const speed = Math.random() * 2 + 1;
+                        this.velocity = this.position.clone().normalize().multiplyScalar(speed);
+                        break;
+                    
+                    case 'vortex':
+                        const angle = Math.random() * Math.PI * 2;
+                        const dist = Math.random() * 5;
+                        this.position = new THREE.Vector3(
+                            Math.cos(angle) * dist,
+                            (Math.random() - 0.5) * 8,
+                            Math.sin(angle) * dist
+                        );
+                        this.velocity = new THREE.Vector3(
+                            Math.sin(angle) * 0.5,
+                            (Math.random() - 0.5) * 0.2,
+                            -Math.cos(angle) * 0.5
+                        );
+                        break;
+                    
+                    case 'wave':
+                        this.position = new THREE.Vector3(
+                            (Math.random() - 0.5) * 10,
+                            Math.sin(Math.random() * Math.PI * 2) * 2,
+                            (Math.random() - 0.5) * 10
+                        );
+                        this.velocity = new THREE.Vector3(
+                            (Math.random() - 0.5) * 0.3,
+                            Math.random() * 0.2,
+                            (Math.random() - 0.5) * 0.3
+                        );
+                        break;
+                }
+                
+                this.acceleration = new THREE.Vector3(0, 0, 0);
+                this.life = 1.0;
+                this.lifeDecay = Math.random() * 0.003 + 0.002;
+                this.size = Math.random() * 0.1 + 0.05;
+                this.hue = Math.random() * 360;
+                this.originalVelocity = this.velocity.clone();
+            }
+            
+            update(deltaTime) {
+                // Apply gravity based on mode
+                if (currentMode === 'fountain') {
+                    this.acceleration.y = -0.98;
+                } else if (currentMode === 'explosion') {
+                    this.acceleration.y = -0.3;
+                    this.velocity.multiplyScalar(0.99); // Air resistance
+                } else if (currentMode === 'wave') {
+                    this.acceleration.y = Math.sin(Date.now() * 0.001 + this.position.x) * 0.01;
+                }
+                
+                // Mouse attraction
+                if (mouseInfluence > 0) {
+                    const dx = mouse.x - this.position.x;
+                    const dy = mouse.y - this.position.y;
+                    const dz = mouse.z - this.position.z;
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    
+                    if (distance < MOUSE_RADIUS && distance > 0.1) {
+                        const force = (MOUSE_RADIUS - distance) / MOUSE_RADIUS;
+                        this.acceleration.x += (dx / distance) * force * MOUSE_STRENGTH;
+                        this.acceleration.y += (dy / distance) * force * MOUSE_STRENGTH;
+                        this.acceleration.z += (dz / distance) * force * MOUSE_STRENGTH;
+                    }
+                }
+                
+                // Vortex mode rotation
+                if (currentMode === 'vortex') {
+                    const angle = Math.atan2(this.position.z, this.position.x);
+                    const radius = Math.sqrt(this.position.x ** 2 + this.position.z ** 2);
+                    this.acceleration.x += Math.sin(angle) * 0.02;
+                    this.acceleration.z += -Math.cos(angle) * 0.02;
+                    
+                    // Pull towards center
+                    if (radius > 0.1) {
+                        this.acceleration.x -= this.position.x * 0.001;
+                        this.acceleration.z -= this.position.z * 0.001;
+                    }
+                }
+                
+                // Update velocity and position
+                this.velocity.add(this.acceleration.multiplyScalar(deltaTime * 60));
+                this.position.add(this.velocity.clone().multiplyScalar(deltaTime * 60));
+                
+                // Reset acceleration
+                this.acceleration.set(0, 0, 0);
+                
+                // Update life
+                this.life -= this.lifeDecay;
+                
+                // Update color based on life and position
+                this.hue = (this.hue + 0.5) % 360;
+                
+                // Reset particle if dead or out of bounds
+                if (this.life <= 0 || this.position.y < -10 || 
+                    Math.abs(this.position.x) > 15 || Math.abs(this.position.z) > 15) {
+                    this.reset();
+                }
+            }
+            
+            getColor() {
+                const saturation = 100;
+                const lightness = this.life * 70;
+                return new THREE.Color(`hsl(${this.hue}, ${saturation}%, ${lightness}%)`);
+            }
+        }
+        
+        function init() {
+            // Create scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.02);
+            
+            // Create camera
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(0, 2, 10);
+            camera.lookAt(0, 0, 0);
+            
+            // Create renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.body.appendChild(renderer.domElement);
+            
+            // Create particles
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+            const sizes = new Float32Array(PARTICLE_COUNT);
+            
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                const particle = new Particle(currentMode);
+                particles.push(particle);
+                
+                positions[i * 3] = particle.position.x;
+                positions[i * 3 + 1] = particle.position.y;
+                positions[i * 3 + 2] = particle.position.z;
+                
+                const color = particle.getColor();
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+                
+                sizes[i] = particle.size;
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            // Create material
+            const material = new THREE.PointsMaterial({
+                size: 0.2,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+            
+            // Create particle system
+            particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+            
+            // Add point light that follows particles
+            const pointLight = new THREE.PointLight(0x00d4ff, 2, 20);
+            pointLight.position.set(0, 2, 0);
+            scene.add(pointLight);
+            
+            // Event listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('click', onMouseClick);
+            
+            // Update particle count display
+            document.getElementById('particleCount').textContent = PARTICLE_COUNT;
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            // Convert to 3D space
+            const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5);
+            vector.unproject(camera);
+            const dir = vector.sub(camera.position).normalize();
+            const distance = (0 - camera.position.y) / dir.y;
+            const pos = camera.position.clone().add(dir.multiplyScalar(distance));
+            
+            mouse.x = pos.x;
+            mouse.y = pos.y;
+            mouse.z = pos.z;
+            
+            mouseInfluence = 1;
+        }
+        
+        function onMouseClick(event) {
+            // Create explosion effect at mouse position
+            explosionForce = 1;
+            
+            particles.forEach(particle => {
+                const dx = particle.position.x - mouse.x;
+                const dy = particle.position.y - mouse.y;
+                const dz = particle.position.z - mouse.z;
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                
+                if (distance < 3) {
+                    const force = (3 - distance) / 3;
+                    particle.velocity.x += (dx / distance) * force * 0.5;
+                    particle.velocity.y += (dy / distance) * force * 0.5;
+                    particle.velocity.z += (dz / distance) * force * 0.5;
+                    particle.life = Math.min(1, particle.life + 0.3);
+                }
+            });
+        }
+        
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('currentMode').textContent = 
+                mode.charAt(0).toUpperCase() + mode.slice(1);
+            
+            // Update button states
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Reset all particles with new mode
+            particles.forEach(particle => particle.reset(mode));
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const deltaTime = clock.getDelta();
+            
+            // Update particles
+            const positions = particleSystem.geometry.attributes.position.array;
+            const colors = particleSystem.geometry.attributes.color.array;
+            const sizes = particleSystem.geometry.attributes.size.array;
+            
+            particles.forEach((particle, i) => {
+                particle.update(deltaTime);
+                
+                positions[i * 3] = particle.position.x;
+                positions[i * 3 + 1] = particle.position.y;
+                positions[i * 3 + 2] = particle.position.z;
+                
+                const color = particle.getColor();
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+                
+                sizes[i] = particle.size * particle.life;
+            });
+            
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+            particleSystem.geometry.attributes.color.needsUpdate = true;
+            particleSystem.geometry.attributes.size.needsUpdate = true;
+            
+            // Gradually reduce mouse influence
+            mouseInfluence *= 0.95;
+            
+            // Rotate camera slightly for better view
+            const time = Date.now() * 0.0001;
+            camera.position.x = Math.sin(time) * 10;
+            camera.position.z = Math.cos(time) * 10;
+            camera.lookAt(0, 0, 0);
+            
+            renderer.render(scene, camera);
+        }
+        
+        // Initialize and start animation
+        init();
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Shooter - On Rails</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            background: #000;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+            font-size: 18px;
+        }
+        
+        #health-bar {
+            width: 200px;
+            height: 20px;
+            border: 2px solid #0ff;
+            margin-top: 10px;
+            position: relative;
+        }
+        
+        #health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0f0, #ff0, #f00);
+            transition: width 0.3s;
+        }
+        
+        #score {
+            margin-top: 10px;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #f00;
+            text-shadow: 0 0 20px #f00;
+            font-size: 48px;
+            display: none;
+        }
+        
+        #restart-btn {
+            margin-top: 20px;
+            padding: 15px 30px;
+            font-size: 24px;
+            background: #f00;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            pointer-events: auto;
+            text-shadow: none;
+            font-family: 'Courier New', monospace;
+        }
+        
+        #restart-btn:hover {
+            background: #ff3333;
+        }
+        
+        #wave-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 64px;
+            color: #0ff;
+            text-shadow: 0 0 30px #0ff;
+            opacity: 0;
+            pointer-events: none;
+            animation: fadeInOut 2s;
+        }
+        
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+        }
+        
+        #mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: none;
+            justify-content: space-between;
+            padding: 0 20px;
+            pointer-events: none;
+        }
+        
+        .control-area {
+            width: 150px;
+            height: 150px;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            border-radius: 50%;
+            background: rgba(0, 255, 255, 0.1);
+            pointer-events: auto;
+            touch-action: none;
+        }
+        
+        #touch-move {
+            position: relative;
+        }
+        
+        #touch-indicator {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background: rgba(0, 255, 255, 0.5);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        
+        @media (max-width: 768px) {
+            #mobile-controls {
+                display: flex;
+            }
+            
+            #hud {
+                font-size: 14px;
+            }
+            
+            #health-bar {
+                width: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="ui-overlay">
+        <div id="hud">
+            <div>HEALTH</div>
+            <div id="health-bar">
+                <div id="health-fill" style="width: 100%"></div>
+            </div>
+            <div id="score">SCORE: <span id="score-value">0</span></div>
+            <div id="wave">WAVE: <span id="wave-value">1</span></div>
+            <div id="difficulty" style="margin-top: 10px;">DIFFICULTY: <span id="difficulty-value">1.0x</span></div>
+        </div>
+        
+        <div id="game-over">
+            <div>GAME OVER</div>
+            <div style="font-size: 24px; margin-top: 20px;">FINAL SCORE: <span id="final-score">0</span></div>
+            <button id="restart-btn">RESTART</button>
+        </div>
+        
+        <div id="wave-indicator"></div>
+        
+        <div id="mobile-controls">
+            <div id="touch-move" class="control-area">
+                <div id="touch-indicator"></div>
+            </div>
+            <div id="touch-shoot" class="control-area"></div>
+        </div>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // Game state
+        const gameState = {
+            health: 100,
+            maxHealth: 100,
+            score: 0,
+            wave: 1,
+            difficulty: 1.0,
+            isGameOver: false,
+            enemiesKilled: 0
+        };
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        camera.position.z = 5;
+
+        // Post-processing
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5, 0.4, 0.85
+        );
+        bloomPass.threshold = 0.21;
+        bloomPass.strength = 1.2;
+        bloomPass.radius = 0.55;
+        composer.addPass(bloomPass);
+
+        // Starfield
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 2000;
+        const starPositions = new Float32Array(starCount * 3);
+        const starSizes = new Float32Array(starCount);
+
+        for (let i = 0; i < starCount; i++) {
+            starPositions[i * 3] = (Math.random() - 0.5) * 200;
+            starPositions[i * 3 + 1] = (Math.random() - 0.5) * 200;
+            starPositions[i * 3 + 2] = (Math.random() - 0.5) * 200;
+            starSizes[i] = Math.random() * 2 + 0.5;
+        }
+
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        starGeometry.setAttribute('size', new THREE.BufferAttribute(starSizes, 1));
+
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.1,
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        const starField = new THREE.Points(starGeometry, starMaterial);
+        scene.add(starField);
+
+        // Player ship
+        const playerGeometry = new THREE.ConeGeometry(0.3, 1, 4);
+        const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+        const player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.rotation.x = Math.PI / 2;
+        player.position.z = 2;
+        scene.add(player);
+
+        // Player glow
+        const glowGeometry = new THREE.SphereGeometry(0.5, 16, 16);
+        const glowMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x00ffff, 
+            transparent: true, 
+            opacity: 0.3 
+        });
+        const playerGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+        player.add(playerGlow);
+
+        // Enemy system with instancing
+        const enemyGeometry = new THREE.OctahedronGeometry(0.4);
+        const enemyMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const maxEnemies = 100;
+        const enemyMesh = new THREE.InstancedMesh(enemyGeometry, enemyMaterial, maxEnemies);
+        scene.add(enemyMesh);
+
+        const enemies = [];
+        const tempMatrix = new THREE.Matrix4();
+        const tempPosition = new THREE.Vector3();
+        const tempQuaternion = new THREE.Quaternion();
+        const tempScale = new THREE.Vector3(1, 1, 1);
+
+        // Laser system
+        const laserGeometry = new THREE.CylinderGeometry(0.05, 0.05, 0.8);
+        const laserMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const maxLasers = 50;
+        const laserMesh = new THREE.InstancedMesh(laserGeometry, laserMaterial, maxLasers);
+        scene.add(laserMesh);
+
+        const lasers = [];
+        let laserCooldown = 0;
+        const laserCooldownTime = 0.15;
+
+        // Particle system for explosions
+        const particleGeometry = new THREE.BufferGeometry();
+        const maxParticles = 1000;
+        const particlePositions = new Float32Array(maxParticles * 3);
+        const particleColors = new Float32Array(maxParticles * 3);
+        const particleSizes = new Float32Array(maxParticles);
+
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+        particleGeometry.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+
+        const particleMaterial = new THREE.PointsMaterial({
+            size: 0.15,
+            vertexColors: true,
+            transparent: true,
+            opacity: 1,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+        scene.add(particleSystem);
+
+        const particles = [];
+
+        // Input handling
+        const keys = {};
+        const mouse = { x: 0, y: 0 };
+        let touchMove = { x: 0, y: 0, active: false };
+        let touchShoot = false;
+
+        window.addEventListener('keydown', (e) => keys[e.key] = true);
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+        
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // Mobile touch controls
+        const touchMoveArea = document.getElementById('touch-move');
+        const touchShootArea = document.getElementById('touch-shoot');
+        const touchIndicator = document.getElementById('touch-indicator');
+
+        touchMoveArea.addEventListener('touchstart', handleTouchMove, { passive: false });
+        touchMoveArea.addEventListener('touchmove', handleTouchMove, { passive: false });
+        touchMoveArea.addEventListener('touchend', () => {
+            touchMove.active = false;
+            touchIndicator.style.transform = 'translate(-50%, -50%)';
+        });
+
+        function handleTouchMove(e) {
+            e.preventDefault();
+            touchMove.active = true;
+            const touch = e.touches[0];
+            const rect = touchMoveArea.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const deltaX = touch.clientX - centerX;
+            const deltaY = touch.clientY - centerY;
+            
+            touchMove.x = Math.max(-1, Math.min(1, deltaX / (rect.width / 2)));
+            touchMove.y = Math.max(-1, Math.min(1, deltaY / (rect.height / 2)));
+            
+            touchIndicator.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+        }
+
+        touchShootArea.addEventListener('touchstart', () => touchShoot = true);
+        touchShootArea.addEventListener('touchend', () => touchShoot = false);
+
+        // Game functions
+        function spawnEnemy() {
+            if (enemies.length >= maxEnemies) return;
+            
+            const enemy = {
+                position: new THREE.Vector3(
+                    (Math.random() - 0.5) * 15,
+                    (Math.random() - 0.5) * 10,
+                    -20
+                ),
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.02 * gameState.difficulty,
+                    (Math.random() - 0.5) * 0.02 * gameState.difficulty,
+                    0.05 * gameState.difficulty
+                ),
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.1,
+                health: 1 + Math.floor(gameState.difficulty / 2),
+                active: true
+            };
+            
+            enemies.push(enemy);
+        }
+
+        function shootLaser() {
+            if (laserCooldown > 0) return;
+            if (lasers.length >= maxLasers) return;
+            
+            const laser = {
+                position: player.position.clone(),
+                velocity: new THREE.Vector3(0, 0, -0.5),
+                active: true
+            };
+            
+            lasers.push(laser);
+            laserCooldown = laserCooldownTime;
+        }
+
+        function createExplosion(position, color = 0xff0000) {
+            const particleCount = 20;
+            
+            for (let i = 0; i < particleCount; i++) {
+                if (particles.length >= maxParticles) break;
+                
+                const velocity = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.2,
+                    (Math.random() - 0.5) * 0.2
+                );
+                
+                const colorObj = new THREE.Color(color);
+                
+                particles.push({
+                    position: position.clone(),
+                    velocity: velocity,
+                    life: 1.0,
+                    color: colorObj,
+                    size: Math.random() * 0.3 + 0.2
+                });
+            }
+        }
+
+        function updateEnemies(deltaTime) {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+                
+                if (!enemy.active) {
+                    enemies.splice(i, 1);
+                    continue;
+                }
+                
+                enemy.position.add(enemy.velocity);
+                enemy.rotation += enemy.rotationSpeed;
+                
+                // Remove if too far
+                if (enemy.position.z > 10) {
+                    enemies.splice(i, 1);
+                    gameState.health -= 5;
+                    updateHealth();
+                    continue;
+                }
+                
+                // Check collision with player
+                if (enemy.position.distanceTo(player.position) < 0.7) {
+                    createExplosion(enemy.position, 0xff0000);
+                    enemies.splice(i, 1);
+                    gameState.health -= 10;
+                    updateHealth();
+                }
+            }
+            
+            // Update instanced mesh
+            for (let i = 0; i < enemies.length; i++) {
+                const enemy = enemies[i];
+                tempPosition.copy(enemy.position);
+                tempQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), enemy.rotation);
+                tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+                enemyMesh.setMatrixAt(i, tempMatrix);
+            }
+            enemyMesh.instanceMatrix.needsUpdate = true;
+            enemyMesh.count = enemies.length;
+        }
+
+        function updateLasers(deltaTime) {
+            for (let i = lasers.length - 1; i >= 0; i--) {
+                const laser = lasers[i];
+                
+                if (!laser.active) {
+                    lasers.splice(i, 1);
+                    continue;
+                }
+                
+                laser.position.add(laser.velocity);
+                
+                // Remove if too far
+                if (laser.position.z < -25) {
+                    lasers.splice(i, 1);
+                    continue;
+                }
+                
+                // Check collision with enemies
+                for (let j = enemies.length - 1; j >= 0; j--) {
+                    const enemy = enemies[j];
+                    if (laser.position.distanceTo(enemy.position) < 0.6) {
+                        enemy.health--;
+                        
+                        if (enemy.health <= 0) {
+                            createExplosion(enemy.position, 0xff6600);
+                            enemies.splice(j, 1);
+                            gameState.score += Math.floor(10 * gameState.difficulty);
+                            gameState.enemiesKilled++;
+                            updateScore();
+                        } else {
+                            createExplosion(enemy.position, 0xffff00);
+                        }
+                        
+                        lasers.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+            
+            // Update instanced mesh
+            for (let i = 0; i < lasers.length; i++) {
+                const laser = lasers[i];
+                tempPosition.copy(laser.position);
+                tempQuaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+                tempMatrix.compose(tempPosition, tempQuaternion, tempScale);
+                laserMesh.setMatrixAt(i, tempMatrix);
+            }
+            laserMesh.instanceMatrix.needsUpdate = true;
+            laserMesh.count = lasers.length;
+        }
+
+        function updateParticles(deltaTime) {
+            const positions = particleGeometry.attributes.position.array;
+            const colors = particleGeometry.attributes.color.array;
+            const sizes = particleGeometry.attributes.size.array;
+            
+            let activeParticles = 0;
+            
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const particle = particles[i];
+                
+                particle.position.add(particle.velocity);
+                particle.velocity.multiplyScalar(0.95);
+                particle.life -= deltaTime * 2;
+                
+                if (particle.life <= 0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+                
+                const idx = activeParticles * 3;
+                positions[idx] = particle.position.x;
+                positions[idx + 1] = particle.position.y;
+                positions[idx + 2] = particle.position.z;
+                
+                colors[idx] = particle.color.r;
+                colors[idx + 1] = particle.color.g;
+                colors[idx + 2] = particle.color.b;
+                
+                sizes[activeParticles] = particle.size * particle.life;
+                
+                activeParticles++;
+            }
+            
+            particleGeometry.setDrawRange(0, activeParticles);
+            particleGeometry.attributes.position.needsUpdate = true;
+            particleGeometry.attributes.color.needsUpdate = true;
+            particleGeometry.attributes.size.needsUpdate = true;
+        }
+
+        function updatePlayer(deltaTime) {
+            const speed = 0.15;
+            let targetX = player.position.x;
+            let targetY = player.position.y;
+            
+            if (touchMove.active) {
+                targetX += touchMove.x * speed;
+                targetY -= touchMove.y * speed;
+            } else {
+                if (keys['ArrowLeft'] || keys['a']) targetX -= speed;
+                if (keys['ArrowRight'] || keys['d']) targetX += speed;
+                if (keys['ArrowUp'] || keys['w']) targetY += speed;
+                if (keys['ArrowDown'] || keys['s']) targetY -= speed;
+                
+                targetX += mouse.x * 6;
+                targetY += mouse.y * 4;
+            }
+            
+            // Clamp position
+            player.position.x = THREE.MathUtils.clamp(targetX, -8, 8);
+            player.position.y = THREE.MathUtils.clamp(targetY, -4.5, 4.5);
+            
+            // Shooting
+            if (keys[' '] || touchShoot) {
+                shootLaser();
+            }
+            
+            laserCooldown = Math.max(0, laserCooldown - deltaTime);
+        }
+
+        function updateDifficulty() {
+            gameState.difficulty = 1 + (gameState.wave - 1) * 0.2 + gameState.enemiesKilled * 0.01;
+            document.getElementById('difficulty-value').textContent = gameState.difficulty.toFixed(1) + 'x';
+        }
+
+        function updateHealth() {
+            if (gameState.health <= 0) {
+                gameState.health = 0;
+                gameOver();
+            }
+            
+            const healthPercent = (gameState.health / gameState.maxHealth) * 100;
+            document.getElementById('health-fill').style.width = healthPercent + '%';
+        }
+
+        function updateScore() {
+            document.getElementById('score-value').textContent = gameState.score;
+        }
+
+        function updateWave() {
+            document.getElementById('wave-value').textContent = gameState.wave;
+            
+            // Show wave indicator
+            const indicator = document.getElementById('wave-indicator');
+            indicator.textContent = 'WAVE ' + gameState.wave;
+            indicator.style.animation = 'none';
+            setTimeout(() => {
+                indicator.style.animation = 'fadeInOut 2s';
+            }, 10);
+        }
+
+        function gameOver() {
+            gameState.isGameOver = true;
+            document.getElementById('game-over').style.display = 'block';
+            document.getElementById('final-score').textContent = gameState.score;
+        }
+
+        function resetGame() {
+            gameState.health = 100;
+            gameState.score = 0;
+            gameState.wave = 1;
+            gameState.difficulty = 1.0;
+            gameState.isGameOver = false;
+            gameState.enemiesKilled = 0;
+            
+            enemies.length = 0;
+            lasers.length = 0;
+            particles.length = 0;
+            
+            player.position.set(0, 0, 2);
+            
+            document.getElementById('game-over').style.display = 'none';
+            updateHealth();
+            updateScore();
+            updateWave();
+            updateDifficulty();
+        }
+
+        document.getElementById('restart-btn').addEventListener('click', resetGame);
+
+        // Enemy wave spawning
+        let enemySpawnTimer = 0;
+        let waveTimer = 0;
+        const waveDuration = 30; // seconds per wave
+
+        function spawnWave() {
+            const enemiesPerWave = 5 + gameState.wave * 2;
+            const spawnInterval = 0.3;
+            
+            for (let i = 0; i < enemiesPerWave; i++) {
+                setTimeout(() => spawnEnemy(), i * spawnInterval * 1000);
+            }
+        }
+
+        // Animation loop
+        const clock = new THREE.Clock();
+        let lastTime = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (gameState.isGameOver) return;
+            
+            const elapsedTime = clock.getElapsedTime();
+            const deltaTime = elapsedTime - lastTime;
+            lastTime = elapsedTime;
+            
+            // Update starfield
+            starField.rotation.z += 0.0001;
+            const positions = starGeometry.attributes.position.array;
+            for (let i = 0; i < starCount; i++) {
+                positions[i * 3 + 2] += 0.1 * gameState.difficulty;
+                if (positions[i * 3 + 2] > 50) {
+                    positions[i * 3 + 2] = -50;
+                }
+            }
+            starGeometry.attributes.position.needsUpdate = true;
+            
+            // Update game objects
+            updatePlayer(deltaTime);
+            updateEnemies(deltaTime);
+            updateLasers(deltaTime);
+            updateParticles(deltaTime);
+            
+            // Spawn enemies
+            enemySpawnTimer += deltaTime;
+            if (enemySpawnTimer > 1 / gameState.difficulty) {
+                spawnEnemy();
+                enemySpawnTimer = 0;
+            }
+            
+            // Wave progression
+            waveTimer += deltaTime;
+            if (waveTimer > waveDuration) {
+                gameState.wave++;
+                waveTimer = 0;
+                updateWave();
+                updateDifficulty();
+                spawnWave();
+            }
+            
+            // Rotate player glow
+            if (playerGlow) {
+                playerGlow.rotation.z += 0.02;
+            }
+            
+            // Render
+            composer.render();
+        }
+
+        // Initial wave
+        spawnWave();
+        animate();
+
+        // Window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Prevent context menu on touch
+        document.addEventListener('contextmenu', e => e.preventDefault());
+    </script>
+</body>
+</html>
