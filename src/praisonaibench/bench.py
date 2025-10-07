@@ -80,8 +80,15 @@ class Bench:
         Returns:
             Test result dictionary
         """
+        # Validate input parameters
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt cannot be empty or None")
+        
         # Use the prompt as the instruction for the agent
         model = model or self.config.get("default_model", "gpt-4o")
+        test_name = test_name or f"test_{len(self.results) + 1}"
+        
+        print(f"🧪 Starting test: {test_name} with model: {model}")
         
         # Build LLM configuration
         if llm_config is not None:
