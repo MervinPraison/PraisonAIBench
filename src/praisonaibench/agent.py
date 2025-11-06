@@ -78,7 +78,7 @@ class BenchAgent:
             end_time = time.time()
             model_name = self.llm.get("model", str(self.llm)) if isinstance(self.llm, dict) else self.llm
             error_msg = f"Agent '{self.name}' failed with model '{model_name}': {str(e)}"
-            logging.error(f"❌ {error_msg}")
+            logging.error(f"❌ {error_msg}", exc_info=True)
             return {
                 "test_name": test_name or "unnamed_test",
                 "prompt": prompt,
