@@ -88,7 +88,7 @@ class Bench:
         model = model or self.config.get("default_model", "gpt-4o")
         test_name = test_name or f"test_{len(self.results) + 1}"
         
-        print(f"🧪 Starting test: {test_name} with model: {model}")
+        logging.info(f"🧪 Starting test: {test_name} with model: {model}")
         
         # Build LLM configuration
         if llm_config is not None:
