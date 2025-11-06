@@ -86,7 +86,7 @@ class Bench:
         
         # Use the prompt as the instruction for the agent
         model = model or self.config.get("default_model", "gpt-4o")
-        test_name = test_name or f"test_{len(self.results) + 1}"
+        test_name = test_name or f"test_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         
         logging.info(f"🧪 Starting test: {test_name} with model: {model}")
         
