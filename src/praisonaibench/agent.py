@@ -77,7 +77,7 @@ class BenchAgent:
         except Exception as e:
             end_time = time.time()
             error_msg = f"Agent '{self.name}' failed with model '{self.llm}': {str(e)}"
-            print(f"❌ {error_msg}")
+            logging.error(f"❌ {error_msg}")
             return {
                 "test_name": test_name or "unnamed_test",
                 "prompt": prompt,
