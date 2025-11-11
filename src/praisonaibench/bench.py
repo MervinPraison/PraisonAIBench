@@ -6,6 +6,7 @@ to evaluate LLM performance across different tasks and models.
 """
 
 from .agent import BenchAgent
+from .evaluator import CompositeEvaluator
 from typing import Dict, List, Any, Optional
 import json
 import os
@@ -22,15 +23,18 @@ class Bench:
     agents for different types of benchmarking tasks.
     """
     
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: str = None, enable_evaluation: bool = True):
         """
         Initialize the benchmarking suite.
         
         Args:
             config_file: Optional path to configuration file
+            enable_evaluation: Enable automated evaluation (default: True)
         """
         self.results = []
         self.config = self._load_config(config_file)
+        self.enable_evaluation = enable_evaluation
+        self.evaluator = CompositeEvaluator() if enable_evaluation else None
     
     def _load_config(self, config_file: str = None) -> Dict[str, Any]:
         """Load configuration from file or use defaults."""
@@ -67,7 +71,8 @@ class Bench:
                        prompt: str, 
                        model: str = None,
                        test_name: str = None,
-                       llm_config: Dict[str, Any] = None) -> Dict[str, Any]:
+                       llm_config: Dict[str, Any] = None,
+                       test_config: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Run a single benchmark test.
         
@@ -76,6 +81,7 @@ class Bench:
             model: LLM model to use (defaults to first model in config)
             test_name: Optional test name
             llm_config: Dictionary of LLM configuration parameters (max_tokens, temperature, etc.)
+            test_config: Full test configuration including expected results
             
         Returns:
             Test result dictionary
@@ -100,6 +106,15 @@ class Bench:
         
         # Use the agent's run_test method which handles timing and error handling
         result = agent.run_test(prompt, test_name)
+        
+        # Run evaluation if enabled and test was successful
+        if self.enable_evaluation and result['status'] == 'success' and result['response']:
+            test_config_for_eval = test_config or {}
+            evaluation_results = self.evaluator.evaluate(result['response'], test_config_for_eval)
+            result['evaluation'] = evaluation_results
+            
+            # Print evaluation summary
+            self._print_evaluation_summary(evaluation_results, test_name)
         
         # Check if response contains HTML and save it
         if result['status'] == 'success' and result['response']:
@@ -151,11 +166,16 @@ class Bench:
                 continue
             
             print(f"Running test: {test_name}")
-            result = self.run_single_test(prompt, model, test_name, llm_config=suite_config)
+            result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, test_config=test)
             suite_results.append(result)
             
             if result['status'] == 'success':
-                print(f"✅ Completed: {test_name}")
+                eval_status = ""
+                if 'evaluation' in result:
+                    score = result['evaluation'].get('overall_score', 0)
+                    passed = result['evaluation'].get('overall_passed', False)
+                    eval_status = f" [Score: {score}%, {'PASS' if passed else 'FAIL'}]"
+                print(f"✅ Completed: {test_name}{eval_status}")
             else:
                 print(f"❌ Failed: {test_name} - {result.get('response', 'Unknown error')}")
         
@@ -279,6 +299,20 @@ class Bench:
             except Exception as e:
                 print(f"⚠️  Failed to save HTML file {html_path}: {e}")
     
+    def _print_evaluation_summary(self, evaluation: Dict[str, Any], test_name: str):
+        """Print a summary of evaluation results."""
+        print(f"\n📊 Evaluation Results for {test_name}:")
+        print(f"   Overall Score: {evaluation['overall_score']}%")
+        print(f"   Status: {'✅ PASSED' if evaluation['overall_passed'] else '❌ FAILED'}")
+        
+        # Print individual evaluation scores
+        for eval_name, eval_data in evaluation['evaluations'].items():
+            if eval_data['scores']:
+                print(f"\n   {eval_name.replace('_', ' ').title()}:")
+                for score_name, score_data in eval_data['scores'].items():
+                    print(f"     - {score_name.replace('_', ' ').title()}: {score_data['percentage']:.1f}%")
+        print()
+    
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of benchmark results."""
         if not self.results:
@@ -303,7 +337,25 @@ class Bench:
         
         avg_execution_time = sum([r.get("execution_time", 0) for r in self.results]) / total_tests
         
-        return {
+        # Calculate evaluation metrics if available
+        evaluation_summary = None
+        if self.enable_evaluation:
+            evaluated_results = [r for r in self.results if 'evaluation' in r and r.get('status') == 'success']
+            if evaluated_results:
+                total_score = sum(r['evaluation']['overall_score'] for r in evaluated_results)
+                avg_score = total_score / len(evaluated_results)
+                passed_evals = sum(1 for r in evaluated_results if r['evaluation']['overall_passed'])
+                
+                evaluation_summary = {
+                    "enabled": True,
+                    "evaluated_tests": len(evaluated_results),
+                    "average_score": f"{avg_score:.2f}%",
+                    "passed_evaluations": passed_evals,
+                    "failed_evaluations": len(evaluated_results) - passed_evals,
+                    "pass_rate": f"{(passed_evals/len(evaluated_results)*100):.1f}%" if evaluated_results else "N/A"
+                }
+        
+        summary = {
             "total_tests": total_tests,
             "successful_tests": successful_tests,
             "failed_tests": failed_tests,
@@ -312,3 +364,8 @@ class Bench:
             "average_execution_time": f"{avg_execution_time:.2f}s",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        
+        if evaluation_summary:
+            summary["evaluation"] = evaluation_summary
+        
+        return summary
