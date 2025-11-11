@@ -1,0 +1,52 @@
+# Example test suite with evaluation enabled
+# This demonstrates how to use the automated evaluation features
+
+tests:
+  # Test 1: Math test with expected result
+  - name: "simple_math"
+    prompt: "What is 15 * 23? Provide only the numerical answer."
+    expected: "345"
+  
+  # Test 2: Code generation test (HTML will be automatically evaluated)
+  - name: "rotating_cube"
+    prompt: |
+      Create a complete HTML file with Three.js that displays a rotating 3D cube.
+      Requirements:
+      - Use Three.js from CDN
+      - Include proper HTML structure (DOCTYPE, head, body)
+      - Add a title
+      - The cube should rotate continuously
+      - Include different colors for each face
+      - Add proper lighting
+  
+  # Test 3: Explanation test with keyword matching
+  - name: "quantum_explanation"
+    prompt: "Explain quantum computing in 2-3 sentences. Include the concepts of qubits and superposition."
+    expected: "Quantum computing uses quantum mechanical phenomena like superposition and entanglement to perform computations. Unlike classical bits, qubits can exist in multiple states simultaneously, allowing quantum computers to process information in parallel."
+  
+  # Test 4: Creative writing (quality evaluation only)
+  - name: "short_story"
+    prompt: "Write a 100-word short story about a robot learning to paint."
+  
+  # Test 5: HTML form with validation
+  - name: "contact_form"
+    prompt: |
+      Create a complete HTML file with a contact form that includes:
+      - Name field
+      - Email field  
+      - Message textarea
+      - Submit button
+      - Basic CSS styling
+      - Client-side JavaScript validation
+      Include proper HTML5 structure.
+  
+  # Test 6: Factual answer with expected result
+  - name: "capital_france"
+    prompt: "What is the capital of France?"
+    expected: "Paris"
+  
+  # Test 7: Code explanation
+  - name: "python_list_comprehension"
+    prompt: "Explain what this Python code does: [x**2 for x in range(10)]"
+    expected: "This list comprehension creates a list of squares from 0 to 81"
+

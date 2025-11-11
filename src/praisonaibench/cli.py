@@ -80,6 +80,9 @@ Examples:
     parser.add_argument('--config', type=str, help='Configuration file path')
     parser.add_argument('--output', type=str, help='Output file for results')
     
+    # Evaluation options
+    parser.add_argument('--no-eval', action='store_true', help='Disable automated evaluation')
+    
     # Extract HTML from existing results
     parser.add_argument('--extract', type=str, help='Extract HTML from existing benchmark results JSON file')
     
@@ -87,9 +90,14 @@ Examples:
     
     # Initialize bench
     try:
-        bench = Bench(config_file=args.config)
+        enable_evaluation = not args.no_eval
+        bench = Bench(config_file=args.config, enable_evaluation=enable_evaluation)
         print(f"🚀 PraisonAI Bench v{__version__} initialized")
         print("Using LiteLLM - supports any compatible model (e.g., gpt-4o, gemini/gemini-1.5-flash, xai/grok-code-fast-1)")
+        if enable_evaluation:
+            print("📊 Automated evaluation: ENABLED")
+        else:
+            print("📊 Automated evaluation: DISABLED")
         
     except Exception as e:
         print(f"❌ Error initializing bench: {e}")
@@ -192,6 +200,15 @@ Examples:
     print(f"   Total tests: {summary['total_tests']}")
     print(f"   Success rate: {summary['success_rate']}")
     print(f"   Average time: {summary['average_execution_time']}")
+    
+    # Show evaluation summary if available
+    if 'evaluation' in summary and summary['evaluation']['enabled']:
+        eval_summary = summary['evaluation']
+        print(f"\n📋 Evaluation Summary:")
+        print(f"   Evaluated tests: {eval_summary['evaluated_tests']}")
+        print(f"   Average score: {eval_summary['average_score']}")
+        print(f"   Pass rate: {eval_summary['pass_rate']}")
+        print(f"   Passed: {eval_summary['passed_evaluations']} | Failed: {eval_summary['failed_evaluations']}")
     
     # Save results
     if args.output:

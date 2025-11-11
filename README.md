@@ -13,6 +13,7 @@ Benchmark any LiteLLM-compatible model with automatic HTML extraction, model-spe
 - 🎛️ **Flexible Testing** - Run single tests, full suites, or filter specific tests
 - ⚡ **Modern Tooling** - Built with `pyproject.toml` and `uv` package manager
 - 📊 **Comprehensive Results** - JSON metrics with timing, success rates, and metadata
+- ✅ **NEW: Automated Evaluation** - Quality scoring, expected result comparison, HTML/JS validation
 
 ## 🚀 Quick Start
 
@@ -57,12 +58,17 @@ export GOOGLE_API_KEY=your_google_key
 ```python
 from praisonaibench import Bench
 
-# Create benchmark suite
+# Create benchmark suite with evaluation enabled (default)
 bench = Bench()
 
 # Run a simple test
 result = bench.run_single_test("What is 2+2?")
 print(result['response'])
+
+# Check evaluation results (NEW!)
+if 'evaluation' in result:
+    print(f"Score: {result['evaluation']['overall_score']}%")
+    print(f"Passed: {result['evaluation']['overall_passed']}")
 
 # Run with specific model
 result = bench.run_single_test(
@@ -70,7 +76,7 @@ result = bench.run_single_test(
     model="xai/grok-code-fast-1"
 )
 
-# Get summary
+# Get summary with evaluation metrics
 summary = bench.get_summary()
 print(summary)
 ```
@@ -100,7 +106,7 @@ praisonaibench/
 ### Basic Commands
 
 ```bash
-# Single test with default model
+# Single test with default model (evaluation enabled by default)
 praisonaibench --test "Explain quantum computing"
 
 # Single test with specific model
@@ -110,6 +116,9 @@ praisonaibench --test "Write a poem" --model gpt-4o
 praisonaibench --test "Create HTML" --model xai/grok-code-fast-1
 praisonaibench --test "Write code" --model gemini/gemini-1.5-flash-8b
 praisonaibench --test "Analyze data" --model claude-3-sonnet-20240229
+
+# Disable evaluation for faster benchmarking
+praisonaibench --test "Quick test" --no-eval
 ```
 
 ### Test Suites
@@ -163,6 +172,7 @@ praisonaibench --suite examples/threejs_simulation_suite.yaml --model xai/grok-c
 tests:
   - name: "math_test"
     prompt: "What is 15 * 23?"
+    expected: "345"  # NEW: Add expected results for auto-evaluation!
   
   - name: "creative_test"
     prompt: "Write a short story about a robot"
@@ -170,6 +180,7 @@ tests:
   - name: "model_specific_test"
     prompt: "Explain quantum physics"
     model: "gpt-4o"
+    expected: "Quantum physics studies behavior at atomic scale using superposition and entanglement"
 ```
 
 ### Advanced Test Suite with Full Config Support
@@ -303,7 +314,21 @@ output/
     "agent_name": "BenchAgent",
     "execution_time": 8.24,
     "status": "success",
-    "timestamp": "2025-08-29 16:04:26"
+    "timestamp": "2025-08-29 16:04:26",
+    "evaluation": {
+      "overall_score": 92.5,
+      "overall_passed": true,
+      "evaluations": {
+        "html_code": {
+          "scores": {
+            "html_structure": {"percentage": 100.0},
+            "required_elements": {"percentage": 95.0},
+            "javascript_quality": {"percentage": 90.0},
+            "best_practices": {"percentage": 85.0}
+          }
+        }
+      }
+    }
   }
 ]
 ```
@@ -315,10 +340,25 @@ output/
    Total tests: 4
    Success rate: 100.0%
    Average time: 12.34s
+
+📋 Evaluation Summary:
+   Evaluated tests: 4
+   Average score: 87.5%
+   Pass rate: 100.0%
+   Passed: 4 | Failed: 0
+
 Results saved to: output/benchmark_results_20250829_160426.json
 ```
 
 ## 🎯 Advanced Features
+
+### ✅ **NEW: Automated Evaluation System**
+- **Expected Result Comparison** - Similarity scoring with fuzzy matching
+- **HTML/JavaScript Validation** - Structure, syntax, and best practices checking
+- **Quality Scoring** - Completeness, structure, and length analysis
+- **Comprehensive Metrics** - Individual and overall scores with pass/fail status
+- **Detailed Feedback** - Actionable insights for each evaluation
+- See [EVALUATION.md](EVALUATION.md) for full documentation
 
 ### 🔄 **Universal Model Support**
 - Works with **any LiteLLM-compatible model**
@@ -334,6 +374,7 @@ Results saved to: output/benchmark_results_20250829_160426.json
 - Organizes by model in separate folders
 - Extract HTML from existing benchmark results with `--extract`
 - Perfect for Three.js, React, or any web development benchmarks
+- **NEW**: Automatic validation of generated HTML/JS code
 
 ### 🎛️ **Flexible Test Management**
 - Run entire suites or filter specific tests
