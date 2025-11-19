@@ -78,6 +78,12 @@ Examples:
     
     # Configuration
     parser.add_argument('--config', type=str, help='Configuration file path')
+    
+    # Evaluation options
+    parser.add_argument('--no-eval', action='store_true', 
+                       help='Disable evaluation system (faster, no quality assessment)')
+    parser.add_argument('--no-llm-judge', action='store_true',
+                       help='Disable LLM-as-a-Judge (functional validation only)')
     parser.add_argument('--output', type=str, help='Output file for results')
     
     # Extract HTML from existing results
@@ -87,7 +93,19 @@ Examples:
     
     # Initialize bench
     try:
-        bench = Bench(config_file=args.config)
+        # Prepare config with evaluation settings
+        config_overrides = {}
+        if args.no_llm_judge:
+            config_overrides['use_llm_judge'] = False
+        
+        bench = Bench(
+            config_file=args.config,
+            enable_evaluation=not args.no_eval
+        )
+        
+        # Apply config overrides
+        if config_overrides:
+            bench.config.update(config_overrides)
         print(f"🚀 PraisonAI Bench v{__version__} initialized")
         print("Using LiteLLM - supports any compatible model (e.g., gpt-4o, gemini/gemini-1.5-flash, xai/grok-code-fast-1)")
         

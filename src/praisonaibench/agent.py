@@ -6,6 +6,7 @@ from praisonaiagents import Agent
 from typing import Dict, List, Any, Optional
 import json
 import time
+import logging
 
 
 class BenchAgent:

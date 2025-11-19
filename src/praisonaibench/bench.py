@@ -12,6 +12,7 @@ import os
 import yaml
 from datetime import datetime
 import re
+import logging
 
 
 class Bench:
@@ -22,15 +23,32 @@ class Bench:
     agents for different types of benchmarking tasks.
     """
     
-    def __init__(self, config_file: str = None):
+    def __init__(self, config_file: str = None, enable_evaluation: bool = True):
         """
         Initialize the benchmarking suite.
         
         Args:
             config_file: Optional path to configuration file
+            enable_evaluation: Enable evaluation system (default: True)
         """
         self.results = []
         self.config = self._load_config(config_file)
+        self.enable_evaluation = enable_evaluation
+        self.evaluator = None
+        
+        # Initialize evaluator if enabled
+        if self.enable_evaluation:
+            try:
+                from .simple_evaluator import CombinedEvaluator
+                self.evaluator = CombinedEvaluator(
+                    use_llm_judge=self.config.get('use_llm_judge', True),
+                    judge_model=self.config.get('judge_model', 'gpt-4o'),
+                    headless=self.config.get('headless', True)
+                )
+                logging.info("✅ Evaluation system enabled")
+            except ImportError:
+                logging.warning("⚠️  Evaluation system not available (install playwright)")
+                self.evaluator = None
     
     def _load_config(self, config_file: str = None) -> Dict[str, Any]:
         """Load configuration from file or use defaults."""
@@ -111,6 +129,32 @@ class Bench:
         # Check if response contains HTML and save it
         if result['status'] == 'success' and result['response']:
             self._extract_and_save_html(result['response'], test_name, model)
+        
+        # Run evaluation if enabled
+        if self.evaluator and result['status'] == 'success' and result['response']:
+            print(f"\n📊 Evaluating output...")
+            try:
+                evaluation = self.evaluator.evaluate(
+                    html_content=result['response'],
+                    test_name=test_name,
+                    prompt=prompt
+                )
+                result['evaluation'] = evaluation
+                
+                # Print summary
+                print(f"  Overall Score: {evaluation['overall_score']}/100")
+                status_emoji = '✅ PASSED' if evaluation['passed'] else '❌ FAILED'
+                print(f"  Status: {status_emoji}")
+                
+                # Print feedback
+                for item in evaluation['functional']['feedback']:
+                    print(f"  {item['message']}")
+                
+                if evaluation.get('quality'):
+                    print(f"  💬 {evaluation['quality']['feedback']}")
+                    
+            except Exception as e:
+                logging.warning(f"⚠️  Evaluation failed: {str(e)}")
         
         self.results.append(result)
         
