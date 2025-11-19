@@ -1,0 +1,399 @@
+<!-- Save this file as: particle_system.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js Particle Fountain</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #050505 0%, #000000 50%, #02020a 100%);
+      height: 100%;
+      width: 100%;
+      font-family: sans-serif;
+      color: #ddd;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    #info a {
+      color: #7ad7ff;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+<div id="info">
+  Particle Fountain • Move your mouse to steer the flow • Scroll to zoom
+</div>
+
+<!-- Three.js from CDN -->
+<script src="https://unpkg.com/three@0.157.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.157.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+(function () {
+  // Basic setup
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x000000, 0.035);
+
+  const camera = new THREE.PerspectiveCamera(
+    60,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+  camera.position.set(0, 12, 35);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x000000, 1);
+  document.body.appendChild(renderer.domElement);
+
+  // Optional controls (orbit to inspect)
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = false;
+  controls.minDistance = 10;
+  controls.maxDistance = 90;
+  controls.maxPolarAngle = Math.PI * 0.49;
+
+  // Lighting (subtle)
+  const ambient = new THREE.AmbientLight(0xffffff, 0.2);
+  scene.add(ambient);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.3);
+  dirLight.position.set(10, 20, 10);
+  scene.add(dirLight);
+
+  // Ground plane for context
+  const groundGeo = new THREE.PlaneGeometry(200, 200, 1, 1);
+  const groundMat = new THREE.MeshPhongMaterial({
+    color: 0x050509,
+    shininess: 10,
+    side: THREE.DoubleSide
+  });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = 0;
+  scene.add(ground);
+
+  // Particle system parameters
+  const PARTICLE_COUNT = 2000;          // >= 1000 as requested
+  const EMITTER_RADIUS = 1.0;
+  const EMITTER_HEIGHT = 0.2;
+  const MAX_LIFETIME = 8.0;            // seconds
+  const GRAVITY = new THREE.Vector3(0, -9.81 * 0.6, 0);
+  const DRAG = 0.12;                   // air resistance
+  const NOISE_STRENGTH = 0.9;          // per-frame curl-like noise
+  const MOUSE_FORCE = 14.0;            // how strongly mouse affects direction
+  const BASE_UP_VELOCITY = 12.0;       // fountain speed
+  const SPREAD = 4.0;                  // horizontal velocity spread
+  const RESET_Y = -1.0;                // y threshold for respawn
+
+  // Mouse tracking (normalized device coordinates)
+  const mouse = new THREE.Vector2(0, 0);
+  const targetMouse3D = new THREE.Vector3();
+  const mouse3D = new THREE.Vector3();
+
+  window.addEventListener('mousemove', (event) => {
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  });
+
+  // Raycasting plane for mouse interaction
+  const mousePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // y = 0 plane
+  const raycaster = new THREE.Raycaster();
+
+  function updateMouse3D() {
+    raycaster.setFromCamera(mouse, camera);
+    const intersectionPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(mousePlane, intersectionPoint);
+    targetMouse3D.copy(intersectionPoint);
+  }
+
+  // GPU-side geometry buffers
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(PARTICLE_COUNT * 3);
+  const velocities = new Float32Array(PARTICLE_COUNT * 3); // stored on CPU conceptually; we just reuse buffer
+  const lifetimes = new Float32Array(PARTICLE_COUNT);
+  const startTimes = new Float32Array(PARTICLE_COUNT);
+  const sizes = new Float32Array(PARTICLE_COUNT);
+
+  // Utility: random in range
+  function randRange(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  // Initialize particle i
+  function resetParticle(i, t) {
+    const r = EMITTER_RADIUS * Math.sqrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const x = r * Math.cos(theta);
+    const z = r * Math.sin(theta);
+    const y = randRange(0, EMITTER_HEIGHT);
+
+    positions[3 * i + 0] = x;
+    positions[3 * i + 1] = y;
+    positions[3 * i + 2] = z;
+
+    // Velocity: upward fountain with radial randomness
+    const vx = randRange(-SPREAD, SPREAD);
+    const vy = randRange(BASE_UP_VELOCITY * 0.6, BASE_UP_VELOCITY * 1.2);
+    const vz = randRange(-SPREAD, SPREAD);
+
+    velocities[3 * i + 0] = vx;
+    velocities[3 * i + 1] = vy;
+    velocities[3 * i + 2] = vz;
+
+    const life = randRange(MAX_LIFETIME * 0.4, MAX_LIFETIME);
+    lifetimes[i] = life;
+    startTimes[i] = t - Math.random() * life; // staggered
+    sizes[i] = randRange(8.0, 18.0);
+  }
+
+  // Initialize all particles
+  let initialTime = performance.now() / 1000;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    resetParticle(i, initialTime);
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('aLifetime', new THREE.BufferAttribute(lifetimes, 1));
+  geometry.setAttribute('aStartTime', new THREE.BufferAttribute(startTimes, 1));
+  geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+
+  // Material using ShaderMaterial for color-over-lifetime + soft edges
+  const uniforms = {
+    uTime: { value: 0 },
+    uPointSize: { value: 1.0 },
+    uColor1: { value: new THREE.Color(0x00ffff) },
+    uColor2: { value: new THREE.Color(0xff00ff) },
+    uColor3: { value: new THREE.Color(0xffff00) },
+    uColor4: { value: new THREE.Color(0x00ff80) },
+    uFogColor: { value: scene.fog.color },
+    uFogDensity: { value: scene.fog.density }
+  };
+
+  const vertexShader = `
+    attribute float aLifetime;
+    attribute float aStartTime;
+    attribute float aSize;
+
+    uniform float uTime;
+    uniform float uPointSize;
+
+    varying float vLifeRatio;
+
+    void main() {
+      float age = uTime - aStartTime;
+      float lifeRatio = clamp(age / aLifetime, 0.0, 1.0);
+      vLifeRatio = lifeRatio;
+
+      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+
+      // Size attenuates with perspective
+      float size = aSize * uPointSize * (1.0 + (1.0 - lifeRatio) * 0.8);
+      gl_PointSize = size * (300.0 / -mvPosition.z);
+
+      gl_Position = projectionMatrix * mvPosition;
+    }
+  `;
+
+  const fragmentShader = `
+    precision mediump float;
+
+    uniform vec3 uColor1;
+    uniform vec3 uColor2;
+    uniform vec3 uColor3;
+    uniform vec3 uColor4;
+    uniform vec3 uFogColor;
+    uniform float uFogDensity;
+
+    varying float vLifeRatio;
+
+    void main() {
+      // soft circular particle (discard corners)
+      vec2 uv = gl_PointCoord * 2.0 - 1.0;
+      float d = dot(uv, uv);
+      if (d > 1.0) discard;
+
+      float alphaCircle = 1.0 - smoothstep(0.6, 1.0, sqrt(d));
+
+      // Life-based gradient: 4-color blend
+      vec3 col;
+      if (vLifeRatio < 0.33) {
+        float t = vLifeRatio / 0.33;
+        col = mix(uColor1, uColor2, t);
+      } else if (vLifeRatio < 0.66) {
+        float t = (vLifeRatio - 0.33) / 0.33;
+        col = mix(uColor2, uColor3, t);
+      } else {
+        float t = (vLifeRatio - 0.66) / 0.34;
+        col = mix(uColor3, uColor4, t);
+      }
+
+      // Bright core, fading edges
+      float core = 1.0 - d;
+      float intensity = 0.4 + core * 0.8;
+      vec3 color = col * intensity;
+
+      float alpha = alphaCircle * (0.25 + (1.0 - vLifeRatio) * 0.4);
+
+      // simple exponential fog in shader
+      float depth = gl_FragCoord.z / gl_FragCoord.w;
+      float fogFactor = 1.0 - exp(-uFogDensity * uFogDensity * depth * depth);
+      color = mix(color, uFogColor, fogFactor);
+      alpha *= (1.0 - fogFactor * 0.7);
+
+      gl_FragColor = vec4(color, alpha);
+    }
+  `;
+
+  const material = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader: vertexShader,
+    fragmentShader: fragmentShader,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const particlePoints = new THREE.Points(geometry, material);
+  scene.add(particlePoints);
+
+  // Simple curl-like noise using sin/cos (CPU side)
+  function pseudoCurlNoise(x, y, z, t) {
+    const scale = 0.15;
+    const speed = 0.6;
+    x *= scale; y *= scale; z *= scale;
+    t *= speed;
+
+    const nx = Math.sin(y + t) + Math.cos(z - t * 0.7);
+    const ny = Math.sin(z + t * 0.9) + Math.cos(x - t * 0.5);
+    const nz = Math.sin(x + t * 0.7) + Math.cos(y - t * 0.8);
+
+    const v = new THREE.Vector3(nx, ny, nz);
+    v.normalize();
+    return v;
+  }
+
+  // Animation loop
+  let lastTime = performance.now() / 1000;
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    const now = performance.now() / 1000;
+    const dt = Math.min(0.033, now - lastTime); // prevent large jumps
+    lastTime = now;
+    const elapsed = now - initialTime;
+
+    uniforms.uTime.value = elapsed;
+
+    updateMouse3D();
+    // Smooth mouse3D
+    mouse3D.lerp(targetMouse3D, 0.12);
+
+    // Integrate particles (Euler integration)
+    const gravity = GRAVITY.clone().multiplyScalar(dt);
+    const dragFactor = Math.max(0, 1.0 - DRAG * dt);
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const idx = 3 * i;
+
+      // Age / lifetime check; respawn if necessary
+      const age = elapsed - startTimes[i];
+      if (age >= lifetimes[i] || positions[idx + 1] < RESET_Y) {
+        resetParticle(i, elapsed);
+        continue;
+      }
+
+      // Current position & velocity
+      const px = positions[idx + 0];
+      const py = positions[idx + 1];
+      const pz = positions[idx + 2];
+
+      let vx = velocities[idx + 0];
+      let vy = velocities[idx + 1];
+      let vz = velocities[idx + 2];
+
+      // Curl noise flow field
+      const curl = pseudoCurlNoise(px, py, pz, elapsed);
+      vx += curl.x * NOISE_STRENGTH * dt;
+      vy += curl.y * NOISE_STRENGTH * dt;
+      vz += curl.z * NOISE_STRENGTH * dt;
+
+      // Mouse attraction/repulsion
+      const tempPos = new THREE.Vector3(px, py, pz);
+      const toMouse = new THREE.Vector3().subVectors(mouse3D, tempPos);
+      const distanceToMouse = toMouse.length() + 0.0001;
+      const influenceRadius = 15.0;
+      if (distanceToMouse < influenceRadius) {
+        toMouse.normalize();
+        const strength = (1.0 - distanceToMouse / influenceRadius);
+        // Alternate push/pull using time
+        const sign = Math.sin(elapsed * 1.2) > 0.0 ? 1.0 : -1.0;
+        vx += sign * toMouse.x * MOUSE_FORCE * strength * dt;
+        vy += sign * toMouse.y * MOUSE_FORCE * strength * dt;
+        vz += sign * toMouse.z * MOUSE_FORCE * strength * dt;
+      }
+
+      // Gravity
+      vx += gravity.x;
+      vy += gravity.y;
+      vz += gravity.z;
+
+      // Drag
+      vx *= dragFactor;
+      vy *= dragFactor;
+      vz *= dragFactor;
+
+      // Integrate position
+      positions[idx + 0] = px + vx * dt;
+      positions[idx + 1] = py + vy * dt;
+      positions[idx + 2] = pz + vz * dt;
+
+      velocities[idx + 0] = vx;
+      velocities[idx + 1] = vy;
+      velocities[idx + 2] = vz;
+    }
+
+    geometry.attributes.position.needsUpdate = true;
+
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  // Resize handling
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // Optional: scroll to zoom (slightly modify camera distance)
+  window.addEventListener('wheel', (event) => {
+    const zoomSpeed = 0.002;
+    const delta = event.deltaY * zoomSpeed;
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    camera.position.addScaledVector(dir, delta * 30);
+  }, { passive: true });
+
+})();
+</script>
+</body>
+</html>

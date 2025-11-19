@@ -1,0 +1,762 @@
+<!-- Save this file as space_shooter.html and open in a modern browser -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>On-Rails Space Shooter - Three.js</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #fff;
+    }
+    #ui {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      font-size: 14px;
+      text-shadow: 0 0 4px #000;
+      user-select: none;
+      pointer-events: none;
+    }
+    #ui div {
+      margin-bottom: 4px;
+    }
+    #centerMessage {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 32px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 0 0 8px #000;
+      z-index: 10;
+      user-select: none;
+      pointer-events: none;
+      text-align: center;
+    }
+    /* Simple touch controls overlay */
+    #touchControls {
+      position: fixed;
+      bottom: 10px;
+      left: 0;
+      right: 0;
+      height: 120px;
+      z-index: 9;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .touchArea {
+      flex: 1;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .touchArea.left {
+      background: radial-gradient(circle at top left, rgba(255,255,255,0.1), transparent);
+    }
+    .touchArea.right {
+      background: radial-gradient(circle at top right, rgba(255,255,255,0.1), transparent);
+    }
+    .hint {
+      position: fixed;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 11px;
+      color: #aaa;
+      text-shadow: 0 0 4px #000;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+<div id="ui">
+  <div id="health">Health: 100</div>
+  <div id="score">Score: 0</div>
+  <div id="wave">Wave: 1</div>
+</div>
+<div id="centerMessage"></div>
+
+<div id="touchControls">
+  <div class="touchArea left" id="touchLeft"></div>
+  <div class="touchArea right" id="touchRight"></div>
+</div>
+<div class="hint">Desktop: Move with mouse / A-D, shoot with Space. Mobile: Drag left side to move, tap right side to shoot.</div>
+
+<!-- Three.js and examples from CDN -->
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+  import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
+  import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
+  import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
+
+  // --------------------------------------------------
+  // Basic setup
+  // --------------------------------------------------
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000010);
+
+  const camera = new THREE.PerspectiveCamera(
+    70,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    2000
+  );
+  camera.position.set(0, 2, 12);
+
+  // Optional: keep for debugging (not used for control)
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enabled = false;
+
+  const clock = new THREE.Clock();
+
+  // --------------------------------------------------
+  // Lighting
+  // --------------------------------------------------
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(3, 5, 2);
+  scene.add(dirLight);
+
+  // --------------------------------------------------
+  // Post-processing (Bloom)
+  // --------------------------------------------------
+  const composer = new EffectComposer(renderer);
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
+
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    1.2,  // strength
+    0.4,  // radius
+    0.85  // threshold
+  );
+  composer.addPass(bloomPass);
+
+  // --------------------------------------------------
+  // Player ship
+  // --------------------------------------------------
+  const playerGroup = new THREE.Group();
+  scene.add(playerGroup);
+
+  const shipGeo = new THREE.ConeGeometry(0.4, 1.2, 16);
+  const shipMat = new THREE.MeshStandardMaterial({
+    color: 0x00ffff,
+    emissive: 0x0080ff,
+    emissiveIntensity: 0.8,
+    metalness: 0.3,
+    roughness: 0.2
+  });
+  const shipMesh = new THREE.Mesh(shipGeo, shipMat);
+  shipMesh.rotation.x = Math.PI / 2;
+  playerGroup.add(shipMesh);
+
+  const thrusterGeo = new THREE.CylinderGeometry(0.1, 0.25, 0.4, 8);
+  const thrusterMat = new THREE.MeshStandardMaterial({
+    color: 0xffaa00,
+    emissive: 0xff6600,
+    emissiveIntensity: 1.5,
+    metalness: 0.2,
+    roughness: 0.5
+  });
+  const thruster = new THREE.Mesh(thrusterGeo, thrusterMat);
+  thruster.position.set(0, -0.6, 0);
+  thruster.rotation.x = Math.PI / 2;
+  playerGroup.add(thruster);
+
+  playerGroup.position.set(0, 0, 0);
+
+  // Player stats
+  let playerHealth = 100;
+  let score = 0;
+  let wave = 1;
+  let isGameOver = false;
+
+  const healthEl = document.getElementById("health");
+  const scoreEl = document.getElementById("score");
+  const waveEl = document.getElementById("wave");
+  const centerMessageEl = document.getElementById("centerMessage");
+
+  function updateUI() {
+    healthEl.textContent = `Health: ${Math.max(0, Math.floor(playerHealth))}`;
+    scoreEl.textContent = `Score: ${score}`;
+    waveEl.textContent = `Wave: ${wave}`;
+  }
+  updateUI();
+
+  function showCenterMessage(msg, time = 2) {
+    centerMessageEl.textContent = msg;
+    centerMessageEl.style.opacity = "1";
+    if (time > 0) {
+      setTimeout(() => {
+        centerMessageEl.style.opacity = "0";
+      }, time * 1000);
+    }
+  }
+  showCenterMessage("On-Rails Space Shooter");
+
+  // --------------------------------------------------
+  // Starfield background (instanced points)
+  // --------------------------------------------------
+  const starCount = 4000;
+  const starGeo = new THREE.BufferGeometry();
+  const starPositions = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const i3 = i * 3;
+    starPositions[i3 + 0] = (Math.random() - 0.5) * 80;
+    starPositions[i3 + 1] = (Math.random() - 0.5) * 80;
+    starPositions[i3 + 2] = -Math.random() * 800;
+  }
+  starGeo.setAttribute(
+    "position",
+    new THREE.BufferAttribute(starPositions, 3)
+  );
+  const starMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.15,
+    sizeAttenuation: true
+  });
+  const starField = new THREE.Points(starGeo, starMat);
+  scene.add(starField);
+
+  // --------------------------------------------------
+  // Enemies (Instanced Mesh)
+  // --------------------------------------------------
+  const ENEMY_POOL = 200;
+  const enemyGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
+  const enemyMat = new THREE.MeshStandardMaterial({
+    color: 0xff3366,
+    emissive: 0xff0033,
+    emissiveIntensity: 0.7,
+    metalness: 0.2,
+    roughness: 0.5
+  });
+
+  const enemyMesh = new THREE.InstancedMesh(enemyGeo, enemyMat, ENEMY_POOL);
+  enemyMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(enemyMesh);
+
+  const enemyData = [];
+  for (let i = 0; i < ENEMY_POOL; i++) {
+    enemyData.push({
+      alive: false,
+      position: new THREE.Vector3(),
+      velocityZ: -10,
+      hp: 1,
+      waveTag: 0
+    });
+    enemyMesh.setMatrixAt(i, new THREE.Matrix4()); // identity
+  }
+  enemyMesh.instanceMatrix.needsUpdate = true;
+
+  let currentEnemiesAlive = 0;
+  let lastWaveTime = 0;
+
+  function spawnEnemyWave(waveNumber) {
+    const numEnemies = Math.min(
+      ENEMY_POOL - currentEnemiesAlive,
+      5 + waveNumber * 2
+    );
+    if (numEnemies <= 0) return;
+
+    const zStart = -80 - waveNumber * 20;
+    const spreadX = 5 + waveNumber * 0.8;
+    const spreadY = 3 + waveNumber * 0.5;
+
+    let spawned = 0;
+    for (let i = 0; i < ENEMY_POOL && spawned < numEnemies; i++) {
+      const e = enemyData[i];
+      if (e.alive) continue;
+
+      e.alive = true;
+      currentEnemiesAlive++;
+      e.waveTag = waveNumber;
+      e.hp = 1 + Math.floor(waveNumber * 0.15);
+
+      const row = Math.floor(spawned / 6);
+      const col = spawned % 6;
+      const x = ((col / 5) - 0.5) * spreadX * 2;
+      const y = ((row / 4) - 0.5) * spreadY * 2;
+      const jitterX = (Math.random() - 0.5) * 1.2;
+      const jitterY = (Math.random() - 0.5) * 1.2;
+
+      e.position.set(x + jitterX, y + jitterY, zStart - row * 8);
+      e.velocityZ = 8 + waveNumber * 0.7; // forward speed toward player
+
+      const mat = new THREE.Matrix4();
+      mat.compose(
+        e.position,
+        new THREE.Quaternion().setFromEuler(
+          new THREE.Euler(
+            (Math.random() - 0.5) * 0.4,
+            (Math.random() - 0.5) * 0.4,
+            (Math.random() - 0.5) * 0.4
+          )
+        ),
+        new THREE.Vector3(1, 1, 1)
+      );
+      enemyMesh.setMatrixAt(i, mat);
+
+      spawned++;
+    }
+    enemyMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // --------------------------------------------------
+  // Lasers (simple pool of meshes)
+  // --------------------------------------------------
+  const LASER_POOL = 80;
+  const laserGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.6, 4);
+  const laserMat = new THREE.MeshBasicMaterial({
+    color: 0x00ffcc
+  });
+
+  const laserMeshes = [];
+  const laserData = [];
+  const laserGroup = new THREE.Group();
+  scene.add(laserGroup);
+
+  for (let i = 0; i < LASER_POOL; i++) {
+    const m = new THREE.Mesh(laserGeo, laserMat);
+    m.rotation.x = Math.PI / 2;
+    m.visible = false;
+    laserGroup.add(m);
+    laserMeshes.push(m);
+    laserData.push({
+      alive: false,
+      velocity: new THREE.Vector3(0, 0, -80)
+    });
+  }
+
+  let lastShotTime = 0;
+  const FIRE_INTERVAL = 0.16;
+
+  function shootLaser() {
+    const now = clock.getElapsedTime();
+    if (now - lastShotTime < FIRE_INTERVAL || isGameOver) return;
+    lastShotTime = now;
+
+    for (let i = 0; i < LASER_POOL; i++) {
+      const d = laserData[i];
+      const m = laserMeshes[i];
+      if (!d.alive) {
+        d.alive = true;
+        m.visible = true;
+        m.position.copy(playerGroup.position);
+        m.position.z -= 1.0;
+        break;
+      }
+    }
+  }
+
+  // --------------------------------------------------
+  // GPU-ish particles (simple Points + per-particle life)
+  // --------------------------------------------------
+  const MAX_PARTICLES = 500;
+  const particlePositions = new Float32Array(MAX_PARTICLES * 3);
+  const particleLife = new Float32Array(MAX_PARTICLES);
+  const particleStartLife = new Float32Array(MAX_PARTICLES);
+  const particleVelocity = new Float32Array(MAX_PARTICLES * 3);
+
+  const particleGeo = new THREE.BufferGeometry();
+  particleGeo.setAttribute(
+    "position",
+    new THREE.BufferAttribute(particlePositions, 3)
+  );
+
+  const particleMat = new THREE.PointsMaterial({
+    color: 0xffee55,
+    size: 0.25,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const particles = new THREE.Points(particleGeo, particleMat);
+  scene.add(particles);
+
+  function spawnExplosion(pos, count = 30) {
+    for (let i = 0; i < MAX_PARTICLES && count > 0; i++) {
+      if (particleLife[i] <= 0) {
+        const i3 = i * 3;
+        particlePositions[i3 + 0] = pos.x;
+        particlePositions[i3 + 1] = pos.y;
+        particlePositions[i3 + 2] = pos.z;
+
+        const dir = new THREE.Vector3(
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2,
+          (Math.random() - 0.5) * 2
+        ).normalize().multiplyScalar(10 + Math.random() * 10);
+
+        particleVelocity[i3 + 0] = dir.x;
+        particleVelocity[i3 + 1] = dir.y;
+        particleVelocity[i3 + 2] = dir.z;
+
+        const life = 0.6 + Math.random() * 0.4;
+        particleLife[i] = life;
+        particleStartLife[i] = life;
+
+        count--;
+      }
+    }
+    particleGeo.attributes.position.needsUpdate = true;
+  }
+
+  // --------------------------------------------------
+  // Input handling (mouse/keyboard/touch)
+  // --------------------------------------------------
+  let moveInput = 0; // -1 to 1
+  let targetX = 0;
+
+  // Keyboard
+  const keys = {};
+  window.addEventListener("keydown", (e) => {
+    keys[e.code] = true;
+    if (e.code === "Space") shootLaser();
+  });
+  window.addEventListener("keyup", (e) => {
+    keys[e.code] = false;
+  });
+
+  // Mouse move – control X position
+  window.addEventListener("mousemove", (e) => {
+    const ndcX = (e.clientX / window.innerWidth) * 2 - 1;
+    targetX = ndcX * 5;
+  });
+
+  // Mouse click to fire
+  window.addEventListener("mousedown", (e) => {
+    if (e.button === 0) shootLaser();
+  });
+
+  // Touch controls: left side drag -> move, right side tap/hold -> fire
+  const leftArea = document.getElementById("touchLeft");
+  const rightArea = document.getElementById("touchRight");
+
+  let touchActiveLeft = false;
+  let touchStartX = 0;
+  let playerStartX = 0;
+
+  function onTouchStartLeft(e) {
+    e.preventDefault();
+    touchActiveLeft = true;
+    const t = e.changedTouches[0];
+    touchStartX = t.clientX;
+    playerStartX = playerGroup.position.x;
+  }
+  function onTouchMoveLeft(e) {
+    if (!touchActiveLeft) return;
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const range = 6; // max horizontal move
+    targetX = THREE.MathUtils.clamp(
+      playerStartX + (dx / window.innerWidth) * range * 2,
+      -range,
+      range
+    );
+  }
+  function onTouchEndLeft(e) {
+    e.preventDefault();
+    touchActiveLeft = false;
+  }
+
+  leftArea.addEventListener("touchstart", onTouchStartLeft, { passive: false });
+  leftArea.addEventListener("touchmove", onTouchMoveLeft, { passive: false });
+  leftArea.addEventListener("touchend", onTouchEndLeft, { passive: false });
+  leftArea.addEventListener("touchcancel", onTouchEndLeft, { passive: false });
+
+  // Right side: tap to shoot, hold for auto-fire
+  let fireIntervalId = null;
+  function startAutoFire() {
+    if (fireIntervalId) return;
+    shootLaser();
+    fireIntervalId = setInterval(shootLaser, 200);
+  }
+  function stopAutoFire() {
+    if (!fireIntervalId) return;
+    clearInterval(fireIntervalId);
+    fireIntervalId = null;
+  }
+
+  rightArea.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    startAutoFire();
+  }, { passive: false });
+  rightArea.addEventListener("touchend", (e) => {
+    e.preventDefault();
+    stopAutoFire();
+  }, { passive: false });
+  rightArea.addEventListener("touchcancel", (e) => {
+    e.preventDefault();
+    stopAutoFire();
+  }, { passive: false });
+
+  // --------------------------------------------------
+  // Difficulty and game over
+  // --------------------------------------------------
+  function damagePlayer(amount) {
+    playerHealth -= amount;
+    if (playerHealth <= 0 && !isGameOver) {
+      playerHealth = 0;
+      isGameOver = true;
+      showCenterMessage("Game Over\nTap or Press R to Restart", 0);
+    }
+    updateUI();
+  }
+
+  function restartGame() {
+    isGameOver = false;
+    playerHealth = 100;
+    score = 0;
+    wave = 1;
+    lastWaveTime = 0;
+    currentEnemiesAlive = 0;
+    playerGroup.position.set(0, 0, 0);
+    targetX = 0;
+
+    // clear enemies
+    for (let i = 0; i < ENEMY_POOL; i++) {
+      enemyData[i].alive = false;
+      const mat = new THREE.Matrix4();
+      enemyMesh.setMatrixAt(i, mat);
+    }
+    enemyMesh.instanceMatrix.needsUpdate = true;
+
+    // clear lasers
+    for (let i = 0; i < LASER_POOL; i++) {
+      laserData[i].alive = false;
+      laserMeshes[i].visible = false;
+    }
+
+    // clear particles
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      particleLife[i] = 0;
+    }
+    particleGeo.attributes.position.needsUpdate = true;
+
+    updateUI();
+    showCenterMessage("On-Rails Space Shooter");
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyR") {
+      restartGame();
+    }
+  });
+  window.addEventListener("mousedown", () => {
+    if (isGameOver) restartGame();
+  });
+  window.addEventListener("touchstart", () => {
+    if (isGameOver) restartGame();
+  }, { passive: true });
+
+  // --------------------------------------------------
+  // Main animation loop
+  // --------------------------------------------------
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    const t = clock.getElapsedTime();
+
+    // Keyboard-based movement
+    let moveDir = 0;
+    if (keys["KeyA"] || keys["ArrowLeft"]) moveDir -= 1;
+    if (keys["KeyD"] || keys["ArrowRight"]) moveDir += 1;
+    if (moveDir !== 0) {
+      targetX += moveDir * 12 * dt;
+      targetX = THREE.MathUtils.clamp(targetX, -8, 8);
+    }
+
+    // Smoothly move player towards targetX (on-rails)
+    playerGroup.position.x += (targetX - playerGroup.position.x) * 6 * dt;
+    playerGroup.position.y = Math.sin(t * 0.7) * 0.3; // subtle bobbing
+    playerGroup.position.z = 0;
+
+    shipMesh.rotation.z = THREE.MathUtils.lerp(
+      shipMesh.rotation.z,
+      -playerGroup.position.x * 0.06,
+      10 * dt
+    );
+
+    // Thruster flicker
+    thruster.scale.y = 0.8 + Math.sin(t * 50) * 0.2;
+
+    // Starfield scroll
+    const starPosAttr = starGeo.attributes.position;
+    for (let i = 0; i < starCount; i++) {
+      const i3 = i * 3;
+      starPosAttr.array[i3 + 2] += 40 * dt;
+      if (starPosAttr.array[i3 + 2] > 10) {
+        starPosAttr.array[i3 + 0] = (Math.random() - 0.5) * 80;
+        starPosAttr.array[i3 + 1] = (Math.random() - 0.5) * 80;
+        starPosAttr.array[i3 + 2] = -800;
+      }
+    }
+    starPosAttr.needsUpdate = true;
+
+    // Update lasers
+    for (let i = 0; i < LASER_POOL; i++) {
+      const d = laserData[i];
+      const m = laserMeshes[i];
+      if (!d.alive) continue;
+      m.position.addScaledVector(d.velocity, dt);
+      if (m.position.z < -250) {
+        d.alive = false;
+        m.visible = false;
+      }
+    }
+
+    // Update enemies and collisions
+    const tempMat = new THREE.Matrix4();
+    const tempQuat = new THREE.Quaternion();
+    const tempScale = new THREE.Vector3(1, 1, 1);
+
+    for (let i = 0; i < ENEMY_POOL; i++) {
+      const e = enemyData[i];
+      if (!e.alive) continue;
+
+      // Move toward player
+      e.position.z += e.velocityZ * dt;
+
+      // Slight wave motion
+      e.position.x += Math.sin(t * 2 + i) * 0.01 * (1 + wave * 0.2);
+
+      // Rotation wiggle
+      const rot = new THREE.Euler(
+        0,
+        t * 1.2 + i * 0.1,
+        Math.sin(t * 2 + i) * 0.3
+      );
+      tempQuat.setFromEuler(rot);
+      tempMat.compose(e.position, tempQuat, tempScale);
+      enemyMesh.setMatrixAt(i, tempMat);
+
+      // If it passes the player, damage player and despawn
+      if (e.position.z > 6) {
+        e.alive = false;
+        currentEnemiesAlive--;
+        damagePlayer(5 + wave);
+      }
+    }
+    enemyMesh.instanceMatrix.needsUpdate = true;
+
+    // Laser-enemy collision (simple distance check)
+    for (let ei = 0; ei < ENEMY_POOL; ei++) {
+      const e = enemyData[ei];
+      if (!e.alive) continue;
+
+      for (let li = 0; li < LASER_POOL; li++) {
+        const ld = laserData[li];
+        const lm = laserMeshes[li];
+        if (!ld.alive) continue;
+
+        const dx = lm.position.x - e.position.x;
+        const dy = lm.position.y - e.position.y;
+        const dz = lm.position.z - e.position.z;
+        const distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < 1.0) {
+          // Hit
+          ld.alive = false;
+          lm.visible = false;
+
+          e.hp -= 1;
+          spawnExplosion(lm.position, 20);
+          if (e.hp <= 0) {
+            e.alive = false;
+            currentEnemiesAlive--;
+            score += 10 + wave;
+            updateUI();
+          }
+        }
+      }
+    }
+
+    // Player-enemy collision (if any gets too close)
+    for (let i = 0; i < ENEMY_POOL; i++) {
+      const e = enemyData[i];
+      if (!e.alive) continue;
+      const dx = playerGroup.position.x - e.position.x;
+      const dy = playerGroup.position.y - e.position.y;
+      const dz = playerGroup.position.z - e.position.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 1.5) {
+        // Collision
+        spawnExplosion(e.position, 40);
+        e.alive = false;
+        currentEnemiesAlive--;
+        damagePlayer(20 + wave * 2);
+      }
+    }
+
+    // Update particle system
+    for (let i = 0; i < MAX_PARTICLES; i++) {
+      if (particleLife[i] > 0) {
+        const life = particleLife[i] - dt;
+        const norm = life / (particleStartLife[i] || 1);
+        particleLife[i] = life;
+        const i3 = i * 3;
+        particlePositions[i3 + 0] += particleVelocity[i3 + 0] * dt;
+        particlePositions[i3 + 1] += particleVelocity[i3 + 1] * dt;
+        particlePositions[i3 + 2] += particleVelocity[i3 + 2] * dt;
+
+        if (life <= 0) {
+          // hide
+          particlePositions[i3 + 0] = 9999;
+          particlePositions[i3 + 1] = 9999;
+          particlePositions[i3 + 2] = 9999;
+        }
+      }
+    }
+    particleGeo.attributes.position.needsUpdate = true;
+
+    // Simple difficulty scaling & wave spawning
+    const waveInterval = Math.max(3, 10 - wave * 0.4);
+    if (!isGameOver) {
+      if (currentEnemiesAlive === 0 && t - lastWaveTime > waveInterval) {
+        spawnEnemyWave(wave);
+        lastWaveTime = t;
+        wave++;
+        updateUI();
+      }
+    }
+
+    // Minor camera follow of player
+    camera.position.x += (playerGroup.position.x * 0.3 - camera.position.x) * 2 * dt;
+    camera.lookAt(new THREE.Vector3(0, 0, -40));
+
+    composer.render();
+  }
+
+  animate();
+
+  // --------------------------------------------------
+  // Resize handling
+  // --------------------------------------------------
+  window.addEventListener("resize", () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    composer.setSize(w, h);
+  });
+</script>
+</body>
+</html>

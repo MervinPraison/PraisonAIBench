@@ -1,0 +1,653 @@
+<!-- Save this file as: terrain_flight.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Three.js Procedural Terrain Flight Demo</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      font-family: sans-serif;
+      color: #fff;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 8px 12px;
+      background: rgba(0,0,0,0.5);
+      font-size: 13px;
+      z-index: 10;
+      max-width: 360px;
+      line-height: 1.4em;
+    }
+    a { color: #8cf; }
+  </style>
+</head>
+<body>
+<div id="info">
+  <b>Procedural Terrain Flight</b><br>
+  Controls:<br>
+  W/S: Pitch down/up<br>
+  A/D: Roll left/right<br>
+  Q/E: Yaw left/right<br>
+  Shift: Speed boost<br>
+  R/F: Move up/down (vertical trim)<br>
+  Space: Level wings & slight auto-level<br>
+  Mouse drag: Look around (camera offset)<br>
+  Collision avoidance keeps you above ground.<br>
+</div>
+
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  import { OrbitControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+  // ---------------------------
+  // Basic setup
+  // ---------------------------
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x88ccee);
+  scene.fog = new THREE.Fog(0x88ccee, 300, 2000);
+
+  const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 5000);
+  camera.position.set(0, 80, 200);
+
+  // Optional: OrbitControls to look around when not flying
+  const orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.enabled = false; // we will use custom flight camera
+
+  // Lighting
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x446688, 0.7);
+  hemiLight.position.set(0, 1, 0);
+  scene.add(hemiLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  dirLight.position.set(-200, 300, 100);
+  dirLight.castShadow = false;
+  scene.add(dirLight);
+
+  // ---------------------------
+  // Simple Perlin Noise (Improved) implementation
+  // ---------------------------
+  const ImprovedNoise = function () {
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    // shuffle
+    for (let i = 255; i > 0; i--) {
+      const n = Math.floor((i + 1) * Math.random());
+      const q = p[i];
+      p[i] = p[n];
+      p[n] = q;
+    }
+    const perm = new Uint8Array(512);
+    for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+
+    function fade(t) {
+      return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+    function lerp(t, a, b) {
+      return a + t * (b - a);
+    }
+    function grad(hash, x, y, z) {
+      const h = hash & 15;
+      const u = h < 8 ? x : y;
+      const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+      return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
+    return {
+      noise(x, y, z) {
+        let X = Math.floor(x) & 255;
+        let Y = Math.floor(y) & 255;
+        let Z = Math.floor(z) & 255;
+
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+        z -= Math.floor(z);
+
+        const u = fade(x);
+        const v = fade(y);
+        const w = fade(z);
+
+        const A = perm[X] + Y;
+        const AA = perm[A] + Z;
+        const AB = perm[A + 1] + Z;
+        const B = perm[X + 1] + Y;
+        const BA = perm[B] + Z;
+        const BB = perm[B + 1] + Z;
+
+        return lerp(
+          w,
+          lerp(
+            v,
+            lerp(
+              u,
+              grad(perm[AA], x, y, z),
+              grad(perm[BA], x - 1, y, z)
+            ),
+            lerp(
+              u,
+              grad(perm[AB], x, y - 1, z),
+              grad(perm[BB], x - 1, y - 1, z)
+            )
+          ),
+          lerp(
+            v,
+            lerp(
+              u,
+              grad(perm[AA + 1], x, y, z - 1),
+              grad(perm[BA + 1], x - 1, y, z - 1)
+            ),
+            lerp(
+              u,
+              grad(perm[AB + 1], x, y - 1, z - 1),
+              grad(perm[BB + 1], x - 1, y - 1, z - 1)
+            )
+          )
+        );
+      }
+    };
+  };
+
+  const perlin = new ImprovedNoise();
+  const noiseSeed = Math.random() * 10;
+
+  function fbm(x, z, octaves = 5, lacunarity = 2.0, gain = 0.5) {
+    let amp = 1.0;
+    let freq = 0.0025;
+    let sum = 0.0;
+    let max = 0.0;
+    for (let i = 0; i < octaves; i++) {
+      sum += amp * perlin.noise(x * freq + noiseSeed, z * freq + noiseSeed, noiseSeed);
+      max += amp;
+      amp *= gain;
+      freq *= lacunarity;
+    }
+    return sum / max; // -1..1
+  }
+
+  // ---------------------------
+  // Terrain generation with LOD (simple chunk system)
+  // ---------------------------
+  const WORLD_SIZE = 4000;
+  const CHUNK_SIZE = 256;
+  const CHUNK_RES = 128; // segments per side for each chunk
+  const HALF_WORLD = WORLD_SIZE / 2;
+
+  // Height function with river
+  function getHeight(x, z) {
+    // base terrain
+    const hBase = fbm(x, z, 5, 2.0, 0.55);
+    let h = hBase * 180; // scale
+
+    // define river along a gentle curve: near function f(x,z) = z - 0.3*x*sin(0.0007*x)
+    const riverCenter = 0.3 * Math.sin(x * 0.0007) * 600;
+    const distToRiver = Math.abs(z - riverCenter);
+    const riverWidth = 40;
+    const riverBank = 120;
+
+    if (distToRiver < riverBank) {
+      // lower terrain near river using smooth step
+      const t = THREE.MathUtils.smoothstep(distToRiver, 0, riverBank);
+      h = THREE.MathUtils.lerp(5, h, t); // near center -> low, far -> original
+    }
+
+    return h;
+  }
+
+  // Precompute a world height sampler on a grid to speed up collision & tree placement
+  const SAMPLE_RES = 1024;
+  const heightMap = [];
+  for (let zi = 0; zi < SAMPLE_RES; zi++) {
+    heightMap[zi] = new Float32Array(SAMPLE_RES);
+  }
+  const sampleStep = WORLD_SIZE / (SAMPLE_RES - 1);
+  for (let zi = 0; zi < SAMPLE_RES; zi++) {
+    const z = -HALF_WORLD + zi * sampleStep;
+    for (let xi = 0; xi < SAMPLE_RES; xi++) {
+      const x = -HALF_WORLD + xi * sampleStep;
+      heightMap[zi][xi] = getHeight(x, z);
+    }
+  }
+
+  function sampleHeightBilinear(x, z) {
+    // clamp to world bounds
+    x = THREE.MathUtils.clamp(x, -HALF_WORLD, HALF_WORLD);
+    z = THREE.MathUtils.clamp(z, -HALF_WORLD, HALF_WORLD);
+
+    const fx = (x + HALF_WORLD) / sampleStep;
+    const fz = (z + HALF_WORLD) / sampleStep;
+    const x0 = Math.floor(fx);
+    const z0 = Math.floor(fz);
+    const x1 = Math.min(x0 + 1, SAMPLE_RES - 1);
+    const z1 = Math.min(z0 + 1, SAMPLE_RES - 1);
+    const tx = fx - x0;
+    const tz = fz - z0;
+
+    const h00 = heightMap[z0][x0];
+    const h10 = heightMap[z0][x1];
+    const h01 = heightMap[z1][x0];
+    const h11 = heightMap[z1][x1];
+
+    const h0 = h00 * (1 - tx) + h10 * tx;
+    const h1 = h01 * (1 - tx) + h11 * tx;
+    return h0 * (1 - tz) + h1 * tz;
+  }
+
+  // Terrain material
+  const terrainMaterial = new THREE.MeshStandardMaterial({
+    color: 0x668855,
+    roughness: 1.0,
+    metalness: 0.0,
+    flatShading: true
+  });
+
+  // River material
+  const riverMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2266aa,
+    roughness: 0.1,
+    metalness: 0.2,
+    transparent: true,
+    opacity: 0.8
+  });
+
+  // LOD chunks
+  const chunks = [];
+  const chunkGeometryCache = {};
+
+  function getChunkGeometry(resolution) {
+    if (chunkGeometryCache[resolution]) return chunkGeometryCache[resolution];
+    const geo = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, resolution, resolution);
+    geo.rotateX(-Math.PI / 2);
+    chunkGeometryCache[resolution] = geo;
+    return geo;
+  }
+
+  function updateChunkHeights(mesh, cx, cz, resolution) {
+    const geo = mesh.geometry;
+    const pos = geo.attributes.position;
+    const vCount = pos.count;
+    const segX = resolution;
+    const segZ = resolution;
+    for (let i = 0; i < vCount; i++) {
+      const ix = i % (segX + 1);
+      const iz = Math.floor(i / (segX + 1));
+      const x = (ix / segX - 0.5) * CHUNK_SIZE + cx;
+      const z = (iz / segZ - 0.5) * CHUNK_SIZE + cz;
+      const y = sampleHeightBilinear(x, z);
+      pos.setY(i, y);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  }
+
+  function createChunk(cx, cz) {
+    // Multiple LOD levels: near=64, mid=32, far=16 segments
+    const lod = new THREE.LOD();
+    const resLevels = [
+      { res: 64, dist: 0 },
+      { res: 32, dist: 600 },
+      { res: 16, dist: 1200 }
+    ];
+    for (const level of resLevels) {
+      const geo = getChunkGeometry(level.res);
+      const mesh = new THREE.Mesh(geo.clone(), terrainMaterial);
+      mesh.castShadow = false;
+      mesh.receiveShadow = true;
+      updateChunkHeights(mesh, cx, cz, level.res);
+      lod.addLevel(mesh, level.dist);
+    }
+    lod.position.set(cx, 0, cz);
+    scene.add(lod);
+    return lod;
+  }
+
+  // Generate all chunks in a grid
+  const chunksPerSide = WORLD_SIZE / CHUNK_SIZE;
+  for (let zi = 0; zi < chunksPerSide; zi++) {
+    for (let xi = 0; xi < chunksPerSide; xi++) {
+      const cx = -HALF_WORLD + CHUNK_SIZE * (xi + 0.5);
+      const cz = -HALF_WORLD + CHUNK_SIZE * (zi + 0.5);
+      const lod = createChunk(cx, cz);
+      chunks.push(lod);
+    }
+  }
+
+  // ---------------------------
+  // River mesh (follow same height map, but flattened)
+  // ---------------------------
+  // We create one large plane at low Y and mask heights near river path
+  (function createRiverMesh() {
+    const riverGeo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, 512, 512);
+    riverGeo.rotateX(-Math.PI / 2);
+    const pos = riverGeo.attributes.position;
+    const vCount = pos.count;
+
+    for (let i = 0; i < vCount; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+
+      const riverCenter = 0.3 * Math.sin(x * 0.0007) * 600;
+      const distToRiver = Math.abs(z - riverCenter);
+      const riverWidth = 35;
+      const riverBank = 120;
+
+      if (distToRiver < riverWidth) {
+        // place water slightly above terrain at that point
+        const ground = sampleHeightBilinear(x, z);
+        pos.setY(i, ground + 1.0);
+      } else if (distToRiver < riverBank) {
+        // fade banks into ground (avoid harsh edges)
+        const ground = sampleHeightBilinear(x, z);
+        const t = THREE.MathUtils.smoothstep(distToRiver, riverWidth, riverBank);
+        const y = THREE.MathUtils.lerp(ground + 1.0, ground - 10, t);
+        pos.setY(i, y);
+      } else {
+        // hide far away vertices by dropping them under ground
+        const ground = sampleHeightBilinear(x, z);
+        pos.setY(i, ground - 50);
+      }
+    }
+    pos.needsUpdate = true;
+    riverGeo.computeVertexNormals();
+
+    const riverMesh = new THREE.Mesh(riverGeo, riverMaterial);
+    riverMesh.receiveShadow = true;
+    scene.add(riverMesh);
+  })();
+
+  // ---------------------------
+  // Trees (Instanced Mesh)
+  // ---------------------------
+  const TREE_COUNT = 6000;
+  const trunkGeo = new THREE.CylinderGeometry(0.4, 0.8, 6, 6);
+  const foliageGeo = new THREE.ConeGeometry(3.2, 10, 8);
+  foliageGeo.translate(0, 8, 0);
+
+  const treeGeo = THREE.BufferGeometryUtils
+    ? THREE.BufferGeometryUtils.mergeBufferGeometries([trunkGeo, foliageGeo])
+    : (function () {
+        // simple manual merge if BufferGeometryUtils missing
+        const g1 = trunkGeo.clone();
+        const g2 = foliageGeo.clone();
+        const merged = new THREE.BufferGeometry();
+
+        function mergeGeometries(geos) {
+          const geometries = geos.map(g => g.toNonIndexed());
+          let totalVertices = 0;
+          for (const g of geometries) totalVertices += g.attributes.position.count;
+
+          const position = new Float32Array(totalVertices * 3);
+          const normal = new Float32Array(totalVertices * 3);
+          let offset = 0;
+
+          for (const g of geometries) {
+            const pos = g.attributes.position;
+            const norm = g.attributes.normal;
+            for (let i = 0; i < pos.count; i++) {
+              position[3 * (offset + i) + 0] = pos.getX(i);
+              position[3 * (offset + i) + 1] = pos.getY(i);
+              position[3 * (offset + i) + 2] = pos.getZ(i);
+              normal[3 * (offset + i) + 0] = norm.getX(i);
+              normal[3 * (offset + i) + 1] = norm.getY(i);
+              normal[3 * (offset + i) + 2] = norm.getZ(i);
+            }
+            offset += pos.count;
+          }
+
+          merged.setAttribute("position", new THREE.BufferAttribute(position, 3));
+          merged.setAttribute("normal", new THREE.BufferAttribute(normal, 3));
+          return merged;
+        }
+
+        return mergeGeometries([g1, g2]);
+      })();
+
+  const treeMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2e5c1a,
+    roughness: 1.0,
+    metalness: 0.0,
+    flatShading: true
+  });
+
+  const trees = new THREE.InstancedMesh(treeGeo, treeMaterial, TREE_COUNT);
+  trees.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  scene.add(trees);
+
+  (function scatterTrees() {
+    const dummy = new THREE.Object3D();
+    let i = 0;
+    while (i < TREE_COUNT) {
+      const x = (Math.random() - 0.5) * WORLD_SIZE;
+      const z = (Math.random() - 0.5) * WORLD_SIZE;
+      const riverCenter = 0.3 * Math.sin(x * 0.0007) * 600;
+      const distToRiver = Math.abs(z - riverCenter);
+      const riverWidth = 50;
+      if (distToRiver < riverWidth + 20) continue; // keep near-river clear
+
+      const h = sampleHeightBilinear(x, z);
+      if (h < 8 || h > 150) continue; // avoid too low (water) or too high peaks
+
+      dummy.position.set(x, h, z);
+      const s = 0.8 + Math.random() * 0.7;
+      dummy.scale.set(s, s, s);
+      dummy.rotation.y = Math.random() * Math.PI * 2;
+      dummy.updateMatrix();
+      trees.setMatrixAt(i, dummy.matrix);
+      i++;
+    }
+    trees.instanceMatrix.needsUpdate = true;
+  })();
+
+  // ---------------------------
+  // Drone / Plane Controller
+  // ---------------------------
+  const drone = new THREE.Object3D();
+  scene.add(drone);
+
+  // Simple plane model
+  const bodyGeo = new THREE.BoxGeometry(6, 1.2, 18);
+  const wingGeo = new THREE.BoxGeometry(20, 0.4, 3);
+  wingGeo.translate(0, 0, 0);
+  const tailGeo = new THREE.BoxGeometry(4, 0.6, 4);
+  tailGeo.translate(0, 1.2, -8);
+  const cockpitGeo = new THREE.ConeGeometry(2.5, 4, 12);
+  cockpitGeo.rotateX(Math.PI / 2);
+  cockpitGeo.translate(0, 0.7, 7.5);
+
+  const planeMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.4,
+    metalness: 0.3
+  });
+
+  const planeParts = [
+    new THREE.Mesh(bodyGeo, planeMat),
+    new THREE.Mesh(wingGeo, planeMat),
+    new THREE.Mesh(tailGeo, planeMat),
+    new THREE.Mesh(cockpitGeo, new THREE.MeshStandardMaterial({ color: 0x6699ff, roughness: 0.1, metalness: 0.8 }))
+  ];
+  planeParts.forEach(m => {
+    m.castShadow = true;
+    m.receiveShadow = true;
+    drone.add(m);
+  });
+
+  drone.position.set(0, 120, 0);
+  drone.rotation.order = "YXZ";
+  drone.lookAt(new THREE.Vector3(0, 110, -100));
+  drone.userData.velocity = new THREE.Vector3(0, 0, -120); // forward in local space
+
+  // Camera offset relative to drone
+  const cameraOffset = new THREE.Vector3(0, 4.5, 18);
+  const cameraLookOffset = new THREE.Vector3(0, 1.5, -20);
+
+  // Input
+  const keys = {};
+  window.addEventListener("keydown", e => { keys[e.code] = true; });
+  window.addEventListener("keyup", e => { keys[e.code] = false; });
+
+  // Mouse look
+  let isMouseDown = false;
+  let lastMouseX = 0;
+  let lastMouseY = 0;
+  let yawOffset = 0;
+  let pitchOffset = 0;
+  window.addEventListener("mousedown", e => {
+    isMouseDown = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+  });
+  window.addEventListener("mouseup", () => { isMouseDown = false; });
+  window.addEventListener("mousemove", e => {
+    if (!isMouseDown) return;
+    const dx = e.clientX - lastMouseX;
+    const dy = e.clientY - lastMouseY;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    yawOffset -= dx * 0.002;
+    pitchOffset -= dy * 0.002;
+    pitchOffset = THREE.MathUtils.clamp(pitchOffset, -0.7, 0.7);
+  });
+
+  // Flight parameters
+  let baseSpeed = 80;
+  let maxSpeed = 420;
+  let acceleration = 40;
+  let deceleration = 25;
+  let currentSpeed = baseSpeed;
+
+  let rollSpeed = 1.6;
+  let pitchSpeed = 1.4;
+  let yawSpeed = 1.2;
+
+  const tmpVec3 = new THREE.Vector3();
+  const tmpEuler = new THREE.Euler(0, 0, 0, "YXZ");
+
+  // ---------------------------
+  // Animation loop
+  // ---------------------------
+  const clock = new THREE.Clock();
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+
+    updateFlight(dt);
+    renderer.render(scene, camera);
+  }
+
+  function updateFlight(dt) {
+    // speed control
+    const boosting = !!keys["ShiftLeft"] || !!keys["ShiftRight"];
+    const targetSpeed = boosting ? maxSpeed : baseSpeed;
+    if (currentSpeed < targetSpeed) {
+      currentSpeed = Math.min(targetSpeed, currentSpeed + acceleration * dt * (boosting ? 2.0 : 1.0));
+    } else {
+      currentSpeed = Math.max(targetSpeed, currentSpeed - deceleration * dt);
+    }
+
+    // rotation input
+    let pitchInput = 0;
+    let rollInput = 0;
+    let yawInput = 0;
+    if (keys["KeyW"]) pitchInput -= 1;
+    if (keys["KeyS"]) pitchInput += 1;
+    if (keys["KeyA"]) rollInput += 1;
+    if (keys["KeyD"]) rollInput -= 1;
+    if (keys["KeyQ"]) yawInput += 1;
+    if (keys["KeyE"]) yawInput -= 1;
+
+    // small auto-stabilization
+    const autoLevel = !keys["KeyA"] && !keys["KeyD"];
+    if (autoLevel) {
+      drone.rotation.z *= (1 - Math.min(2.0 * dt, 1.0)); // damp roll
+    }
+
+    // spacebar: quickly level
+    if (keys["Space"]) {
+      drone.rotation.z = THREE.MathUtils.lerp(drone.rotation.z, 0, 6.0 * dt);
+      drone.rotation.x = THREE.MathUtils.lerp(drone.rotation.x, 0, 3.0 * dt);
+    }
+
+    // apply rotations (ZYX rotation order)
+    tmpEuler.setFromQuaternion(drone.quaternion, "YXZ");
+    tmpEuler.x += pitchInput * pitchSpeed * dt;
+    tmpEuler.z += rollInput * rollSpeed * dt;
+    tmpEuler.y += yawInput * yawSpeed * dt;
+
+    // clamp pitch
+    tmpEuler.x = THREE.MathUtils.clamp(tmpEuler.x, -1.2, 1.2);
+
+    drone.quaternion.setFromEuler(tmpEuler);
+
+    // compute forward direction and move
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(drone.quaternion);
+    const move = forward.multiplyScalar(currentSpeed * dt);
+    drone.position.add(move);
+
+    // vertical trim R/F
+    if (keys["KeyR"]) drone.position.y += 60 * dt;
+    if (keys["KeyF"]) drone.position.y -= 60 * dt;
+
+    // keep drone within world bounds
+    drone.position.x = THREE.MathUtils.clamp(drone.position.x, -HALF_WORLD + 20, HALF_WORLD - 20);
+    drone.position.z = THREE.MathUtils.clamp(drone.position.z, -HALF_WORLD + 20, HALF_WORLD - 20);
+
+    // collision avoidance with terrain
+    const ground = sampleHeightBilinear(drone.position.x, drone.position.z);
+    const minAltitude = 20;
+    const desiredY = ground + minAltitude;
+    if (drone.position.y < desiredY) {
+      drone.position.y = THREE.MathUtils.lerp(drone.position.y, desiredY, 8.0 * dt);
+    }
+
+    // camera follow
+    const camOffsetWorld = cameraOffset.clone().applyQuaternion(drone.quaternion);
+    const camPos = drone.position.clone().add(camOffsetWorld);
+    camera.position.copy(camPos);
+
+    // camera look at point ahead
+    const lookDir = new THREE.Vector3(0, 0, -1)
+      .applyQuaternion(drone.quaternion)
+      .multiplyScalar(20);
+    const lookTarget = drone.position.clone().add(lookDir).add(new THREE.Vector3(0, 4, 0));
+
+    // apply mouse yaw/pitch offsets
+    const offsetEuler = new THREE.Euler(pitchOffset, yawOffset, 0, "YXZ");
+    const offsetDir = lookTarget.clone().sub(camera.position).applyEuler(offsetEuler);
+    const finalLook = camera.position.clone().add(offsetDir);
+
+    camera.lookAt(finalLook);
+
+    // Optional: update LOD with camera position
+    for (const lod of chunks) {
+      lod.update(camera);
+    }
+  }
+
+  // resize
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  animate();
+</script>
+
+<!-- Note:
+  For best performance, use a modern browser with WebGL2 support.
+  World size, resolution, and counts can be tuned near the top of the script.
+-->
+</body>
+</html>

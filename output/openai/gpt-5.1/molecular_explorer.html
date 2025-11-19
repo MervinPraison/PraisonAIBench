@@ -1,0 +1,637 @@
+<!-- Save this file as: molecular_explorer.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Molecular Explorer - Three.js</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      font-family: Arial, sans-serif;
+      background-color: #111;
+      color: #eee;
+    }
+    #container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+    }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(0,0,0,0.65);
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      max-width: 320px;
+    }
+    #ui h1 {
+      font-size: 16px;
+      margin: 0 0 6px 0;
+      padding: 0;
+      font-weight: bold;
+    }
+    #ui label {
+      display: inline-block;
+      margin: 4px 0;
+    }
+    #ui select, #ui input[type="range"], #ui button {
+      width: 100%;
+      margin: 4px 0;
+      font-size: 12px;
+    }
+    #ui small {
+      color: #aaa;
+      font-size: 11px;
+    }
+    #footer {
+      position: absolute;
+      bottom: 5px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(0,0,0,0.5);
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: #ccc;
+    }
+    .row {
+      margin-top: 4px;
+      margin-bottom: 4px;
+    }
+    .inline {
+      display: inline-block;
+      width: 49%;
+    }
+  </style>
+</head>
+<body>
+<div id="container"></div>
+
+<div id="ui">
+  <h1>Molecular Explorer</h1>
+
+  <label for="moleculeSelect">Molecule</label>
+  <select id="moleculeSelect">
+    <option value="water">Water (H₂O)</option>
+    <option value="caffeine">Caffeine</option>
+    <option value="dna">DNA Segment</option>
+    <option value="random">Random small molecule</option>
+  </select>
+
+  <label for="modeSelect">Render mode</label>
+  <select id="modeSelect">
+    <option value="ballstick">Ball-and-stick</option>
+    <option value="spacefill">Space-filling</option>
+  </select>
+
+  <div class="row">
+    <div class="inline">
+      <label for="explodeRange">Explode</label>
+      <input id="explodeRange" type="range" min="0" max="1.5" step="0.01" value="0">
+    </div>
+    <div class="inline">
+      <label for="clipRange">Section clip</label>
+      <input id="clipRange" type="range" min="-10" max="10" step="0.1" value="10">
+    </div>
+  </div>
+
+  <button id="explodeAnimBtn">Toggle Explode Animation</button>
+  <button id="snapshotBtn">Snapshot to PNG</button>
+
+  <label for="customMol">Custom molecule (JSON)</label>
+  <textarea id="customMol" rows="4" style="width:100%;font-size:11px;"></textarea>
+  <button id="loadCustomBtn">Load custom JSON</button>
+
+  <small>
+    JSON format: { "atoms":[{"element":"C","x":0,"y":0,"z":0},...],
+    "bonds":[{"a":0,"b":1},...]}<br/>
+    If "bonds" is omitted, bonds are inferred from distances.
+  </small>
+</div>
+
+<div id="footer">
+  Drag: rotate • Scroll: zoom • Right-drag: pan • Explode + clip to explore interior.
+</div>
+
+<!-- Three.js and helpers from CDN -->
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+// =====================================================
+// Basic Three.js setup
+// =====================================================
+let scene, camera, renderer, controls;
+let currentGroup = null;
+let currentMoleculeData = null;
+let explodeFactor = 0;
+let explodeAnimating = false;
+let explodeDirectionVectors = [];
+let clipPlane;
+let ballStickMode = true;
+
+const container = document.getElementById('container');
+
+init();
+animate();
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x050505);
+
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+
+  camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+  camera.position.set(0, 0, 35);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  container.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.1;
+  controls.rotateSpeed = 0.5;
+
+  // Lights
+  const ambLight = new THREE.AmbientLight(0xffffff, 0.3);
+  scene.add(ambLight);
+
+  const dirLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight1.position.set(10, 10, 10);
+  scene.add(dirLight1);
+
+  const dirLight2 = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight2.position.set(-10, -5, -10);
+  scene.add(dirLight2);
+
+  // Clipping plane (YZ plane, clipping positive X)
+  clipPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 10); // d is adjustable
+  renderer.localClippingEnabled = true;
+
+  // UI events
+  document.getElementById('moleculeSelect').addEventListener('change', onMoleculeChange);
+  document.getElementById('modeSelect').addEventListener('change', onModeChange);
+  document.getElementById('explodeRange').addEventListener('input', onExplodeChange);
+  document.getElementById('clipRange').addEventListener('input', onClipChange);
+  document.getElementById('explodeAnimBtn').addEventListener('click', () => {
+    explodeAnimating = !explodeAnimating;
+  });
+  document.getElementById('snapshotBtn').addEventListener('click', saveSnapshot);
+  document.getElementById('loadCustomBtn').addEventListener('click', loadCustomMolecule);
+
+  window.addEventListener('resize', onWindowResize, false);
+
+  // Initial molecule
+  loadMoleculeData(sampleMolecules.water);
+}
+
+function onWindowResize() {
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+}
+
+// =====================================================
+// Molecule data
+// =====================================================
+
+// Minimal van der Waals radii for space-filling (in Å, arbitrary scale)
+const vdwRadii = {
+  H: 1.2,
+  C: 1.7,
+  N: 1.55,
+  O: 1.52,
+  P: 1.8,
+  S: 1.8
+};
+
+// Atom colors by element (CPK-like)
+const elementColors = {
+  H: 0xffffff,
+  C: 0x444444,
+  N: 0x3050f8,
+  O: 0xff0d0d,
+  F: 0x90e050,
+  Cl: 0x1ff01f,
+  Br: 0xa62929,
+  I: 0x940094,
+  P: 0xffa500,
+  S: 0xffff30,
+  B: 0xffc0c0,
+  Fe: 0xe06633,
+  default: 0xaaaaaa
+};
+
+// Approximate covalent radii for bond inference (Å)
+const covalentRadii = {
+  H: 0.31,
+  C: 0.76,
+  N: 0.71,
+  O: 0.66,
+  P: 1.07,
+  S: 1.05,
+  default: 0.8
+};
+
+// Sample molecules
+const sampleMolecules = {
+  // Coordinates in Ångstrom; small, simple
+  water: {
+    name: "Water",
+    atoms: [
+      { element: "O", x: 0.000, y: 0.000, z: 0.000 },
+      { element: "H", x: 0.9572, y: 0.000, z: 0.000 },
+      { element: "H", x: -0.239, y: 0.927, z: 0.000 }
+    ]
+    // bonds inferred
+  },
+
+  // Caffeine coordinates (simplified, approximate planar structure)
+  caffeine: {
+    name: "Caffeine",
+    atoms: [
+      { element: "C", x: 0.000,  y: 1.393, z: 0.000 },
+      { element: "N", x: 1.214,  y: 0.696, z: 0.000 },
+      { element: "C", x: 1.214,  y:-0.696, z: 0.000 },
+      { element: "N", x: 0.000,  y:-1.393, z: 0.000 },
+      { element: "C", x:-1.214,  y:-0.696, z: 0.000 },
+      { element: "N", x:-1.214,  y: 0.696, z: 0.000 },
+      { element: "C", x: 2.428,  y: 1.393, z: 0.000 },
+      { element: "O", x: 3.642,  y: 0.696, z: 0.000 },
+      { element: "N", x: 2.428,  y:-1.393, z: 0.000 },
+      { element: "C", x: 3.642,  y:-0.696, z: 0.000 },
+      { element: "O", x: 4.856,  y:-1.393, z: 0.000 },
+      { element: "C", x:-2.428,  y:-1.393, z: 0.000 },
+      { element: "O", x:-3.642,  y:-0.696, z: 0.000 },
+      { element: "N", x:-2.428,  y: 1.393, z: 0.000 },
+      { element: "C", x:-3.642,  y: 0.696, z: 0.000 },
+      // Some hydrogens
+      { element: "H", x: 0.000,  y: 2.479, z: 0.000 },
+      { element: "H", x: 0.000,  y:-2.479, z: 0.000 },
+      { element: "H", x: 2.428,  y: 2.479, z: 0.000 },
+      { element: "H", x: 2.428,  y:-2.479, z: 0.000 },
+      { element: "H", x:-2.428, y: 2.479, z: 0.000 },
+      { element: "H", x:-2.428, y:-2.479, z: 0.000 },
+      { element: "H", x: 3.642,  y: 1.781, z: 0.000 },
+      { element: "H", x:-3.642, y: 1.781, z: 0.000 }
+    ]
+  },
+
+  // Very small DNA-like segment (simplified: backbone + two base pairs)
+  dna: {
+    name: "DNA segment",
+    atoms: [
+      // Backbone (P-O-C)
+      { element: "P", x: -4.0, y:  0.0, z: 0.0 },
+      { element: "O", x: -3.0, y:  1.0, z: 0.0 },
+      { element: "O", x: -3.0, y: -1.0, z: 0.0 },
+      { element: "C", x: -2.0, y:  0.0, z: 0.0 },
+      { element: "C", x: -1.0, y:  0.5, z: 0.0 },
+      { element: "C", x:  0.0, y:  1.0, z: 0.0 },
+
+      { element: "P", x:  4.0, y:  0.0, z: 0.0 },
+      { element: "O", x:  3.0, y:  1.0, z: 0.0 },
+      { element: "O", x:  3.0, y: -1.0, z: 0.0 },
+      { element: "C", x:  2.0, y:  0.0, z: 0.0 },
+      { element: "C", x:  1.0, y:  0.5, z: 0.0 },
+      { element: "C", x:  0.0, y: -1.0, z: 0.0 },
+
+      // Base pair 1 (A-T, heavily simplified)
+      { element: "N", x: -0.5, y:  2.0, z: 0.8 },
+      { element: "C", x:  0.5, y:  2.3, z: 0.8 },
+      { element: "N", x:  1.5, y:  2.0, z: 0.8 },
+
+      { element: "N", x: -0.5, y: -2.0, z: -0.8 },
+      { element: "C", x:  0.5, y: -2.3, z: -0.8 },
+      { element: "N", x:  1.5, y: -2.0, z: -0.8 },
+
+      // Base pair 2 (G-C, simplified)
+      { element: "N", x: -1.0, y:  2.5, z: -0.8 },
+      { element: "C", x:  0.0, y:  3.0, z: -0.8 },
+      { element: "N", x:  1.0, y:  2.5, z: -0.8 },
+
+      { element: "N", x: -1.0, y: -2.5, z:  0.8 },
+      { element: "C", x:  0.0, y: -3.0, z:  0.8 },
+      { element: "N", x:  1.0, y: -2.5, z:  0.8 },
+
+      // A few hydrogens
+      { element: "H", x: -5.0, y:  0.0, z: 0.0 },
+      { element: "H", x:  5.0, y:  0.0, z: 0.0 },
+      { element: "H", x: -2.0, y:  1.1, z: 0.0 },
+      { element: "H", x:  2.0, y: -1.1, z: 0.0 }
+    ]
+  }
+};
+
+// =====================================================
+// Molecule utilities
+// =====================================================
+
+function getElementColor(element) {
+  return elementColors[element] || elementColors.default;
+}
+
+function getVDWRadius(element) {
+  return vdwRadii[element] || 1.5;
+}
+
+function getCovalentRadius(element) {
+  return covalentRadii[element] || covalentRadii.default;
+}
+
+// Infer bonds by distance between atoms
+function inferBonds(mol) {
+  const atoms = mol.atoms;
+  const bonds = [];
+  for (let i = 0; i < atoms.length; i++) {
+    const a = atoms[i];
+    for (let j = i + 1; j < atoms.length; j++) {
+      const b = atoms[j];
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const dz = a.z - b.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      const rA = getCovalentRadius(a.element);
+      const rB = getCovalentRadius(b.element);
+      const maxDist = (rA + rB) * 1.25; // fudge factor
+      if (dist > 0.1 && dist <= maxDist) {
+        bonds.push({ a: i, b: j });
+      }
+    }
+  }
+  mol.bonds = bonds;
+}
+
+// Random small molecule generator
+function generateRandomMolecule(numAtoms = 12) {
+  const elements = ["C", "C", "C", "H", "H", "H", "H", "O", "N", "S"];
+  const atoms = [];
+  for (let i = 0; i < numAtoms; i++) {
+    const element = elements[Math.floor(Math.random() * elements.length)];
+    atoms.push({
+      element,
+      x: (Math.random() - 0.5) * 8,
+      y: (Math.random() - 0.5) * 8,
+      z: (Math.random() - 0.5) * 8
+    });
+  }
+  return { name: "Random molecule", atoms };
+}
+
+// Build Three.js group from molecule data
+function buildMoleculeGroup(mol, mode) {
+  if (!mol.bonds) inferBonds(mol);
+
+  const group = new THREE.Group();
+
+  // Prepare clipping planes
+  const clippingPlanes = [clipPlane];
+
+  // Atoms
+  const atomMeshes = [];
+  const atomPositions = [];
+
+  const ballStickAtomRadius = 0.35;
+  const bondRadius = 0.12;
+
+  const spaceFillScale = 0.4; // global scale to keep sizes reasonable
+
+  for (let i = 0; i < mol.atoms.length; i++) {
+    const a = mol.atoms[i];
+    const color = getElementColor(a.element);
+    const radius = mode === "spacefill"
+      ? getVDWRadius(a.element) * spaceFillScale
+      : ballStickAtomRadius;
+
+    const geom = new THREE.SphereGeometry(radius, 24, 24);
+    const mat = new THREE.MeshPhongMaterial({
+      color,
+      shininess: 50,
+      specular: 0x111111,
+      clippingPlanes,
+      clipShadows: true
+    });
+
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(a.x, a.y, a.z);
+    mesh.userData = { atomIndex: i, basePosition: mesh.position.clone() };
+
+    group.add(mesh);
+    atomMeshes.push(mesh);
+    atomPositions.push(mesh.position.clone());
+  }
+
+  // Bonds (only in ball-and-stick mode)
+  if (mode === "ballstick") {
+    const cylinderGeom = new THREE.CylinderGeometry(bondRadius, bondRadius, 1, 16, 1, true);
+    const bondMat = new THREE.MeshPhongMaterial({
+      color: 0xcccccc,
+      shininess: 30,
+      clippingPlanes,
+      clipShadows: true
+    });
+
+    mol.bonds.forEach((bond) => {
+      const start = atomPositions[bond.a];
+      const end = atomPositions[bond.b];
+
+      const bondMesh = new THREE.Mesh(cylinderGeom, bondMat);
+      alignCylinderToPoints(bondMesh, start, end);
+      group.add(bondMesh);
+    });
+  }
+
+  // Compute explode directions (radial from center)
+  const center = new THREE.Vector3();
+  mol.atoms.forEach((a) => {
+    center.x += a.x;
+    center.y += a.y;
+    center.z += a.z;
+  });
+  center.multiplyScalar(1 / mol.atoms.length);
+
+  explodeDirectionVectors = atomPositions.map((pos) => {
+    const dir = new THREE.Vector3().subVectors(pos, center);
+    if (dir.lengthSq() < 1e-4) dir.set(Math.random(), Math.random(), Math.random());
+    return dir.normalize();
+  });
+
+  group.userData.atomMeshes = atomMeshes;
+  group.userData.molecule = mol;
+
+  // Center group
+  const box = new THREE.Box3().setFromObject(group);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const centerBox = new THREE.Vector3();
+  box.getCenter(centerBox);
+  group.position.sub(centerBox);
+
+  return group;
+}
+
+// Align cylinder between two points
+function alignCylinderToPoints(mesh, start, end) {
+  const dir = new THREE.Vector3().subVectors(end, start);
+  const length = dir.length();
+
+  mesh.scale.set(1, length, 1); // y-axis is height
+
+  const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+  mesh.position.copy(mid);
+
+  const axis = new THREE.Vector3(0, 1, 0);
+  dir.normalize();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(axis, dir);
+  mesh.quaternion.copy(quaternion);
+}
+
+// =====================================================
+// UI Handlers
+// =====================================================
+
+function onMoleculeChange() {
+  const val = document.getElementById('moleculeSelect').value;
+  let mol;
+  if (val === "water") mol = sampleMolecules.water;
+  else if (val === "caffeine") mol = sampleMolecules.caffeine;
+  else if (val === "dna") mol = sampleMolecules.dna;
+  else if (val === "random") mol = generateRandomMolecule(18);
+
+  loadMoleculeData(mol);
+}
+
+function onModeChange() {
+  ballStickMode = document.getElementById('modeSelect').value === "ballstick";
+  if (currentMoleculeData) {
+    loadMoleculeData(currentMoleculeData, false);
+  }
+}
+
+function onExplodeChange(e) {
+  explodeFactor = parseFloat(e.target.value);
+  updateExplode();
+}
+
+function onClipChange(e) {
+  const d = parseFloat(e.target.value);
+  clipPlane.constant = d;
+}
+
+// =====================================================
+// Loading and rebuilding
+// =====================================================
+
+function loadMoleculeData(mol, resetControls = true) {
+  currentMoleculeData = JSON.parse(JSON.stringify(mol)); // clone
+
+  if (currentGroup) {
+    scene.remove(currentGroup);
+  }
+
+  const mode = ballStickMode ? "ballstick" : "spacefill";
+  currentGroup = buildMoleculeGroup(currentMoleculeData, mode);
+  scene.add(currentGroup);
+
+  explodeFactor = parseFloat(document.getElementById('explodeRange').value);
+  updateExplode();
+
+  if (resetControls) {
+    controls.target.set(0, 0, 0);
+    camera.position.set(0, 0, 35);
+    controls.update();
+  }
+}
+
+// Apply explode factor
+function updateExplode() {
+  if (!currentGroup) return;
+  const atomMeshes = currentGroup.userData.atomMeshes || [];
+  for (let i = 0; i < atomMeshes.length; i++) {
+    const mesh = atomMeshes[i];
+    const base = mesh.userData.basePosition;
+    const dir = explodeDirectionVectors[i];
+    const newPos = new THREE.Vector3().copy(base).addScaledVector(dir, explodeFactor * 5.0);
+    mesh.position.copy(newPos);
+  }
+
+  // Recompute bonds if in ball-and-stick (bond geometry does not know about explode,
+  // so fastest is to rebuild the whole group).
+  if (ballStickMode && currentMoleculeData) {
+    const mol = currentGroup.userData.molecule;
+    const mode = "ballstick";
+    const explodedMol = { name: mol.name, atoms: [] };
+    const meshes = currentGroup.userData.atomMeshes;
+    for (let i = 0; i < mol.atoms.length; i++) {
+      const a = mol.atoms[i];
+      const pos = meshes[i].position;
+      explodedMol.atoms.push({
+        element: a.element,
+        x: pos.x, y: pos.y, z: pos.z
+      });
+    }
+    explodedMol.bonds = mol.bonds; // reuse
+    scene.remove(currentGroup);
+    currentGroup = buildMoleculeGroup(explodedMol, mode);
+    scene.add(currentGroup);
+  }
+}
+
+function saveSnapshot() {
+  const link = document.createElement('a');
+  link.href = renderer.domElement.toDataURL('image/png');
+  link.download = 'molecule_snapshot.png';
+  link.click();
+}
+
+function loadCustomMolecule() {
+  const text = document.getElementById('customMol').value.trim();
+  if (!text) return;
+  try {
+    const mol = JSON.parse(text);
+    if (!mol.atoms || !Array.isArray(mol.atoms) || mol.atoms.length === 0) {
+      alert("Invalid custom molecule: 'atoms' array missing or empty.");
+      return;
+    }
+    loadMoleculeData(mol);
+  } catch (e) {
+    alert("Failed to parse JSON: " + e.message);
+  }
+}
+
+// =====================================================
+// Render loop
+// =====================================================
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (explodeAnimating) {
+    let v = parseFloat(document.getElementById('explodeRange').value);
+    v += 0.01;
+    if (v > 1.5) v = 0;
+    document.getElementById('explodeRange').value = v.toFixed(2);
+    explodeFactor = v;
+    updateExplode();
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>

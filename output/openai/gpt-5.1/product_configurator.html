@@ -1,0 +1,966 @@
+<!-- Save this file as: product_configurator.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>3D Product Configurator - Three.js</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #121212;
+      color: #eee;
+    }
+
+    #container {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 290px;
+      max-height: calc(100vh - 20px);
+      overflow: auto;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 12px 14px;
+      border-radius: 8px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 0 18px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+    }
+
+    #ui h2 {
+      margin: 4px 0 8px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    #ui h3 {
+      margin: 10px 0 4px;
+      font-size: 14px;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding-bottom: 2px;
+    }
+
+    .section {
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+    }
+
+    label {
+      display: block;
+      margin: 3px 0;
+    }
+
+    input[type="color"] {
+      padding: 0;
+      border: none;
+      width: 50px;
+      height: 22px;
+      vertical-align: middle;
+      margin-left: 4px;
+      background: transparent;
+    }
+
+    select, button {
+      font-size: 12px;
+      padding: 3px 6px;
+      margin: 2px 0;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #1c1c1c;
+      color: #eee;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #2b2b2b;
+    }
+
+    .row {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .row > * {
+      flex: 1 1 auto;
+    }
+
+    .small {
+      font-size: 11px;
+      opacity: 0.8;
+    }
+
+    #snapshotLink {
+      display: none;
+    }
+
+    #bookmarkButtons button {
+      width: 32%;
+    }
+
+    a {
+      color: #7fb9ff;
+    }
+
+    #footer {
+      margin-top: 4px;
+      font-size: 10px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+<body>
+<div id="container"></div>
+
+<div id="ui">
+  <h2>3D Phone Configurator</h2>
+
+  <div class="section">
+    <div class="small">
+      Drag to orbit, scroll to zoom, right-drag to pan.
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Body</h3>
+    <label>
+      Color:
+      <input type="color" id="bodyColor" value="#1e88e5">
+    </label>
+    <label>
+      Metallic:
+      <select id="bodyMetallic">
+        <option value="0.1">Low</option>
+        <option value="0.4" selected>Medium</option>
+        <option value="0.9">High</option>
+      </select>
+    </label>
+    <label>
+      Roughness:
+      <select id="bodyRoughness">
+        <option value="0.1">Glossy</option>
+        <option value="0.4" selected>Satin</option>
+        <option value="0.8">Matte</option>
+      </select>
+    </label>
+
+    <label>
+      Texture:
+      <select id="bodyTexture">
+        <option value="none" selected>None</option>
+        <option value="brushed">Brushed</option>
+        <option value="carbon">Carbon</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="section">
+    <h3>Screen</h3>
+    <label>
+      Screen On:
+      <input type="checkbox" id="screenOn" checked>
+    </label>
+    <label>
+      Wallpaper:
+      <select id="screenWallpaper">
+        <option value="gradient" selected>Gradient</option>
+        <option value="grid">Grid</option>
+        <option value="waves">Waves</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="section">
+    <h3>Extras</h3>
+    <label>
+      Show Camera Bump:
+      <input type="checkbox" id="camBumpToggle" checked>
+    </label>
+    <label>
+      Show Side Buttons:
+      <input type="checkbox" id="buttonsToggle" checked>
+    </label>
+    <label>
+      Show Stand:
+      <input type="checkbox" id="standToggle" checked>
+    </label>
+  </div>
+
+  <div class="section">
+    <h3>Camera Views</h3>
+    <div id="bookmarkButtons" class="row">
+      <button data-view="front">Front</button>
+      <button data-view="back">Back</button>
+      <button data-view="iso">Iso</button>
+    </div>
+    <div class="row">
+      <button id="saveView">Save Current</button>
+      <button id="loadView">Load Saved</button>
+    </div>
+    <div class="small">
+      Saved view is kept only in this session.
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Export</h3>
+    <div class="row">
+      <button id="exportJSON">Export JSON</button>
+      <button id="exportPNG">Export PNG</button>
+    </div>
+    <a id="snapshotLink" download="phone_snapshot.png">Download Snapshot</a>
+  </div>
+
+  <div id="footer">
+    Demo: Procedural Three.js phone model with environment reflections &amp; soft shadows.
+  </div>
+</div>
+
+<!-- Three.js & OrbitControls via CDN -->
+<script src="https://unpkg.com/three@0.162.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.162.0/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+(function () {
+  let renderer, scene, camera, controls;
+  let phoneGroup, bodyMesh, screenMesh, glassMesh;
+  let camBumpMesh, lensMesh, flashMesh, buttonsGroup, standMesh;
+  let envRT;
+  let bodyTextureBrushed, bodyTextureCarbon;
+  let screenTextures = {};
+  let savedView = null;
+
+  const params = {
+    bodyColor: '#1e88e5',
+    bodyMetallic: 0.4,
+    bodyRoughness: 0.4,
+    bodyTexture: 'none',
+    screenOn: true,
+    screenWallpaper: 'gradient',
+    camBump: true,
+    buttons: true,
+    stand: true
+  };
+
+  init();
+  animate();
+
+  function init() {
+    const container = document.getElementById('container');
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05070b);
+
+    camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.05, 50);
+    camera.position.set(3, 1.8, 3);
+    scene.add(camera);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 1.1, 0);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.minDistance = 1.4;
+    controls.maxDistance = 7;
+    controls.maxPolarAngle = Math.PI * 0.9;
+
+    // Environment (procedural)
+    const cubeRes = 128;
+    envRT = new THREE.WebGLCubeRenderTarget(cubeRes, {
+      type: THREE.HalfFloatType,
+      generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter,
+      encoding: THREE.sRGBEncoding
+    });
+    envRT.texture.mapping = THREE.CubeReflectionMapping;
+    generateProceduralEnvironment(envRT);
+    scene.environment = envRT.texture;
+
+    // Lights
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x111122, 0.35);
+    hemi.position.set(0, 2, 0);
+    scene.add(hemi);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(5, 7, 3);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 20;
+    dirLight.shadow.camera.left = -5;
+    dirLight.shadow.camera.right = 5;
+    dirLight.shadow.camera.top = 5;
+    dirLight.shadow.camera.bottom = -1;
+    scene.add(dirLight);
+
+    const fillLight = new THREE.DirectionalLight(0x99ccff, 0.25);
+    fillLight.position.set(-4, 2, -3);
+    scene.add(fillLight);
+
+    // Ground with soft shadows
+    const groundMat = new THREE.MeshStandardMaterial({
+      color: 0x111111,
+      roughness: 0.9,
+      metalness: 0,
+    });
+    const groundGeo = new THREE.CircleGeometry(6, 64);
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Phone model
+    createPhoneModel();
+
+    // Precompute textures
+    bodyTextureBrushed = createBrushedTexture();
+    bodyTextureCarbon = createCarbonTexture();
+    screenTextures.gradient = createScreenTexture('gradient');
+    screenTextures.grid = createScreenTexture('grid');
+    screenTextures.waves = createScreenTexture('waves');
+
+    // UI bindings
+    bindUI();
+
+    window.addEventListener('resize', onWindowResize);
+  }
+
+  function createPhoneModel() {
+    phoneGroup = new THREE.Group();
+    scene.add(phoneGroup);
+
+    const bodyWidth = 0.75;
+    const bodyHeight = 1.6;
+    const bodyDepth = 0.08;
+    const cornerRadius = 0.16;
+
+    const bodyGeo = roundedBox(bodyWidth, bodyHeight, bodyDepth, cornerRadius, 6);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(params.bodyColor),
+      metalness: params.bodyMetallic,
+      roughness: params.bodyRoughness,
+      envMap: scene.environment,
+      envMapIntensity: 1.2
+    });
+    bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    bodyMesh.castShadow = true;
+    bodyMesh.receiveShadow = true;
+    bodyMesh.position.y = 1.05;
+    phoneGroup.add(bodyMesh);
+
+    // Glass front layer
+    const glassGeo = roundedBox(bodyWidth * 0.94, bodyHeight * 0.94, bodyDepth * 0.02, cornerRadius * 0.9, 4);
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      metalness: 0,
+      roughness: 0.05,
+      transparent: true,
+      opacity: 0.15,
+      transmission: 1.0,
+      thickness: 0.03,
+      envMap: scene.environment,
+      envMapIntensity: 1.2,
+      clearcoat: 1,
+      clearcoatRoughness: 0.1
+    });
+    glassMesh = new THREE.Mesh(glassGeo, glassMat);
+    glassMesh.position.z = bodyDepth / 2 + 0.001;
+    glassMesh.position.y = bodyMesh.position.y;
+    glassMesh.castShadow = false;
+    glassMesh.receiveShadow = false;
+    phoneGroup.add(glassMesh);
+
+    // Screen (behind glass)
+    const screenMargin = 0.07;
+    const screenGeo = new THREE.PlaneGeometry(
+      bodyWidth * 0.94 - screenMargin,
+      bodyHeight * 0.94 - screenMargin
+    );
+    const screenMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      toneMapped: false
+    });
+    screenMesh = new THREE.Mesh(screenGeo, screenMat);
+    screenMesh.position.z = bodyDepth / 2 - 0.01;
+    screenMesh.position.y = bodyMesh.position.y;
+    phoneGroup.add(screenMesh);
+
+    // Camera bump (back top-left)
+    const bumpWidth = 0.35;
+    const bumpHeight = 0.4;
+    const bumpDepth = 0.06;
+    const bumpRad = 0.08;
+    const bumpGeo = roundedBox(bumpWidth, bumpHeight, bumpDepth, bumpRad, 4);
+    const bumpMat = new THREE.MeshStandardMaterial({
+      color: 0x111111,
+      metalness: 0.6,
+      roughness: 0.2,
+      envMap: scene.environment,
+      envMapIntensity: 1.4
+    });
+    camBumpMesh = new THREE.Mesh(bumpGeo, bumpMat);
+    camBumpMesh.position.set(
+      -bodyWidth * 0.23,
+      bodyMesh.position.y + bodyHeight * 0.22,
+      -bodyDepth / 2 - bumpDepth / 2 + 0.005
+    );
+    camBumpMesh.castShadow = true;
+    camBumpMesh.receiveShadow = true;
+    phoneGroup.add(camBumpMesh);
+
+    // Camera lenses inside bump
+    const lensGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.03, 24);
+    const lensMat = new THREE.MeshPhysicalMaterial({
+      color: 0x222222,
+      metalness: 0.8,
+      roughness: 0.05,
+      envMap: scene.environment,
+      envMapIntensity: 1.5,
+      transparent: true,
+      opacity: 0.98,
+      clearcoat: 1,
+      clearcoatRoughness: 0.05
+    });
+    lensMesh = new THREE.Group();
+    const lensPositions = [
+      new THREE.Vector3(-0.07, 0.06, 0),
+      new THREE.Vector3(0.07, 0.06, 0),
+      new THREE.Vector3(0, -0.09, 0)
+    ];
+    lensPositions.forEach(p => {
+      const m = new THREE.Mesh(lensGeo, lensMat);
+      m.rotation.x = Math.PI / 2;
+      m.position.copy(p);
+      m.castShadow = true;
+      lensMesh.add(m);
+    });
+    lensMesh.position.copy(camBumpMesh.position);
+    lensMesh.position.z -= bumpDepth / 2 - 0.015;
+    phoneGroup.add(lensMesh);
+
+    // Flash
+    const flashGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.02, 20);
+    const flashMat = new THREE.MeshStandardMaterial({
+      emissive: 0xffffaa,
+      emissiveIntensity: 1.5,
+      color: 0xffffff,
+      metalness: 0.6,
+      roughness: 0.3
+    });
+    flashMesh = new THREE.Mesh(flashGeo, flashMat);
+    flashMesh.rotation.x = Math.PI / 2;
+    flashMesh.position.set(
+      camBumpMesh.position.x + bumpWidth * 0.25,
+      camBumpMesh.position.y + bumpHeight * 0.12,
+      camBumpMesh.position.z - bumpDepth / 2 + 0.01
+    );
+    flashMesh.castShadow = true;
+    phoneGroup.add(flashMesh);
+
+    // Side buttons
+    buttonsGroup = new THREE.Group();
+    const btnGeo = new THREE.BoxGeometry(0.02, 0.18, 0.02);
+    const btnMat = new THREE.MeshStandardMaterial({
+      color: 0xcccccc,
+      metalness: 0.8,
+      roughness: 0.3,
+      envMap: scene.environment,
+      envMapIntensity: 1.0
+    });
+
+    const volUp = new THREE.Mesh(btnGeo, btnMat);
+    volUp.position.set(bodyWidth / 2 + 0.01, bodyMesh.position.y + 0.23, 0);
+    volUp.castShadow = true;
+    buttonsGroup.add(volUp);
+
+    const volDown = volUp.clone();
+    volDown.position.y -= 0.25;
+    buttonsGroup.add(volDown);
+
+    const powerBtn = new THREE.Mesh(
+      new THREE.BoxGeometry(0.02, 0.12, 0.02),
+      btnMat
+    );
+    powerBtn.position.set(-bodyWidth / 2 - 0.01, bodyMesh.position.y + 0.05, 0);
+    powerBtn.castShadow = true;
+    buttonsGroup.add(powerBtn);
+
+    phoneGroup.add(buttonsGroup);
+
+    // Simple stand
+    const standGeo = new THREE.CylinderGeometry(0.55, 0.6, 0.05, 48);
+    const standMat = new THREE.MeshStandardMaterial({
+      color: 0x333333,
+      roughness: 0.7,
+      metalness: 0.2,
+      envMap: scene.environment,
+      envMapIntensity: 0.3
+    });
+    standMesh = new THREE.Mesh(standGeo, standMat);
+    standMesh.position.y = 0.99;
+    standMesh.castShadow = true;
+    standMesh.receiveShadow = true;
+    phoneGroup.add(standMesh);
+  }
+
+  // Rounded box helper (from Three.js examples, simplified)
+  function roundedBox(width, height, depth, radius, smoothness) {
+    const shape = new THREE.Shape();
+    const hw = width / 2 - radius;
+    const hh = height / 2 - radius;
+
+    shape.absarc(-hw, -hh, radius, -Math.PI, -Math.PI / 2, false);
+    shape.absarc(hw, -hh, radius, -Math.PI / 2, 0, false);
+    shape.absarc(hw, hh, radius, 0, Math.PI / 2, false);
+    shape.absarc(-hw, hh, radius, Math.PI / 2, Math.PI, false);
+    const extrudeSettings = {
+      depth: depth,
+      bevelEnabled: false,
+      steps: smoothness
+    };
+    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geometry.center();
+    return geometry;
+  }
+
+  function generateProceduralEnvironment(target) {
+    const size = target.width;
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.canvas.width = size * 4;
+    ctx.canvas.height = size * 3;
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height);
+    gradient.addColorStop(0, '#0c1624');
+    gradient.addColorStop(0.4, '#050811');
+    gradient.addColorStop(0.7, '#020308');
+    gradient.addColorStop(1, '#000000');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+    ctx.fillStyle = 'rgba(90, 150, 255, 0.45)';
+    for (let i = 0; i < 40; i++) {
+      const r = 80 + Math.random() * 200;
+      const x = Math.random() * ctx.canvas.width;
+      const y = Math.random() * ctx.canvas.height * 0.7;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    const tmpTex = new THREE.CanvasTexture(ctx.canvas);
+    tmpTex.needsUpdate = true;
+    const cubeTex = new THREE.CubeTexture();
+    cubeTex.images = [];
+
+    // Very approximate mapping: sample six crops.
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    function crop(sx, sy, sw, sh) {
+      const c = document.createElement('canvas');
+      c.width = size;
+      c.height = size;
+      const cctx = c.getContext('2d');
+      cctx.drawImage(ctx.canvas, sx, sy, sw, sh, 0, 0, size, size);
+      return c;
+    }
+
+    cubeTex.images[0] = crop(0, h / 3, w / 4, h / 3);       // px
+    cubeTex.images[1] = crop(w * 3 / 4, h / 3, w / 4, h / 3); // nx
+    cubeTex.images[2] = crop(w / 4, 0, w / 4, h / 3);       // py
+    cubeTex.images[3] = crop(w / 4, h * 2 / 3, w / 4, h / 3); // ny
+    cubeTex.images[4] = crop(w / 4, h / 3, w / 4, h / 3);   // pz
+    cubeTex.images[5] = crop(w / 2, h / 3, w / 4, h / 3);   // nz
+    cubeTex.needsUpdate = true;
+    cubeTex.encoding = THREE.sRGBEncoding;
+
+    target.texture = cubeTex;
+    target.texture.needsUpdate = true;
+  }
+
+  // Brushed metal-like texture
+  function createBrushedTexture() {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const gradient = ctx.createLinearGradient(0, 0, size, 0);
+    gradient.addColorStop(0, '#bbbbbb');
+    gradient.addColorStop(0.5, '#f0f0f0');
+    gradient.addColorStop(1, '#aaaaaa');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.fillStyle = 'rgba(180,180,180,0.35)';
+    for (let i = 0; i < 500; i++) {
+      const y = Math.random() * size;
+      const len = 15 + Math.random() * 20;
+      const alpha = 0.08 + Math.random() * 0.08;
+      ctx.strokeStyle = 'rgba(200,200,200,' + alpha + ')';
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(size, y + (Math.random() - 0.5) * len);
+      ctx.stroke();
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(2, 4);
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // Carbon fiber-like texture
+  function createCarbonTexture() {
+    const size = 128;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#202020';
+    ctx.fillRect(0, 0, size, size);
+
+    const cell = 8;
+    for (let y = 0; y < size; y += cell) {
+      for (let x = 0; x < size; x += cell) {
+        const isEven = ((x / cell) + (y / cell)) % 2 === 0;
+        ctx.fillStyle = isEven ? '#2c2c2c' : '#111111';
+        ctx.fillRect(x, y, cell, cell);
+        ctx.fillStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillRect(x, y, cell / 2, cell / 2);
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(6, 10);
+    tex.anisotropy = 8;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  // Screen wallpaper texture
+  function createScreenTexture(type) {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size * 2; // portrait
+    const ctx = canvas.getContext('2d');
+
+    if (type === 'gradient') {
+      const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      grd.addColorStop(0, '#2a64ff');
+      grd.addColorStop(0.4, '#9115ff');
+      grd.addColorStop(0.8, '#ff4f74');
+      grd.addColorStop(1, '#fee140');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      for (let i = 0; i < 40; i++) {
+        const r = 20 + Math.random() * 60;
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (type === 'grid') {
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(0,255,160,0.4)';
+      ctx.lineWidth = 1;
+      const step = 16;
+      for (let x = 0; x <= canvas.width; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x + 0.5, 0);
+        ctx.lineTo(x + 0.5, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= canvas.height; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y + 0.5);
+        ctx.lineTo(canvas.width, y + 0.5);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(0,255,200,0.7)';
+      for (let i = 0; i < 50; i++) {
+        const r = 1 + Math.random() * 2;
+        const x = Math.random() * canvas.width;
+        const y = Math.random() * canvas.height;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (type === 'waves') {
+      const grd = ctx.createLinearGradient(0, 0, canvas.width, 0);
+      grd.addColorStop(0, '#00172a');
+      grd.addColorStop(1, '#03506f');
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+      ctx.lineWidth = 2.5;
+      for (let i = 0; i < 6; i++) {
+        const amp = 10 + i * 8;
+        const freq = 0.02 + i * 0.01;
+        const phase = i * Math.PI / 4;
+        ctx.beginPath();
+        for (let x = 0; x <= canvas.width; x++) {
+          const y = canvas.height / 2 +
+            Math.sin((x * freq) + phase) * amp +
+            (i - 3) * 18;
+          if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    tex.anisotropy = 8;
+    tex.encoding = THREE.sRGBEncoding;
+    return tex;
+  }
+
+  function bindUI() {
+    const bodyColor = document.getElementById('bodyColor');
+    const bodyMetallic = document.getElementById('bodyMetallic');
+    const bodyRoughness = document.getElementById('bodyRoughness');
+    const bodyTexture = document.getElementById('bodyTexture');
+    const screenOn = document.getElementById('screenOn');
+    const screenWallpaper = document.getElementById('screenWallpaper');
+    const camBumpToggle = document.getElementById('camBumpToggle');
+    const buttonsToggle = document.getElementById('buttonsToggle');
+    const standToggle = document.getElementById('standToggle');
+    const exportJSON = document.getElementById('exportJSON');
+    const exportPNG = document.getElementById('exportPNG');
+    const snapshotLink = document.getElementById('snapshotLink');
+    const bookmarkButtons = document.querySelectorAll('#bookmarkButtons button');
+    const saveView = document.getElementById('saveView');
+    const loadView = document.getElementById('loadView');
+
+    bodyColor.addEventListener('input', () => {
+      params.bodyColor = bodyColor.value;
+      bodyMesh.material.color.set(params.bodyColor);
+    });
+
+    bodyMetallic.value = params.bodyMetallic;
+    bodyRoughness.value = params.bodyRoughness;
+
+    bodyMetallic.addEventListener('change', () => {
+      params.bodyMetallic = parseFloat(bodyMetallic.value);
+      bodyMesh.material.metalness = params.bodyMetallic;
+      bodyMesh.material.needsUpdate = true;
+    });
+
+    bodyRoughness.addEventListener('change', () => {
+      params.bodyRoughness = parseFloat(bodyRoughness.value);
+      bodyMesh.material.roughness = params.bodyRoughness;
+      bodyMesh.material.needsUpdate = true;
+    });
+
+    bodyTexture.addEventListener('change', () => {
+      params.bodyTexture = bodyTexture.value;
+      updateBodyTexture();
+    });
+
+    screenOn.addEventListener('change', () => {
+      params.screenOn = screenOn.checked;
+      updateScreen();
+    });
+
+    screenWallpaper.addEventListener('change', () => {
+      params.screenWallpaper = screenWallpaper.value;
+      updateScreen();
+    });
+
+    camBumpToggle.addEventListener('change', () => {
+      params.camBump = camBumpToggle.checked;
+      camBumpMesh.visible = params.camBump;
+      lensMesh.visible = params.camBump;
+      flashMesh.visible = params.camBump;
+    });
+
+    buttonsToggle.addEventListener('change', () => {
+      params.buttons = buttonsToggle.checked;
+      buttonsGroup.visible = params.buttons;
+    });
+
+    standToggle.addEventListener('change', () => {
+      params.stand = standToggle.checked;
+      standMesh.visible = params.stand;
+    });
+
+    // Camera bookmarks
+    bookmarkButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const view = btn.getAttribute('data-view');
+        jumpToView(view);
+      });
+    });
+
+    saveView.addEventListener('click', () => {
+      savedView = {
+        position: camera.position.clone(),
+        target: controls.target.clone()
+      };
+    });
+
+    loadView.addEventListener('click', () => {
+      if (!savedView) return;
+      camera.position.copy(savedView.position);
+      controls.target.copy(savedView.target);
+      controls.update();
+    });
+
+    // Export JSON
+    exportJSON.addEventListener('click', () => {
+      const config = getCurrentConfig();
+      const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'phone_configuration.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // Export PNG
+    exportPNG.addEventListener('click', () => {
+      // Render once to ensure up to date
+      renderer.render(scene, camera);
+      const dataURL = renderer.domElement.toDataURL('image/png');
+      snapshotLink.href = dataURL;
+      snapshotLink.click();
+    });
+
+    // Apply initial state
+    updateBodyTexture();
+    updateScreen();
+  }
+
+  function updateBodyTexture() {
+    const mat = bodyMesh.material;
+    if (params.bodyTexture === 'brushed') {
+      mat.map = bodyTextureBrushed;
+      mat.normalMap = null;
+    } else if (params.bodyTexture === 'carbon') {
+      mat.map = bodyTextureCarbon;
+      mat.normalMap = null;
+    } else {
+      mat.map = null;
+      mat.normalMap = null;
+    }
+    mat.needsUpdate = true;
+  }
+
+  function updateScreen() {
+    if (!params.screenOn) {
+      screenMesh.material.map = null;
+      screenMesh.material.color.set(0x000000);
+      screenMesh.material.needsUpdate = true;
+      return;
+    }
+    const tex = screenTextures[params.screenWallpaper] || screenTextures.gradient;
+    screenMesh.material.map = tex;
+    screenMesh.material.color.set(0xffffff);
+    screenMesh.material.needsUpdate = true;
+  }
+
+  function jumpToView(viewName) {
+    const targetPos = new THREE.Vector3();
+    const targetLook = new THREE.Vector3(0, bodyMesh.position.y, 0);
+
+    if (viewName === 'front') {
+      targetPos.set(0, bodyMesh.position.y, 2.4);
+    } else if (viewName === 'back') {
+      targetPos.set(0, bodyMesh.position.y, -2.4);
+    } else { // iso
+      targetPos.set(2.6, 1.9, 2.4);
+    }
+
+    animateCameraTo(targetPos, targetLook, 500);
+  }
+
+  function animateCameraTo(newPos, newTarget, duration) {
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const startTime = performance.now();
+
+    function update() {
+      const now = performance.now();
+      const t = Math.min((now - startTime) / duration, 1);
+      const s = t * (2 - t); // ease out
+      camera.position.lerpVectors(startPos, newPos, s);
+      controls.target.lerpVectors(startTarget, newTarget, s);
+      controls.update();
+      if (t < 1) {
+        requestAnimationFrame(update);
+      }
+    }
+    requestAnimationFrame(update);
+  }
+
+  function getCurrentConfig() {
+    return {
+      body: {
+        color: params.bodyColor,
+        metallic: params.bodyMetallic,
+        roughness: params.bodyRoughness,
+        texture: params.bodyTexture
+      },
+      screen: {
+        on: params.screenOn,
+        wallpaper: params.screenWallpaper
+      },
+      extras: {
+        cameraBump: params.camBump,
+        buttons: params.buttons,
+        stand: params.stand
+      },
+      camera: {
+        position: camera.position.toArray(),
+        target: controls.target.toArray()
+      }
+    };
+  }
+
+  function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+})();
+</script>
+</body>
+</html>
