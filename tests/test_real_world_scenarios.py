@@ -287,14 +287,17 @@ class TestDocumentationCompleteness:
         print("✅ Main evaluation guide exists")
     
     def test_implementation_guide_exists(self):
-        """Verify LLM judge criteria documentation exists"""
-        assert os.path.exists('LLM_JUDGE_CRITERIA.md'), "LLM judge criteria missing"
-        print("✅ LLM judge criteria exists")
+        """Verify evaluation documentation is comprehensive"""
+        assert os.path.exists('EVALUATION.md'), "Consolidated evaluation guide missing"
+        # Check file has substantial content (>10KB)
+        size = os.path.getsize('EVALUATION.md')
+        assert size > 10000, f"EVALUATION.md too small ({size} bytes)"
+        print("✅ Comprehensive evaluation guide exists")
     
     def test_comparison_guide_exists(self):
-        """Verify best practices documentation exists"""
-        assert os.path.exists('LLM_JUDGE_BEST_PRACTICES.md'), "Best practices guide missing"
-        print("✅ Best practices guide exists")
+        """Verify README exists"""
+        assert os.path.exists('README.md'), "README missing"
+        print("✅ README exists")
 
 
 if __name__ == "__main__":
