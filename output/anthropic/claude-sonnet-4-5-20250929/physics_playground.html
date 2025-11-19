@@ -31,13 +31,7 @@
             border-radius: 10px;
             color: white;
             min-width: 250px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        }
-        
-        #controls h2 {
-            margin-bottom: 15px;
-            font-size: 20px;
-            color: #4CAF50;
+            backdrop-filter: blur(10px);
         }
         
         .control-group {
@@ -48,27 +42,30 @@
             display: block;
             margin-bottom: 5px;
             font-size: 14px;
+            font-weight: bold;
         }
         
         button {
             width: 100%;
             padding: 10px;
             margin: 5px 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             border: none;
             border-radius: 5px;
-            background: #4CAF50;
             color: white;
             cursor: pointer;
             font-size: 14px;
-            transition: background 0.3s;
+            font-weight: bold;
+            transition: transform 0.2s, box-shadow 0.2s;
         }
         
         button:hover {
-            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
         }
         
         button:active {
-            transform: scale(0.98);
+            transform: translateY(0);
         }
         
         input[type="range"] {
@@ -76,23 +73,21 @@
             margin: 5px 0;
         }
         
-        .toggle-btn {
-            background: #2196F3;
-        }
-        
-        .toggle-btn:hover {
-            background: #0b7dda;
-        }
-        
-        .toggle-btn.active {
-            background: #ff9800;
-        }
-        
         .value-display {
             display: inline-block;
             float: right;
-            font-weight: bold;
-            color: #4CAF50;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        
+        .toggle-btn {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .toggle-btn.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         }
         
         #info {
@@ -107,20 +102,19 @@
             max-width: 300px;
         }
         
-        #spawn-controls {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            color: white;
-            min-width: 200px;
+        #spawn-buttons {
+            margin-top: 10px;
         }
         
-        #spawn-controls h3 {
+        .spawn-btn {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+        
+        h3 {
             margin-bottom: 10px;
-            color: #2196F3;
+            font-size: 16px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+            padding-bottom: 5px;
         }
     </style>
 </head>
@@ -128,83 +122,64 @@
     <div id="canvas-container"></div>
     
     <div id="controls">
-        <h2>⚙️ Physics Controls</h2>
+        <h3>Physics Playground</h3>
         
         <div class="control-group">
             <label>
                 Gravity: <span class="value-display" id="gravity-value">-9.82</span>
             </label>
-            <input type="range" id="gravity-slider" min="-30" max="0" step="0.1" value="-9.82">
+            <input type="range" id="gravity-slider" min="-20" max="0" step="0.1" value="-9.82">
         </div>
         
         <div class="control-group">
-            <button id="slow-motion-btn" class="toggle-btn">🐌 Slow Motion: OFF</button>
+            <button id="slowmo-btn" class="toggle-btn">Slow Motion: OFF</button>
         </div>
         
         <div class="control-group">
-            <button id="reset-btn">🔄 Reset Scene</button>
+            <button id="reset-btn">Reset Scene</button>
         </div>
-    </div>
-    
-    <div id="spawn-controls">
-        <h3>🎮 Spawn Objects</h3>
-        <button id="spawn-box-btn">📦 Add Box</button>
-        <button id="spawn-sphere-btn">⚽ Add Sphere</button>
-        <button id="spawn-stack-btn">🏗️ Add Stack</button>
-        <button id="spawn-ragdoll-btn">🤸 Add Ragdoll</button>
-        <button id="spawn-chain-btn">⛓️ Add Chain</button>
+        
+        <div id="spawn-buttons">
+            <button class="spawn-btn" id="spawn-box">Add Box</button>
+            <button class="spawn-btn" id="spawn-sphere">Add Sphere</button>
+            <button class="spawn-btn" id="spawn-ragdoll">Add Ragdoll</button>
+            <button class="spawn-btn" id="spawn-chain">Add Chain</button>
+        </div>
     </div>
     
     <div id="info">
-        <strong>🎯 Controls:</strong><br>
-        • Click and drag objects with mouse<br>
-        • Scroll to zoom in/out<br>
-        • Right-click drag to rotate camera<br>
-        • Use controls to adjust physics<br>
-        • Spawn different objects to play!
+        <strong>Controls:</strong><br>
+        • Click and drag objects to move them<br>
+        • Use spawn buttons to add objects<br>
+        • Adjust gravity and time scale<br>
+        • Objects: Boxes, Spheres, Ragdolls, Chains
     </div>
 
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-        }
-    }
-    </script>
-
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        
-        // Load Cannon.js from CDN
-        const CANNON = await import('https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js');
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
+    
+    <script>
         // Scene setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87ceeb);
-        scene.fog = new THREE.Fog(0x87ceeb, 50, 200);
-
+        scene.fog = new THREE.Fog(0x87ceeb, 20, 100);
+        
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 10, 20);
-
+        camera.position.set(10, 10, 10);
+        camera.lookAt(0, 0, 0);
+        
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.getElementById('canvas-container').appendChild(renderer.domElement);
-
-        // Orbit Controls
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-
+        
         // Lighting
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
-
+        
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(10, 20, 10);
+        directionalLight.position.set(10, 20, 5);
         directionalLight.castShadow = true;
         directionalLight.shadow.camera.left = -20;
         directionalLight.shadow.camera.right = 20;
@@ -213,82 +188,53 @@
         directionalLight.shadow.mapSize.width = 2048;
         directionalLight.shadow.mapSize.height = 2048;
         scene.add(directionalLight);
-
-        const hemisphereLight = new THREE.HemisphereLight(0x87ceeb, 0x545454, 0.5);
-        scene.add(hemisphereLight);
-
-        // Physics World
+        
+        // Physics world
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
         world.broadphase = new CANNON.NaiveBroadphase();
         world.solver.iterations = 10;
         world.defaultContactMaterial.contactEquationStiffness = 1e8;
         world.defaultContactMaterial.contactEquationRelaxation = 3;
-
-        // Materials
-        const groundMaterial = new CANNON.Material('ground');
-        const objectMaterial = new CANNON.Material('object');
         
-        const groundObjectContact = new CANNON.ContactMaterial(
-            groundMaterial,
-            objectMaterial,
-            { friction: 0.4, restitution: 0.3 }
-        );
-        world.addContactMaterial(groundObjectContact);
-
-        // Arrays to store objects
-        const bodies = [];
-        const meshes = [];
-        const constraints = [];
-
-        // Ground
-        const groundGeometry = new THREE.PlaneGeometry(100, 100);
-        const groundMaterialThree = new THREE.MeshStandardMaterial({ 
-            color: 0x228b22,
-            roughness: 0.8,
-            metalness: 0.2
+        // Materials
+        const groundMaterial = new CANNON.Material('groundMaterial');
+        const objectMaterial = new CANNON.Material('objectMaterial');
+        const contactMaterial = new CANNON.ContactMaterial(groundMaterial, objectMaterial, {
+            friction: 0.4,
+            restitution: 0.3
         });
-        const groundMesh = new THREE.Mesh(groundGeometry, groundMaterialThree);
+        world.addContactMaterial(contactMaterial);
+        
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(50, 50);
+        const groundMesh = new THREE.Mesh(
+            groundGeometry,
+            new THREE.MeshStandardMaterial({ 
+                color: 0x3a8c3a,
+                roughness: 0.8,
+                metalness: 0.2
+            })
+        );
         groundMesh.rotation.x = -Math.PI / 2;
         groundMesh.receiveShadow = true;
         scene.add(groundMesh);
-
+        
         const groundShape = new CANNON.Plane();
         const groundBody = new CANNON.Body({ mass: 0, material: groundMaterial });
         groundBody.addShape(groundShape);
         groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         world.addBody(groundBody);
-
-        // Add walls
-        function createWall(width, height, depth, position, rotation = [0, 0, 0]) {
-            const wallGeometry = new THREE.BoxGeometry(width, height, depth);
-            const wallMaterial = new THREE.MeshStandardMaterial({ 
-                color: 0x808080,
-                transparent: true,
-                opacity: 0.3
-            });
-            const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
-            wallMesh.position.copy(position);
-            wallMesh.receiveShadow = true;
-            scene.add(wallMesh);
-
-            const wallShape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
-            const wallBody = new CANNON.Body({ mass: 0 });
-            wallBody.addShape(wallShape);
-            wallBody.position.copy(position);
-            world.addBody(wallBody);
-        }
-
-        createWall(100, 20, 1, new THREE.Vector3(0, 10, -20));
-        createWall(100, 20, 1, new THREE.Vector3(0, 10, 20));
-        createWall(1, 20, 40, new THREE.Vector3(-20, 10, 0));
-        createWall(1, 20, 40, new THREE.Vector3(20, 10, 0));
-
-        // Helper function to create box
-        function createBox(size, position, color = Math.random() * 0xffffff) {
-            const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+        
+        // Arrays to keep track of objects
+        const objects = [];
+        const constraints = [];
+        
+        // Box creation
+        function createBox(x, y, z, width = 1, height = 1, depth = 1, mass = 1) {
+            const geometry = new THREE.BoxGeometry(width, height, depth);
             const material = new THREE.MeshStandardMaterial({ 
-                color: color,
+                color: Math.random() * 0xffffff,
                 roughness: 0.5,
                 metalness: 0.3
             });
@@ -296,502 +242,402 @@
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
-
-            const shape = new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
-            const body = new CANNON.Body({ 
-                mass: 1,
-                material: objectMaterial,
-                linearDamping: 0.1,
-                angularDamping: 0.1
-            });
+            
+            const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2));
+            const body = new CANNON.Body({ mass, material: objectMaterial });
             body.addShape(shape);
-            body.position.copy(position);
+            body.position.set(x, y, z);
             world.addBody(body);
-
-            meshes.push(mesh);
-            bodies.push(body);
-
+            
+            objects.push({ mesh, body });
             return { mesh, body };
         }
-
-        // Helper function to create sphere
-        function createSphere(radius, position, color = Math.random() * 0xffffff) {
+        
+        // Sphere creation
+        function createSphere(x, y, z, radius = 0.5, mass = 1) {
             const geometry = new THREE.SphereGeometry(radius, 32, 32);
             const material = new THREE.MeshStandardMaterial({ 
-                color: color,
-                roughness: 0.4,
-                metalness: 0.4
+                color: Math.random() * 0xffffff,
+                roughness: 0.3,
+                metalness: 0.5
             });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
-
+            
             const shape = new CANNON.Sphere(radius);
-            const body = new CANNON.Body({ 
-                mass: 1,
-                material: objectMaterial,
-                linearDamping: 0.1,
-                angularDamping: 0.1
-            });
+            const body = new CANNON.Body({ mass, material: objectMaterial });
             body.addShape(shape);
-            body.position.copy(position);
+            body.position.set(x, y, z);
             world.addBody(body);
-
-            meshes.push(mesh);
-            bodies.push(body);
-
+            
+            objects.push({ mesh, body });
             return { mesh, body };
         }
-
+        
         // Create ragdoll
-        function createRagdoll(position) {
+        function createRagdoll(x, y, z) {
             const parts = [];
             
             // Head
-            const head = createSphere(0.5, new THREE.Vector3(position.x, position.y + 3, position.z), 0xffdbac);
+            const head = createSphere(x, y + 2.3, z, 0.3, 1);
             parts.push(head);
-
+            
             // Torso
-            const torso = createBox(
-                { x: 1.2, y: 1.5, z: 0.6 },
-                new THREE.Vector3(position.x, position.y + 1.5, position.z),
-                0x4169e1
-            );
+            const torso = createBox(x, y + 1.5, z, 0.5, 0.8, 0.3, 2);
             parts.push(torso);
-
-            // Arms
-            const leftUpperArm = createBox(
-                { x: 0.3, y: 0.8, z: 0.3 },
-                new THREE.Vector3(position.x - 0.8, position.y + 2, position.z),
-                0xff6347
-            );
-            parts.push(leftUpperArm);
-
-            const rightUpperArm = createBox(
-                { x: 0.3, y: 0.8, z: 0.3 },
-                new THREE.Vector3(position.x + 0.8, position.y + 2, position.z),
-                0xff6347
-            );
-            parts.push(rightUpperArm);
-
-            const leftLowerArm = createBox(
-                { x: 0.3, y: 0.8, z: 0.3 },
-                new THREE.Vector3(position.x - 0.8, position.y + 0.8, position.z),
-                0xffa07a
-            );
-            parts.push(leftLowerArm);
-
-            const rightLowerArm = createBox(
-                { x: 0.3, y: 0.8, z: 0.3 },
-                new THREE.Vector3(position.x + 0.8, position.y + 0.8, position.z),
-                0xffa07a
-            );
-            parts.push(rightLowerArm);
-
-            // Legs
-            const leftUpperLeg = createBox(
-                { x: 0.4, y: 0.9, z: 0.4 },
-                new THREE.Vector3(position.x - 0.4, position.y + 0.2, position.z),
-                0x2f4f4f
-            );
-            parts.push(leftUpperLeg);
-
-            const rightUpperLeg = createBox(
-                { x: 0.4, y: 0.9, z: 0.4 },
-                new THREE.Vector3(position.x + 0.4, position.y + 0.2, position.z),
-                0x2f4f4f
-            );
-            parts.push(rightUpperLeg);
-
-            const leftLowerLeg = createBox(
-                { x: 0.35, y: 0.9, z: 0.35 },
-                new THREE.Vector3(position.x - 0.4, position.y - 1, position.z),
-                0x696969
-            );
-            parts.push(leftLowerLeg);
-
-            const rightLowerLeg = createBox(
-                { x: 0.35, y: 0.9, z: 0.35 },
-                new THREE.Vector3(position.x + 0.4, position.y - 1, position.z),
-                0x696969
-            );
-            parts.push(rightLowerLeg);
-
-            // Create joints
-            // Neck
-            const neckConstraint = new CANNON.ConeTwistConstraint(
-                head.body,
-                torso.body,
-                {
-                    pivotA: new CANNON.Vec3(0, -0.5, 0),
-                    pivotB: new CANNON.Vec3(0, 0.75, 0),
-                    axisA: new CANNON.Vec3(0, 1, 0),
-                    axisB: new CANNON.Vec3(0, 1, 0),
-                    angle: Math.PI / 6,
-                    twistAngle: Math.PI / 8
-                }
-            );
-            world.addConstraint(neckConstraint);
-            constraints.push(neckConstraint);
-
-            // Shoulders
-            const leftShoulderConstraint = new CANNON.ConeTwistConstraint(
-                leftUpperArm.body,
-                torso.body,
-                {
-                    pivotA: new CANNON.Vec3(0, 0.4, 0),
-                    pivotB: new CANNON.Vec3(-0.6, 0.6, 0),
-                    axisA: new CANNON.Vec3(0, 1, 0),
-                    axisB: new CANNON.Vec3(0, 1, 0),
-                    angle: Math.PI / 3
-                }
-            );
+            
+            // Upper arms
+            const leftUpperArm = createBox(x - 0.5, y + 1.7, z, 0.5, 0.2, 0.2, 0.3);
+            const rightUpperArm = createBox(x + 0.5, y + 1.7, z, 0.5, 0.2, 0.2, 0.3);
+            parts.push(leftUpperArm, rightUpperArm);
+            
+            // Lower arms
+            const leftLowerArm = createBox(x - 1, y + 1.7, z, 0.5, 0.2, 0.2, 0.3);
+            const rightLowerArm = createBox(x + 1, y + 1.7, z, 0.5, 0.2, 0.2, 0.3);
+            parts.push(leftLowerArm, rightLowerArm);
+            
+            // Upper legs
+            const leftUpperLeg = createBox(x - 0.15, y + 0.6, z, 0.2, 0.6, 0.2, 0.5);
+            const rightUpperLeg = createBox(x + 0.15, y + 0.6, z, 0.2, 0.6, 0.2, 0.5);
+            parts.push(leftUpperLeg, rightUpperLeg);
+            
+            // Lower legs
+            const leftLowerLeg = createBox(x - 0.15, y + 0.1, z, 0.2, 0.5, 0.2, 0.5);
+            const rightLowerLeg = createBox(x + 0.15, y + 0.1, z, 0.2, 0.5, 0.2, 0.5);
+            parts.push(leftLowerLeg, rightLowerLeg);
+            
+            // Joints
+            // Head to torso
+            const headConstraint = new CANNON.ConeTwistConstraint(torso.body, head.body, {
+                pivotA: new CANNON.Vec3(0, 0.5, 0),
+                pivotB: new CANNON.Vec3(0, -0.3, 0),
+                axisA: new CANNON.Vec3(0, 1, 0),
+                axisB: new CANNON.Vec3(0, 1, 0),
+                angle: Math.PI / 6,
+                twistAngle: Math.PI / 6
+            });
+            world.addConstraint(headConstraint);
+            constraints.push(headConstraint);
+            
+            // Arms to torso
+            const leftShoulderConstraint = new CANNON.ConeTwistConstraint(torso.body, leftUpperArm.body, {
+                pivotA: new CANNON.Vec3(-0.3, 0.3, 0),
+                pivotB: new CANNON.Vec3(0.25, 0, 0),
+                axisA: new CANNON.Vec3(1, 0, 0),
+                axisB: new CANNON.Vec3(1, 0, 0),
+                angle: Math.PI / 3
+            });
             world.addConstraint(leftShoulderConstraint);
             constraints.push(leftShoulderConstraint);
-
-            const rightShoulderConstraint = new CANNON.ConeTwistConstraint(
-                rightUpperArm.body,
-                torso.body,
-                {
-                    pivotA: new CANNON.Vec3(0, 0.4, 0),
-                    pivotB: new CANNON.Vec3(0.6, 0.6, 0),
-                    axisA: new CANNON.Vec3(0, 1, 0),
-                    axisB: new CANNON.Vec3(0, 1, 0),
-                    angle: Math.PI / 3
-                }
-            );
+            
+            const rightShoulderConstraint = new CANNON.ConeTwistConstraint(torso.body, rightUpperArm.body, {
+                pivotA: new CANNON.Vec3(0.3, 0.3, 0),
+                pivotB: new CANNON.Vec3(-0.25, 0, 0),
+                axisA: new CANNON.Vec3(-1, 0, 0),
+                axisB: new CANNON.Vec3(-1, 0, 0),
+                angle: Math.PI / 3
+            });
             world.addConstraint(rightShoulderConstraint);
             constraints.push(rightShoulderConstraint);
-
-            // Elbows
-            const leftElbowConstraint = new CANNON.HingeConstraint(
-                leftUpperArm.body,
-                leftLowerArm.body,
-                {
-                    pivotA: new CANNON.Vec3(0, -0.4, 0),
-                    pivotB: new CANNON.Vec3(0, 0.4, 0),
-                    axisA: new CANNON.Vec3(1, 0, 0),
-                    axisB: new CANNON.Vec3(1, 0, 0)
-                }
-            );
+            
+            // Elbow joints
+            const leftElbowConstraint = new CANNON.HingeConstraint(leftUpperArm.body, leftLowerArm.body, {
+                pivotA: new CANNON.Vec3(-0.25, 0, 0),
+                pivotB: new CANNON.Vec3(0.25, 0, 0),
+                axisA: new CANNON.Vec3(0, 0, 1),
+                axisB: new CANNON.Vec3(0, 0, 1)
+            });
             world.addConstraint(leftElbowConstraint);
             constraints.push(leftElbowConstraint);
-
-            const rightElbowConstraint = new CANNON.HingeConstraint(
-                rightUpperArm.body,
-                rightLowerArm.body,
-                {
-                    pivotA: new CANNON.Vec3(0, -0.4, 0),
-                    pivotB: new CANNON.Vec3(0, 0.4, 0),
-                    axisA: new CANNON.Vec3(1, 0, 0),
-                    axisB: new CANNON.Vec3(1, 0, 0)
-                }
-            );
+            
+            const rightElbowConstraint = new CANNON.HingeConstraint(rightUpperArm.body, rightLowerArm.body, {
+                pivotA: new CANNON.Vec3(0.25, 0, 0),
+                pivotB: new CANNON.Vec3(-0.25, 0, 0),
+                axisA: new CANNON.Vec3(0, 0, 1),
+                axisB: new CANNON.Vec3(0, 0, 1)
+            });
             world.addConstraint(rightElbowConstraint);
             constraints.push(rightElbowConstraint);
-
-            // Hips
-            const leftHipConstraint = new CANNON.ConeTwistConstraint(
-                leftUpperLeg.body,
-                torso.body,
-                {
-                    pivotA: new CANNON.Vec3(0, 0.45, 0),
-                    pivotB: new CANNON.Vec3(-0.4, -0.75, 0),
-                    axisA: new CANNON.Vec3(0, 1, 0),
-                    axisB: new CANNON.Vec3(0, 1, 0),
-                    angle: Math.PI / 3
-                }
-            );
+            
+            // Hip joints
+            const leftHipConstraint = new CANNON.ConeTwistConstraint(torso.body, leftUpperLeg.body, {
+                pivotA: new CANNON.Vec3(-0.15, -0.5, 0),
+                pivotB: new CANNON.Vec3(0, 0.3, 0),
+                axisA: new CANNON.Vec3(0, -1, 0),
+                axisB: new CANNON.Vec3(0, 1, 0),
+                angle: Math.PI / 4
+            });
             world.addConstraint(leftHipConstraint);
             constraints.push(leftHipConstraint);
-
-            const rightHipConstraint = new CANNON.ConeTwistConstraint(
-                rightUpperLeg.body,
-                torso.body,
-                {
-                    pivotA: new CANNON.Vec3(0, 0.45, 0),
-                    pivotB: new CANNON.Vec3(0.4, -0.75, 0),
-                    axisA: new CANNON.Vec3(0, 1, 0),
-                    axisB: new CANNON.Vec3(0, 1, 0),
-                    angle: Math.PI / 3
-                }
-            );
+            
+            const rightHipConstraint = new CANNON.ConeTwistConstraint(torso.body, rightUpperLeg.body, {
+                pivotA: new CANNON.Vec3(0.15, -0.5, 0),
+                pivotB: new CANNON.Vec3(0, 0.3, 0),
+                axisA: new CANNON.Vec3(0, -1, 0),
+                axisB: new CANNON.Vec3(0, 1, 0),
+                angle: Math.PI / 4
+            });
             world.addConstraint(rightHipConstraint);
             constraints.push(rightHipConstraint);
-
-            // Knees
-            const leftKneeConstraint = new CANNON.HingeConstraint(
-                leftUpperLeg.body,
-                leftLowerLeg.body,
-                {
-                    pivotA: new CANNON.Vec3(0, -0.45, 0),
-                    pivotB: new CANNON.Vec3(0, 0.45, 0),
-                    axisA: new CANNON.Vec3(1, 0, 0),
-                    axisB: new CANNON.Vec3(1, 0, 0)
-                }
-            );
+            
+            // Knee joints
+            const leftKneeConstraint = new CANNON.HingeConstraint(leftUpperLeg.body, leftLowerLeg.body, {
+                pivotA: new CANNON.Vec3(0, -0.3, 0),
+                pivotB: new CANNON.Vec3(0, 0.25, 0),
+                axisA: new CANNON.Vec3(1, 0, 0),
+                axisB: new CANNON.Vec3(1, 0, 0)
+            });
             world.addConstraint(leftKneeConstraint);
             constraints.push(leftKneeConstraint);
-
-            const rightKneeConstraint = new CANNON.HingeConstraint(
-                rightUpperLeg.body,
-                rightLowerLeg.body,
-                {
-                    pivotA: new CANNON.Vec3(0, -0.45, 0),
-                    pivotB: new CANNON.Vec3(0, 0.45, 0),
-                    axisA: new CANNON.Vec3(1, 0, 0),
-                    axisB: new CANNON.Vec3(1, 0, 0)
-                }
-            );
+            
+            const rightKneeConstraint = new CANNON.HingeConstraint(rightUpperLeg.body, rightLowerLeg.body, {
+                pivotA: new CANNON.Vec3(0, -0.3, 0),
+                pivotB: new CANNON.Vec3(0, 0.25, 0),
+                axisA: new CANNON.Vec3(1, 0, 0),
+                axisB: new CANNON.Vec3(1, 0, 0)
+            });
             world.addConstraint(rightKneeConstraint);
             constraints.push(rightKneeConstraint);
+            
+            return parts;
         }
-
+        
         // Create chain with hinge joints
-        function createChain(position, numLinks = 8) {
-            const linkSize = { x: 0.3, y: 1.0, z: 0.3 };
-            let previousBody = null;
-
-            for (let i = 0; i < numLinks; i++) {
-                const linkPosition = new THREE.Vector3(
-                    position.x,
-                    position.y - i * linkSize.y,
-                    position.z
+        function createChain(x, y, z, length = 5) {
+            const links = [];
+            const linkSize = 0.3;
+            const linkSpacing = 0.4;
+            
+            for (let i = 0; i < length; i++) {
+                const link = createBox(
+                    x,
+                    y - i * linkSpacing,
+                    z,
+                    linkSize,
+                    linkSize,
+                    linkSize,
+                    i === 0 ? 0 : 0.5
                 );
-
-                const link = createBox(linkSize, linkPosition, 0xffd700);
-
-                if (i === 0) {
-                    // Fix first link
-                    link.body.mass = 0;
-                    link.body.updateMassProperties();
-                }
-
-                if (previousBody) {
-                    const constraint = new CANNON.HingeConstraint(
-                        previousBody,
-                        link.body,
-                        {
-                            pivotA: new CANNON.Vec3(0, -linkSize.y / 2, 0),
-                            pivotB: new CANNON.Vec3(0, linkSize.y / 2, 0),
-                            axisA: new CANNON.Vec3(1, 0, 0),
-                            axisB: new CANNON.Vec3(1, 0, 0)
-                        }
-                    );
+                links.push(link);
+                
+                if (i > 0) {
+                    const constraint = new CANNON.HingeConstraint(links[i - 1].body, link.body, {
+                        pivotA: new CANNON.Vec3(0, -linkSize / 2, 0),
+                        pivotB: new CANNON.Vec3(0, linkSize / 2, 0),
+                        axisA: new CANNON.Vec3(1, 0, 0),
+                        axisB: new CANNON.Vec3(1, 0, 0)
+                    });
                     world.addConstraint(constraint);
                     constraints.push(constraint);
                 }
-
-                previousBody = link.body;
             }
+            
+            return links;
         }
-
-        // Create initial stack
-        function createStack(basePosition) {
-            const boxSize = { x: 1, y: 1, z: 1 };
-            const levels = 5;
-
-            for (let level = 0; level < levels; level++) {
-                for (let x = 0; x < levels - level; x++) {
-                    const position = new THREE.Vector3(
-                        basePosition.x + (x - (levels - level - 1) / 2) * boxSize.x * 1.1,
-                        basePosition.y + level * boxSize.y * 1.1,
-                        basePosition.z
-                    );
-                    createBox(boxSize, position);
-                }
-            }
-        }
-
-        // Initialize scene
-        createStack(new THREE.Vector3(-5, 0.5, -5));
-        createSphere(1, new THREE.Vector3(5, 5, 5), 0xff0000);
-        createSphere(0.8, new THREE.Vector3(3, 5, 3), 0x00ff00);
-        createRagdoll(new THREE.Vector3(0, 5, 0));
-        createChain(new THREE.Vector3(8, 15, -5), 6);
-
+        
+        // Initial objects
+        createBox(0, 5, 0, 1, 1, 1, 1);
+        createBox(0, 6.5, 0, 1, 1, 1, 1);
+        createSphere(2, 5, 0, 0.5, 1);
+        createSphere(2, 6.5, 0, 0.5, 1);
+        createChain(-3, 8, 0, 6);
+        
         // Mouse interaction
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2();
         let selectedBody = null;
         let mouseConstraint = null;
-        const mouseBody = new CANNON.Body({ mass: 0 });
-        world.addBody(mouseBody);
-
-        function onMouseMove(event) {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-            if (selectedBody && mouseConstraint) {
-                raycaster.setFromCamera(mouse, camera);
-                const distance = selectedBody.position.distanceTo(camera.position);
-                const direction = raycaster.ray.direction;
-                const targetPosition = camera.position.clone().add(direction.multiplyScalar(distance));
-                mouseBody.position.copy(targetPosition);
-            }
-        }
-
+        const dragPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const intersection = new THREE.Vector3();
+        
         function onMouseDown(event) {
-            if (event.button !== 0) return;
-
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
+            
             raycaster.setFromCamera(mouse, camera);
+            
+            const meshes = objects.map(obj => obj.mesh);
             const intersects = raycaster.intersectObjects(meshes);
-
+            
             if (intersects.length > 0) {
-                const selectedMesh = intersects[0].object;
-                const index = meshes.indexOf(selectedMesh);
-                
-                if (index !== -1) {
-                    selectedBody = bodies[index];
-                    controls.enabled = false;
-
-                    const distance = selectedBody.position.distanceTo(camera.position);
-                    const direction = raycaster.ray.direction;
-                    const targetPosition = camera.position.clone().add(direction.multiplyScalar(distance));
-                    mouseBody.position.copy(targetPosition);
-
+                const obj = objects.find(o => o.mesh === intersects[0].object);
+                if (obj && obj.body.mass > 0) {
+                    selectedBody = obj.body;
+                    
+                    // Update drag plane to face camera
+                    const normal = new THREE.Vector3();
+                    normal.subVectors(camera.position, intersects[0].point).normalize();
+                    dragPlane.setFromNormalAndCoplanarPoint(normal, intersects[0].point);
+                    
+                    // Create constraint
+                    const pivot = new CANNON.Vec3();
+                    selectedBody.pointToLocalFrame(
+                        new CANNON.Vec3(
+                            intersects[0].point.x,
+                            intersects[0].point.y,
+                            intersects[0].point.z
+                        ),
+                        pivot
+                    );
+                    
+                    const mouseBody = new CANNON.Body({ mass: 0 });
+                    mouseBody.position.set(
+                        intersects[0].point.x,
+                        intersects[0].point.y,
+                        intersects[0].point.z
+                    );
+                    world.addBody(mouseBody);
+                    
                     mouseConstraint = new CANNON.PointToPointConstraint(
                         selectedBody,
-                        intersects[0].point,
+                        pivot,
                         mouseBody,
-                        new CANNON.Vec3()
+                        new CANNON.Vec3(0, 0, 0)
                     );
                     world.addConstraint(mouseConstraint);
+                    mouseConstraint.mouseBody = mouseBody;
                 }
             }
         }
-
+        
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            if (mouseConstraint) {
+                raycaster.setFromCamera(mouse, camera);
+                raycaster.ray.intersectPlane(dragPlane, intersection);
+                
+                mouseConstraint.mouseBody.position.copy(intersection);
+            }
+        }
+        
         function onMouseUp() {
             if (mouseConstraint) {
                 world.removeConstraint(mouseConstraint);
+                world.removeBody(mouseConstraint.mouseBody);
                 mouseConstraint = null;
+                selectedBody = null;
             }
-            selectedBody = null;
-            controls.enabled = true;
         }
-
-        window.addEventListener('mousemove', onMouseMove);
-        window.addEventListener('mousedown', onMouseDown);
-        window.addEventListener('mouseup', onMouseUp);
-
+        
+        renderer.domElement.addEventListener('mousedown', onMouseDown);
+        renderer.domElement.addEventListener('mousemove', onMouseMove);
+        renderer.domElement.addEventListener('mouseup', onMouseUp);
+        
         // Controls
-        let isSlowMotion = false;
-        let timeScale = 1.0;
-
-        const gravitySlider = document.getElementById('gravity-slider');
-        const gravityValue = document.getElementById('gravity-value');
-        const slowMotionBtn = document.getElementById('slow-motion-btn');
-        const resetBtn = document.getElementById('reset-btn');
-
-        gravitySlider.addEventListener('input', (e) => {
-            const gravity = parseFloat(e.target.value);
-            world.gravity.y = gravity;
-            gravityValue.textContent = gravity.toFixed(2);
+        let slowMotion = false;
+        let timeScale = 1;
+        
+        document.getElementById('gravity-slider').addEventListener('input', (e) => {
+            const value = parseFloat(e.target.value);
+            world.gravity.y = value;
+            document.getElementById('gravity-value').textContent = value.toFixed(2);
         });
-
-        slowMotionBtn.addEventListener('click', () => {
-            isSlowMotion = !isSlowMotion;
-            timeScale = isSlowMotion ? 0.3 : 1.0;
-            slowMotionBtn.textContent = isSlowMotion ? '🐌 Slow Motion: ON' : '🐌 Slow Motion: OFF';
-            slowMotionBtn.classList.toggle('active');
+        
+        document.getElementById('slowmo-btn').addEventListener('click', (e) => {
+            slowMotion = !slowMotion;
+            timeScale = slowMotion ? 0.2 : 1;
+            e.target.textContent = `Slow Motion: ${slowMotion ? 'ON' : 'OFF'}`;
+            e.target.classList.toggle('active');
         });
-
-        resetBtn.addEventListener('click', () => {
-            // Remove all bodies and meshes
-            bodies.forEach(body => world.removeBody(body));
-            meshes.forEach(mesh => scene.remove(mesh));
-            constraints.forEach(constraint => world.removeConstraint(constraint));
+        
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            // Remove all objects
+            objects.forEach(obj => {
+                scene.remove(obj.mesh);
+                world.removeBody(obj.body);
+            });
+            objects.length = 0;
             
-            bodies.length = 0;
-            meshes.length = 0;
+            // Remove all constraints
+            constraints.forEach(constraint => {
+                world.removeConstraint(constraint);
+            });
             constraints.length = 0;
-
-            // Recreate initial scene
-            createStack(new THREE.Vector3(-5, 0.5, -5));
-            createSphere(1, new THREE.Vector3(5, 5, 5), 0xff0000);
-            createSphere(0.8, new THREE.Vector3(3, 5, 3), 0x00ff00);
-            createRagdoll(new THREE.Vector3(0, 5, 0));
-            createChain(new THREE.Vector3(8, 15, -5), 6);
+            
+            // Add initial objects
+            createBox(0, 5, 0, 1, 1, 1, 1);
+            createBox(0, 6.5, 0, 1, 1, 1, 1);
+            createSphere(2, 5, 0, 0.5, 1);
+            createSphere(2, 6.5, 0, 0.5, 1);
+            createChain(-3, 8, 0, 6);
         });
-
-        // Spawn buttons
-        document.getElementById('spawn-box-btn').addEventListener('click', () => {
-            const position = new THREE.Vector3(
-                (Math.random() - 0.5) * 10,
+        
+        document.getElementById('spawn-box').addEventListener('click', () => {
+            createBox(
+                Math.random() * 4 - 2,
+                8 + Math.random() * 2,
+                Math.random() * 4 - 2,
+                Math.random() * 0.5 + 0.5,
+                Math.random() * 0.5 + 0.5,
+                Math.random() * 0.5 + 0.5,
+                1
+            );
+        });
+        
+        document.getElementById('spawn-sphere').addEventListener('click', () => {
+            createSphere(
+                Math.random() * 4 - 2,
+                8 + Math.random() * 2,
+                Math.random() * 4 - 2,
+                Math.random() * 0.3 + 0.3,
+                1
+            );
+        });
+        
+        document.getElementById('spawn-ragdoll').addEventListener('click', () => {
+            createRagdoll(
+                Math.random() * 4 - 2,
+                8,
+                Math.random() * 4 - 2
+            );
+        });
+        
+        document.getElementById('spawn-chain').addEventListener('click', () => {
+            createChain(
+                Math.random() * 4 - 2,
                 10,
-                (Math.random() - 0.5) * 10
+                Math.random() * 4 - 2,
+                Math.floor(Math.random() * 3) + 4
             );
-            createBox({ x: 1, y: 1, z: 1 }, position);
         });
-
-        document.getElementById('spawn-sphere-btn').addEventListener('click', () => {
-            const position = new THREE.Vector3(
-                (Math.random() - 0.5) * 10,
-                10,
-                (Math.random() - 0.5) * 10
-            );
-            createSphere(0.8, position);
-        });
-
-        document.getElementById('spawn-stack-btn').addEventListener('click', () => {
-            const position = new THREE.Vector3(
-                (Math.random() - 0.5) * 10,
-                0.5,
-                (Math.random() - 0.5) * 10
-            );
-            createStack(position);
-        });
-
-        document.getElementById('spawn-ragdoll-btn').addEventListener('click', () => {
-            const position = new THREE.Vector3(
-                (Math.random() - 0.5) * 10,
-                10,
-                (Math.random() - 0.5) * 10
-            );
-            createRagdoll(position);
-        });
-
-        document.getElementById('spawn-chain-btn').addEventListener('click', () => {
-            const position = new THREE.Vector3(
-                (Math.random() - 0.5) * 10,
-                15,
-                (Math.random() - 0.5) * 10
-            );
-            createChain(position, 6);
-        });
-
+        
         // Animation loop
         const clock = new THREE.Clock();
-        const fixedTimeStep = 1 / 60;
-
+        
         function animate() {
             requestAnimationFrame(animate);
-
-            const deltaTime = clock.getDelta() * timeScale;
-            world.step(fixedTimeStep, deltaTime, 3);
-
-            // Update meshes
-            for (let i = 0; i < meshes.length; i++) {
-                meshes[i].position.copy(bodies[i].position);
-                meshes[i].quaternion.copy(bodies[i].quaternion);
-            }
-
-            controls.update();
+            
+            const deltaTime = Math.min(clock.getDelta(), 0.1);
+            world.step(deltaTime * timeScale);
+            
+            // Update mesh positions
+            objects.forEach(obj => {
+                obj.mesh.position.copy(obj.body.position);
+                obj.mesh.quaternion.copy(obj.body.quaternion);
+            });
+            
+            // Camera orbit
+            const time = Date.now() * 0.0001;
+            camera.position.x = Math.cos(time) * 15;
+            camera.position.z = Math.sin(time) * 15;
+            camera.position.y = 10;
+            camera.lookAt(0, 2, 0);
+            
             renderer.render(scene, camera);
         }
-
-        // Handle window resize
+        
+        animate();
+        
+        // Resize handler
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
-
-        animate();
     </script>
 </body>
 </html>

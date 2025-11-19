@@ -35,10 +35,6 @@ tests:
   - name: "product_configurator"
     prompt: "Create a complete HTML file with Three.js that implements a 3D product configurator. Create a 3D model (like a car, chair, or phone) with color, material, texture, and part toggles. Add environment reflections, soft shadows, and camera bookmarks. Include export current config as JSON and PNG snapshot functionality. The HTML file should be self-contained with Three.js loaded from CDN and include all 3D models as procedural geometry. Save the output as 'product_configurator.html'."
 
-  # WebXR Art Gallery
-  - name: "webxr_art_gallery"
-    prompt: "Create a complete HTML file with Three.js and WebXR that builds a VR gallery with teleport navigation, hand/controller rays to select artworks, modal info panels, spatial audio, baked/lightmapped room, and performance budget for stable frame rate. Include fallback for non-VR devices with mouse controls. The HTML file should be self-contained with Three.js and WebXR libraries loaded from CDN. Save the output as 'webxr_gallery.html'."
-
   # Physics Playground
   - name: "physics_playground"
     prompt: "Create a complete HTML file with Three.js integrated with a lightweight physics engine (cannon-es or similar) that includes stackable boxes, spheres, hinge joints, ragdoll, and interactive dragging with the mouse. Add reset button, gravity slider, and slow-motion toggle. The HTML file should be self-contained with Three.js and physics engine loaded from CDN. Save the output as 'physics_playground.html'."

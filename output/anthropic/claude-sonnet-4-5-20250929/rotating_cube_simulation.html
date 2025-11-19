@@ -3,25 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rotating 3D Cube with Three.js</title>
+    <title>Rotating 3D Cube - Three.js</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
             font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
         canvas {
             display: block;
         }
         #info {
             position: absolute;
-            top: 20px;
-            left: 20px;
+            top: 10px;
+            left: 10px;
             color: white;
-            background: rgba(0, 0, 0, 0.6);
+            background: rgba(0, 0, 0, 0.7);
             padding: 15px;
-            border-radius: 10px;
+            border-radius: 5px;
             font-size: 14px;
             z-index: 100;
         }
@@ -36,15 +35,15 @@
 </head>
 <body>
     <div id="info">
-        <h2>🎮 Interactive 3D Cube</h2>
-        <p>🖱️ <strong>Left Click + Drag:</strong> Rotate view</p>
-        <p>🖱️ <strong>Right Click + Drag:</strong> Pan view</p>
-        <p>🖱️ <strong>Scroll:</strong> Zoom in/out</p>
+        <h2>Interactive 3D Cube</h2>
+        <p>🖱️ Left click + drag to rotate</p>
+        <p>🖱️ Right click + drag to pan</p>
+        <p>🖱️ Scroll to zoom</p>
     </div>
 
-    <!-- Three.js from CDN -->
+    <!-- Load Three.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- OrbitControls from CDN -->
+    <!-- Load OrbitControls from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 
     <script>
@@ -60,6 +59,8 @@
             1000
         );
         camera.position.z = 5;
+        camera.position.y = 2;
+        camera.position.x = 2;
 
         // Renderer setup
         const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -68,29 +69,37 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         document.body.appendChild(renderer.domElement);
 
-        // Create cube with different colored faces
-        const geometry = new THREE.BoxGeometry(2, 2, 2);
-        
+        // OrbitControls for camera interaction
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 3;
+        controls.maxDistance = 10;
+        controls.maxPolarAngle = Math.PI / 1.5;
+
         // Create materials for each face with different colors
         const materials = [
-            new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.3, roughness: 0.4 }), // Right face - Red
-            new THREE.MeshStandardMaterial({ color: 0x00ff00, metalness: 0.3, roughness: 0.4 }), // Left face - Green
-            new THREE.MeshStandardMaterial({ color: 0x0000ff, metalness: 0.3, roughness: 0.4 }), // Top face - Blue
-            new THREE.MeshStandardMaterial({ color: 0xffff00, metalness: 0.3, roughness: 0.4 }), // Bottom face - Yellow
-            new THREE.MeshStandardMaterial({ color: 0xff00ff, metalness: 0.3, roughness: 0.4 }), // Front face - Magenta
-            new THREE.MeshStandardMaterial({ color: 0x00ffff, metalness: 0.3, roughness: 0.4 })  // Back face - Cyan
+            new THREE.MeshStandardMaterial({ color: 0xff0000 }), // Right face - Red
+            new THREE.MeshStandardMaterial({ color: 0x00ff00 }), // Left face - Green
+            new THREE.MeshStandardMaterial({ color: 0x0000ff }), // Top face - Blue
+            new THREE.MeshStandardMaterial({ color: 0xffff00 }), // Bottom face - Yellow
+            new THREE.MeshStandardMaterial({ color: 0xff00ff }), // Front face - Magenta
+            new THREE.MeshStandardMaterial({ color: 0x00ffff })  // Back face - Cyan
         ];
 
+        // Create cube geometry and mesh
+        const geometry = new THREE.BoxGeometry(2, 2, 2);
         const cube = new THREE.Mesh(geometry, materials);
         cube.castShadow = true;
         cube.receiveShadow = true;
         scene.add(cube);
 
-        // Add ambient light for overall illumination
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        // Add ambient light
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
         scene.add(ambientLight);
 
-        // Add directional light for shadows and depth
+        // Add directional light (main light)
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
         directionalLight.position.set(5, 5, 5);
         directionalLight.castShadow = true;
@@ -98,40 +107,24 @@
         directionalLight.shadow.mapSize.height = 2048;
         scene.add(directionalLight);
 
-        // Add point light for dynamic lighting
-        const pointLight = new THREE.PointLight(0xffffff, 0.6);
-        pointLight.position.set(-5, 3, 3);
+        // Add point light for extra illumination
+        const pointLight = new THREE.PointLight(0xffffff, 0.5);
+        pointLight.position.set(-5, 3, 0);
         scene.add(pointLight);
 
-        // Add spotlight for dramatic effect
-        const spotLight = new THREE.SpotLight(0xffffff, 0.5);
-        spotLight.position.set(0, 10, 0);
+        // Add spot light for dramatic effect
+        const spotLight = new THREE.SpotLight(0xffffff, 0.6);
+        spotLight.position.set(0, 5, 0);
         spotLight.angle = Math.PI / 6;
-        spotLight.penumbra = 0.3;
+        spotLight.penumbra = 0.2;
         spotLight.castShadow = true;
         scene.add(spotLight);
 
-        // Add edge lines for better visibility
-        const edges = new THREE.EdgesGeometry(geometry);
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
-        const wireframe = new THREE.LineSegments(edges, lineMaterial);
-        cube.add(wireframe);
-
-        // OrbitControls for user interaction
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.screenSpacePanning = false;
-        controls.minDistance = 3;
-        controls.maxDistance = 10;
-        controls.maxPolarAngle = Math.PI;
-
-        // Add a ground plane for reference
-        const planeGeometry = new THREE.PlaneGeometry(20, 20);
+        // Add a ground plane to show shadows
+        const planeGeometry = new THREE.PlaneGeometry(10, 10);
         const planeMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x808080, 
-            metalness: 0.1, 
-            roughness: 0.8 
+            color: 0x333333,
+            side: THREE.DoubleSide 
         });
         const plane = new THREE.Mesh(planeGeometry, planeMaterial);
         plane.rotation.x = -Math.PI / 2;
@@ -139,21 +132,22 @@
         plane.receiveShadow = true;
         scene.add(plane);
 
-        // Animation variables
-        let rotationSpeed = 0.01;
+        // Add wireframe overlay for cool effect
+        const wireframeGeometry = new THREE.EdgesGeometry(geometry);
+        const wireframeMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xffffff, 
+            linewidth: 2 
+        });
+        const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        cube.add(wireframe);
 
         // Animation loop
         function animate() {
             requestAnimationFrame(animate);
 
             // Rotate the cube continuously
-            cube.rotation.x += rotationSpeed;
-            cube.rotation.y += rotationSpeed;
-
-            // Animate point light in a circle
-            const time = Date.now() * 0.001;
-            pointLight.position.x = Math.cos(time) * 5;
-            pointLight.position.z = Math.sin(time) * 5;
+            cube.rotation.x += 0.005;
+            cube.rotation.y += 0.01;
 
             // Update controls
             controls.update();
@@ -169,29 +163,8 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Handle keyboard input for rotation speed
-        window.addEventListener('keydown', (event) => {
-            if (event.key === 'ArrowUp') {
-                rotationSpeed += 0.005;
-            } else if (event.key === 'ArrowDown') {
-                rotationSpeed = Math.max(0, rotationSpeed - 0.005);
-            } else if (event.key === ' ') {
-                rotationSpeed = rotationSpeed === 0 ? 0.01 : 0;
-            }
-        });
-
         // Start animation
         animate();
-
-        // Console message
-        console.log('🎨 3D Cube Scene Loaded Successfully!');
-        console.log('Controls:');
-        console.log('- Left Click + Drag: Rotate view');
-        console.log('- Right Click + Drag: Pan view');
-        console.log('- Scroll: Zoom in/out');
-        console.log('- Arrow Up: Increase rotation speed');
-        console.log('- Arrow Down: Decrease rotation speed');
-        console.log('- Spacebar: Pause/Resume rotation');
     </script>
 </body>
 </html>

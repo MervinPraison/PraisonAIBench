@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Product Configurator - Modern Chair</title>
+    <title>3D Product Configurator - Sports Car</title>
     <style>
         * {
             margin: 0;
@@ -14,7 +14,7 @@
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
         }
 
         #canvas-container {
@@ -27,15 +27,14 @@
             position: absolute;
             top: 20px;
             right: 20px;
-            width: 320px;
-            max-height: calc(100vh - 40px);
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
             padding: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            max-width: 350px;
+            max-height: calc(100vh - 40px);
             overflow-y: auto;
-            z-index: 1000;
+            backdrop-filter: blur(10px);
         }
 
         #controls-panel::-webkit-scrollbar {
@@ -52,220 +51,199 @@
             border-radius: 4px;
         }
 
-        #controls-panel::-webkit-scrollbar-thumb:hover {
-            background: #555;
+        h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 24px;
+            border-bottom: 2px solid #2a5298;
+            padding-bottom: 10px;
         }
 
-        h1 {
-            font-size: 24px;
-            color: #333;
-            margin-bottom: 20px;
-            text-align: center;
+        h3 {
+            color: #555;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            font-size: 16px;
+            font-weight: 600;
         }
 
         .control-group {
-            margin-bottom: 25px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .control-group:last-child {
-            border-bottom: none;
-        }
-
-        .control-group h3 {
-            font-size: 16px;
-            color: #555;
-            margin-bottom: 12px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .control-row {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
         }
 
         label {
             display: block;
-            font-size: 13px;
+            margin-bottom: 5px;
             color: #666;
-            margin-bottom: 6px;
+            font-size: 13px;
             font-weight: 500;
         }
 
-        select, input[type="range"] {
+        select, input[type="color"] {
             width: 100%;
             padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
             font-size: 14px;
-            background: white;
-            cursor: pointer;
+            transition: border-color 0.3s;
         }
 
-        input[type="range"] {
-            padding: 0;
+        select:focus, input[type="color"]:focus {
+            outline: none;
+            border-color: #2a5298;
+        }
+
+        input[type="color"] {
+            height: 45px;
+            cursor: pointer;
         }
 
         .color-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 8px;
+            margin-top: 8px;
         }
 
         .color-option {
             width: 100%;
             aspect-ratio: 1;
+            border: 3px solid transparent;
             border-radius: 8px;
             cursor: pointer;
-            border: 3px solid transparent;
-            transition: all 0.2s;
-            position: relative;
+            transition: all 0.3s;
         }
 
         .color-option:hover {
             transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
 
         .color-option.active {
-            border-color: #667eea;
-            transform: scale(1.05);
+            border-color: #2a5298;
+            box-shadow: 0 0 0 2px white, 0 0 0 4px #2a5298;
         }
 
-        .toggle-switch {
+        .toggle-group {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 10px;
             background: #f8f9fa;
             border-radius: 8px;
-            cursor: pointer;
-            user-select: none;
+            margin-bottom: 8px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 26px;
         }
 
         .toggle-switch input {
-            display: none;
+            opacity: 0;
+            width: 0;
+            height: 0;
         }
 
         .toggle-slider {
-            width: 50px;
-            height: 26px;
-            background: #ccc;
-            border-radius: 13px;
-            position: relative;
-            transition: background 0.3s;
-        }
-
-        .toggle-slider::after {
-            content: '';
-            width: 22px;
-            height: 22px;
-            background: white;
-            border-radius: 50%;
             position: absolute;
-            top: 2px;
-            left: 2px;
-            transition: transform 0.3s;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            border-radius: 26px;
+            transition: 0.4s;
         }
 
-        .toggle-switch input:checked + .toggle-slider {
-            background: #667eea;
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: 0.4s;
         }
 
-        .toggle-switch input:checked + .toggle-slider::after {
+        input:checked + .toggle-slider {
+            background-color: #2a5298;
+        }
+
+        input:checked + .toggle-slider:before {
             transform: translateX(24px);
         }
 
-        .button-group {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
         button {
-            padding: 12px 20px;
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
             border: none;
             border-radius: 8px;
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.3s;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
 
-        .btn-primary {
-            background: #667eea;
+        .primary-btn {
+            background: linear-gradient(135deg, #2a5298 0%, #1e3c72 100%);
             color: white;
         }
 
-        .btn-primary:hover {
-            background: #5568d3;
+        .primary-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 6px 20px rgba(42, 82, 152, 0.4);
         }
 
-        .btn-secondary {
-            background: #f8f9fa;
-            color: #333;
-            border: 1px solid #ddd;
+        .secondary-btn {
+            background: #6c757d;
+            color: white;
         }
 
-        .btn-secondary:hover {
-            background: #e9ecef;
+        .secondary-btn:hover {
+            background: #5a6268;
             transform: translateY(-2px);
-        }
-
-        .btn-full {
-            grid-column: 1 / -1;
         }
 
         .camera-bookmarks {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
-            flex-wrap: wrap;
         }
 
-        .bookmark-btn {
-            flex: 1;
-            min-width: 80px;
-            padding: 8px 12px;
+        .camera-btn {
+            padding: 8px;
             font-size: 12px;
+            margin-top: 0;
         }
 
-        #info-panel {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(10px);
-            padding: 15px 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-            font-size: 13px;
-            color: #666;
-        }
-
-        .loading {
+        #loading {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            text-align: center;
             color: white;
-            font-size: 18px;
-            z-index: 999;
+            font-size: 24px;
+            font-weight: 600;
+            text-align: center;
+            z-index: 1000;
         }
 
-        .spinner {
+        .loading-spinner {
             border: 4px solid rgba(255, 255, 255, 0.3);
             border-top: 4px solid white;
             border-radius: 50%;
             width: 50px;
             height: 50px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 20px auto;
         }
 
         @keyframes spin {
@@ -273,106 +251,129 @@
             100% { transform: rotate(360deg); }
         }
 
-        .value-display {
+        .info-badge {
             display: inline-block;
-            float: right;
-            color: #667eea;
+            background: #2a5298;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
             font-weight: 600;
+            margin-left: 8px;
+        }
+
+        #stats {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: monospace;
         }
     </style>
 </head>
 <body>
-    <div id="canvas-container"></div>
-    
-    <div class="loading" id="loading">
-        <div class="spinner"></div>
-        <div>Loading 3D Configurator...</div>
+    <div id="loading">
+        <div>Loading 3D Configurator</div>
+        <div class="loading-spinner"></div>
     </div>
 
+    <div id="canvas-container"></div>
+
     <div id="controls-panel">
-        <h1>🪑 Chair Configurator</h1>
+        <h2>🚗 Car Configurator</h2>
 
         <div class="control-group">
-            <h3>Seat Color</h3>
-            <div class="color-grid" id="seat-colors">
-                <div class="color-option active" style="background: #e74c3c;" data-color="#e74c3c" data-part="seat"></div>
-                <div class="color-option" style="background: #3498db;" data-color="#3498db" data-part="seat"></div>
-                <div class="color-option" style="background: #2ecc71;" data-color="#2ecc71" data-part="seat"></div>
-                <div class="color-option" style="background: #f39c12;" data-color="#f39c12" data-part="seat"></div>
-                <div class="color-option" style="background: #9b59b6;" data-color="#9b59b6" data-part="seat"></div>
-                <div class="color-option" style="background: #34495e;" data-color="#34495e" data-part="seat"></div>
-                <div class="color-option" style="background: #ecf0f1;" data-color="#ecf0f1" data-part="seat"></div>
-                <div class="color-option" style="background: #1abc9c;" data-color="#1abc9c" data-part="seat"></div>
+            <h3>Body Color</h3>
+            <label>Quick Select:</label>
+            <div class="color-grid" id="body-colors">
+                <div class="color-option active" style="background: #e74c3c;" data-color="#e74c3c" title="Racing Red"></div>
+                <div class="color-option" style="background: #3498db;" data-color="#3498db" title="Ocean Blue"></div>
+                <div class="color-option" style="background: #2ecc71;" data-color="#2ecc71" title="Racing Green"></div>
+                <div class="color-option" style="background: #f39c12;" data-color="#f39c12" title="Sunset Orange"></div>
+                <div class="color-option" style="background: #1a1a1a;" data-color="#1a1a1a" title="Midnight Black"></div>
+                <div class="color-option" style="background: #ecf0f1;" data-color="#ecf0f1" title="Pearl White"></div>
+                <div class="color-option" style="background: #95a5a6;" data-color="#95a5a6" title="Silver"></div>
+                <div class="color-option" style="background: #9b59b6;" data-color="#9b59b6" title="Purple"></div>
+                <div class="color-option" style="background: #e67e22;" data-color="#e67e22" title="Copper"></div>
+                <div class="color-option" style="background: #16a085;" data-color="#16a085" title="Teal"></div>
             </div>
+            <label style="margin-top: 10px;">Custom Color:</label>
+            <input type="color" id="body-color" value="#e74c3c">
         </div>
 
         <div class="control-group">
-            <h3>Backrest Color</h3>
-            <div class="color-grid" id="backrest-colors">
-                <div class="color-option" style="background: #e74c3c;" data-color="#e74c3c" data-part="backrest"></div>
-                <div class="color-option active" style="background: #3498db;" data-color="#3498db" data-part="backrest"></div>
-                <div class="color-option" style="background: #2ecc71;" data-color="#2ecc71" data-part="backrest"></div>
-                <div class="color-option" style="background: #f39c12;" data-color="#f39c12" data-part="backrest"></div>
-                <div class="color-option" style="background: #9b59b6;" data-color="#9b59b6" data-part="backrest"></div>
-                <div class="color-option" style="background: #34495e;" data-color="#34495e" data-part="backrest"></div>
-                <div class="color-option" style="background: #ecf0f1;" data-color="#ecf0f1" data-part="backrest"></div>
-                <div class="color-option" style="background: #1abc9c;" data-color="#1abc9c" data-part="backrest"></div>
-            </div>
+            <h3>Material Finish</h3>
+            <label>Body Material:</label>
+            <select id="body-material">
+                <option value="metallic">Metallic (Default)</option>
+                <option value="matte">Matte Finish</option>
+                <option value="glossy">High Gloss</option>
+                <option value="carbon">Carbon Fiber</option>
+            </select>
         </div>
 
         <div class="control-group">
-            <h3>Legs Color</h3>
-            <div class="color-grid" id="legs-colors">
-                <div class="color-option" style="background: #2c3e50;" data-color="#2c3e50" data-part="legs"></div>
-                <div class="color-option active" style="background: #7f8c8d;" data-color="#7f8c8d" data-part="legs"></div>
-                <div class="color-option" style="background: #bdc3c7;" data-color="#bdc3c7" data-part="legs"></div>
-                <div class="color-option" style="background: #d4a574;" data-color="#d4a574" data-part="legs"></div>
+            <h3>Stripe Color</h3>
+            <label>Quick Select:</label>
+            <div class="color-grid" id="stripe-colors">
+                <div class="color-option active" style="background: #ffffff;" data-color="#ffffff" title="White"></div>
+                <div class="color-option" style="background: #000000;" data-color="#000000" title="Black"></div>
+                <div class="color-option" style="background: #3498db;" data-color="#3498db" title="Blue"></div>
+                <div class="color-option" style="background: #f39c12;" data-color="#f39c12" title="Gold"></div>
+                <div class="color-option" style="background: #e74c3c;" data-color="#e74c3c" title="Red"></div>
             </div>
+            <label style="margin-top: 10px;">Custom Color:</label>
+            <input type="color" id="stripe-color" value="#ffffff">
         </div>
 
         <div class="control-group">
-            <h3>Material Settings</h3>
-            <div class="control-row">
-                <label>Seat Material</label>
-                <select id="seat-material">
-                    <option value="standard">Standard</option>
-                    <option value="leather">Leather</option>
-                    <option value="fabric">Fabric</option>
-                    <option value="velvet">Velvet</option>
-                </select>
-            </div>
-            <div class="control-row">
-                <label>Legs Material</label>
-                <select id="legs-material">
-                    <option value="metal">Metal</option>
-                    <option value="wood">Wood</option>
-                    <option value="plastic">Plastic</option>
-                </select>
-            </div>
-            <div class="control-row">
-                <label>Metalness <span class="value-display" id="metalness-value">0.3</span></label>
-                <input type="range" id="metalness" min="0" max="1" step="0.1" value="0.3">
-            </div>
-            <div class="control-row">
-                <label>Roughness <span class="value-display" id="roughness-value">0.5</span></label>
-                <input type="range" id="roughness" min="0" max="1" step="0.1" value="0.5">
-            </div>
+            <h3>Wheel Configuration</h3>
+            <label>Wheel Style:</label>
+            <select id="wheel-style">
+                <option value="sport">Sport (5-Spoke)</option>
+                <option value="racing">Racing (Multi-Spoke)</option>
+                <option value="classic">Classic (Simple)</option>
+            </select>
+            <label style="margin-top: 10px;">Wheel Color:</label>
+            <input type="color" id="wheel-color" value="#2c3e50">
         </div>
 
         <div class="control-group">
-            <h3>Parts Visibility</h3>
-            <div class="control-row">
+            <h3>Window Tint</h3>
+            <label>Tint Level:</label>
+            <select id="window-tint">
+                <option value="0.3">Light (30%)</option>
+                <option value="0.5" selected>Medium (50%)</option>
+                <option value="0.7">Dark (70%)</option>
+                <option value="0.9">Very Dark (90%)</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <h3>Optional Parts</h3>
+            <div class="toggle-group">
+                <label>Racing Stripe</label>
                 <label class="toggle-switch">
-                    <span>Show Armrests</span>
-                    <input type="checkbox" id="toggle-armrests" checked>
-                    <div class="toggle-slider"></div>
+                    <input type="checkbox" id="toggle-stripe" checked>
+                    <span class="toggle-slider"></span>
                 </label>
             </div>
-            <div class="control-row">
+            <div class="toggle-group">
+                <label>Rear Spoiler</label>
                 <label class="toggle-switch">
-                    <span>Show Cushion</span>
-                    <input type="checkbox" id="toggle-cushion" checked>
-                    <div class="toggle-slider"></div>
+                    <input type="checkbox" id="toggle-spoiler" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            <div class="toggle-group">
+                <label>Side Mirrors</label>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="toggle-mirrors" checked>
+                    <span class="toggle-slider"></span>
                 </label>
             </div>
         </div>
@@ -380,586 +381,903 @@
         <div class="control-group">
             <h3>Camera Views</h3>
             <div class="camera-bookmarks">
-                <button class="btn-secondary bookmark-btn" onclick="setCameraView('front')">Front</button>
-                <button class="btn-secondary bookmark-btn" onclick="setCameraView('side')">Side</button>
-                <button class="btn-secondary bookmark-btn" onclick="setCameraView('top')">Top</button>
-                <button class="btn-secondary bookmark-btn" onclick="setCameraView('angle')">Angle</button>
+                <button class="primary-btn camera-btn" onclick="setCameraView('front')">Front</button>
+                <button class="primary-btn camera-btn" onclick="setCameraView('rear')">Rear</button>
+                <button class="primary-btn camera-btn" onclick="setCameraView('side')">Side</button>
+                <button class="primary-btn camera-btn" onclick="setCameraView('top')">Top</button>
             </div>
         </div>
 
-        <div class="button-group">
-            <button class="btn-primary" onclick="exportConfig()">Export JSON</button>
-            <button class="btn-primary" onclick="takeSnapshot()">Snapshot</button>
-            <button class="btn-secondary btn-full" onclick="resetConfiguration()">Reset All</button>
+        <div class="control-group">
+            <h3>Export Configuration</h3>
+            <button class="primary-btn" onclick="exportJSON()">📄 Export as JSON</button>
+            <button class="secondary-btn" onclick="exportSnapshot()">📸 Save Snapshot (PNG)</button>
         </div>
     </div>
 
-    <div id="info-panel">
-        <strong>Controls:</strong> Left Click + Drag to Rotate | Right Click + Drag to Pan | Scroll to Zoom
-    </div>
+    <div id="stats"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        // Three.js Scene Setup
+        // Global variables
         let scene, camera, renderer, controls;
-        let chair = {};
-        let config = {
-            colors: {
-                seat: '#e74c3c',
-                backrest: '#3498db',
-                legs: '#7f8c8d'
-            },
-            materials: {
-                seat: 'standard',
-                legs: 'metal'
-            },
-            properties: {
-                metalness: 0.3,
-                roughness: 0.5
-            },
-            visibility: {
-                armrests: true,
-                cushion: true
-            }
+        let carGroup, bodyMesh, stripeMesh, spoilerMesh, mirrorLeft, mirrorRight;
+        let wheels = [];
+        let currentConfig = {
+            bodyColor: '#e74c3c',
+            stripeColor: '#ffffff',
+            wheelColor: '#2c3e50',
+            bodyMaterial: 'metallic',
+            wheelStyle: 'sport',
+            windowTint: 0.5,
+            showStripe: true,
+            showSpoiler: true,
+            showMirrors: true
         };
 
-        // Initialize Scene
+        // Initialize Three.js scene
         function init() {
-            // Scene
+            // Scene setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf0f0f0);
-            scene.fog = new THREE.Fog(0xf0f0f0, 10, 50);
+            scene.background = new THREE.Color(0x1a1a2e);
+            scene.fog = new THREE.Fog(0x1a1a2e, 50, 100);
 
-            // Camera
-            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(5, 4, 5);
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(
+                45,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(15, 8, 15);
             camera.lookAt(0, 0, 0);
 
-            // Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            // Renderer setup
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.outputEncoding = THREE.sRGBEncoding;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1;
+            renderer.toneMappingExposure = 1.2;
             document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // Lights
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-            scene.add(ambientLight);
+            // Orbit Controls (simplified)
+            setupSimpleControls();
 
-            const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            mainLight.position.set(5, 10, 5);
-            mainLight.castShadow = true;
-            mainLight.shadow.camera.near = 0.1;
-            mainLight.shadow.camera.far = 50;
-            mainLight.shadow.camera.left = -10;
-            mainLight.shadow.camera.right = 10;
-            mainLight.shadow.camera.top = 10;
-            mainLight.shadow.camera.bottom = -10;
-            mainLight.shadow.mapSize.width = 2048;
-            mainLight.shadow.mapSize.height = 2048;
-            mainLight.shadow.bias = -0.0001;
-            scene.add(mainLight);
+            // Lighting
+            setupLighting();
 
-            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
-            fillLight.position.set(-5, 5, -5);
-            scene.add(fillLight);
+            // Ground
+            createGround();
 
-            const backLight = new THREE.PointLight(0xffffff, 0.5);
-            backLight.position.set(0, 5, -5);
-            scene.add(backLight);
+            // Create car
+            createCar();
 
-            // Ground with shadow
-            const groundGeometry = new THREE.PlaneGeometry(50, 50);
-            const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
-            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-            ground.rotation.x = -Math.PI / 2;
-            ground.position.y = -1;
-            ground.receiveShadow = true;
-            scene.add(ground);
+            // Environment
+            createEnvironment();
 
-            // Add visible floor
-            const floorGeometry = new THREE.PlaneGeometry(50, 50);
-            const floorMaterial = new THREE.MeshStandardMaterial({ 
-                color: 0xe0e0e0,
-                roughness: 0.8,
-                metalness: 0.2
-            });
-            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-            floor.rotation.x = -Math.PI / 2;
-            floor.position.y = -1.01;
-            scene.add(floor);
-
-            // Environment map for reflections
-            const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256);
-            const cubeCamera = new THREE.CubeCamera(0.1, 1000, cubeRenderTarget);
-            scene.add(cubeCamera);
-            scene.environment = cubeRenderTarget.texture;
-
-            // Create Chair
-            createChair();
-
-            // OrbitControls (simplified version)
-            setupControls();
-
-            // Event Listeners
-            window.addEventListener('resize', onWindowResize);
+            // Event listeners
             setupEventListeners();
 
             // Hide loading
             document.getElementById('loading').style.display = 'none';
 
-            // Animation Loop
+            // Start animation
             animate();
         }
 
-        // Create Chair Model
-        function createChair() {
-            chair.group = new THREE.Group();
-            chair.group.position.y = 0;
+        function setupSimpleControls() {
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            let rotation = { x: 0, y: 0 };
 
-            // Seat
-            const seatGeometry = new THREE.BoxGeometry(2, 0.3, 2);
-            const seatMaterial = new THREE.MeshStandardMaterial({
-                color: config.colors.seat,
-                roughness: config.properties.roughness,
-                metalness: config.properties.metalness
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
             });
-            chair.seat = new THREE.Mesh(seatGeometry, seatMaterial);
-            chair.seat.position.y = 1.5;
-            chair.seat.castShadow = true;
-            chair.seat.receiveShadow = true;
-            chair.group.add(chair.seat);
 
-            // Backrest
-            const backrestGeometry = new THREE.BoxGeometry(2, 2, 0.2);
-            const backrestMaterial = new THREE.MeshStandardMaterial({
-                color: config.colors.backrest,
-                roughness: config.properties.roughness,
-                metalness: config.properties.metalness
+            renderer.domElement.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = e.clientX - previousMousePosition.x;
+                    const deltaY = e.clientY - previousMousePosition.y;
+
+                    rotation.y += deltaX * 0.005;
+                    rotation.x += deltaY * 0.005;
+
+                    rotation.x = Math.max(-Math.PI / 4, Math.min(Math.PI / 4, rotation.x));
+
+                    updateCameraPosition();
+
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+                }
             });
-            chair.backrest = new THREE.Mesh(backrestGeometry, backrestMaterial);
-            chair.backrest.position.set(0, 2.5, -0.9);
-            chair.backrest.castShadow = true;
-            chair.backrest.receiveShadow = true;
-            chair.group.add(chair.backrest);
 
-            // Legs
-            chair.legs = new THREE.Group();
-            const legGeometry = new THREE.CylinderGeometry(0.08, 0.08, 1.5, 16);
-            const legMaterial = new THREE.MeshStandardMaterial({
-                color: config.colors.legs,
+            renderer.domElement.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            renderer.domElement.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const distance = camera.position.length();
+                const newDistance = distance + e.deltaY * 0.01;
+                const clampedDistance = Math.max(10, Math.min(40, newDistance));
+                
+                camera.position.normalize().multiplyScalar(clampedDistance);
+                camera.lookAt(0, 2, 0);
+            });
+
+            function updateCameraPosition() {
+                const distance = camera.position.length();
+                camera.position.x = distance * Math.sin(rotation.y) * Math.cos(rotation.x);
+                camera.position.y = distance * Math.sin(rotation.x) + 8;
+                camera.position.z = distance * Math.cos(rotation.y) * Math.cos(rotation.x);
+                camera.lookAt(0, 2, 0);
+            }
+
+            controls = { rotation };
+        }
+
+        function setupLighting() {
+            // Ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambientLight);
+
+            // Main directional light (sun)
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1);
+            sunLight.position.set(20, 30, 20);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+            sunLight.shadow.camera.left = -30;
+            sunLight.shadow.camera.right = 30;
+            sunLight.shadow.camera.top = 30;
+            sunLight.shadow.camera.bottom = -30;
+            sunLight.shadow.bias = -0.001;
+            scene.add(sunLight);
+
+            // Fill lights
+            const fillLight1 = new THREE.DirectionalLight(0x4a90e2, 0.3);
+            fillLight1.position.set(-10, 10, -10);
+            scene.add(fillLight1);
+
+            const fillLight2 = new THREE.DirectionalLight(0xff9a76, 0.2);
+            fillLight2.position.set(10, 5, -10);
+            scene.add(fillLight2);
+
+            // Rim light
+            const rimLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            rimLight.position.set(0, 10, -20);
+            scene.add(rimLight);
+
+            // Hemisphere light for sky/ground color
+            const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x545454, 0.3);
+            scene.add(hemiLight);
+        }
+
+        function createGround() {
+            // Main ground
+            const groundGeometry = new THREE.PlaneGeometry(100, 100);
+            const groundMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2a2a3e,
+                roughness: 0.8,
+                metalness: 0.2
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Grid
+            const gridHelper = new THREE.GridHelper(100, 50, 0x444466, 0x333344);
+            gridHelper.position.y = 0.01;
+            scene.add(gridHelper);
+
+            // Platform under car
+            const platformGeometry = new THREE.CylinderGeometry(8, 8, 0.3, 32);
+            const platformMaterial = new THREE.MeshStandardMaterial({
+                color: 0x3a3a4e,
+                roughness: 0.6,
+                metalness: 0.4
+            });
+            const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+            platform.position.y = 0.15;
+            platform.receiveShadow = true;
+            platform.castShadow = true;
+            scene.add(platform);
+        }
+
+        function createCar() {
+            carGroup = new THREE.Group();
+
+            // Car body (main chassis)
+            const bodyGeometry = new THREE.BoxGeometry(8, 2, 4);
+            const bodyMaterial = createBodyMaterial();
+            bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            bodyMesh.position.y = 2;
+            bodyMesh.castShadow = true;
+            bodyMesh.receiveShadow = true;
+            carGroup.add(bodyMesh);
+
+            // Car roof/cabin
+            const roofGeometry = new THREE.BoxGeometry(4, 1.5, 3.5);
+            const roofMesh = new THREE.Mesh(roofGeometry, bodyMaterial);
+            roofMesh.position.set(0, 3.25, 0);
+            roofMesh.castShadow = true;
+            roofMesh.receiveShadow = true;
+            carGroup.add(roofMesh);
+
+            // Hood (front slope)
+            const hoodGeometry = new THREE.BoxGeometry(2, 1.5, 4);
+            const hoodMesh = new THREE.Mesh(hoodGeometry, bodyMaterial);
+            hoodMesh.position.set(4, 2.25, 0);
+            hoodMesh.rotation.z = -0.2;
+            hoodMesh.castShadow = true;
+            carGroup.add(hoodMesh);
+
+            // Trunk (rear slope)
+            const trunkGeometry = new THREE.BoxGeometry(1.5, 1.3, 4);
+            const trunkMesh = new THREE.Mesh(trunkGeometry, bodyMaterial);
+            trunkMesh.position.set(-3.5, 2.4, 0);
+            trunkMesh.rotation.z = 0.15;
+            trunkMesh.castShadow = true;
+            carGroup.add(trunkMesh);
+
+            // Windows
+            createWindows();
+
+            // Racing stripe
+            createStripe();
+
+            // Wheels
+            createWheels();
+
+            // Spoiler
+            createSpoiler();
+
+            // Mirrors
+            createMirrors();
+
+            // Headlights
+            createLights();
+
+            // Bumpers
+            createBumpers();
+
+            scene.add(carGroup);
+        }
+
+        function createBodyMaterial() {
+            return new THREE.MeshStandardMaterial({
+                color: currentConfig.bodyColor,
+                metalness: 0.7,
                 roughness: 0.3,
-                metalness: 0.8
+                envMapIntensity: 1.5
+            });
+        }
+
+        function createWindows() {
+            const windowMaterial = new THREE.MeshStandardMaterial({
+                color: 0x111111,
+                metalness: 0.9,
+                roughness: 0.1,
+                transparent: true,
+                opacity: currentConfig.windowTint
             });
 
-            const legPositions = [
-                [-0.8, 0.75, 0.8],
-                [0.8, 0.75, 0.8],
-                [-0.8, 0.75, -0.8],
-                [0.8, 0.75, -0.8]
+            // Front windshield
+            const frontWindowGeo = new THREE.PlaneGeometry(3, 1.3);
+            const frontWindow = new THREE.Mesh(frontWindowGeo, windowMaterial);
+            frontWindow.position.set(1.5, 3.3, 1.76);
+            frontWindow.rotation.y = Math.PI / 2;
+            frontWindow.rotation.z = -0.3;
+            carGroup.add(frontWindow);
+
+            const frontWindowBack = frontWindow.clone();
+            frontWindowBack.position.z = -1.76;
+            carGroup.add(frontWindowBack);
+
+            // Rear windshield
+            const rearWindowGeo = new THREE.PlaneGeometry(2, 1.2);
+            const rearWindow = new THREE.Mesh(rearWindowGeo, windowMaterial);
+            rearWindow.position.set(-1.5, 3.2, 1.76);
+            rearWindow.rotation.y = Math.PI / 2;
+            rearWindow.rotation.z = 0.2;
+            carGroup.add(rearWindow);
+
+            const rearWindowBack = rearWindow.clone();
+            rearWindowBack.position.z = -1.76;
+            carGroup.add(rearWindowBack);
+
+            // Side windows
+            const sideWindowGeo = new THREE.PlaneGeometry(3.5, 1.3);
+            const sideWindow = new THREE.Mesh(sideWindowGeo, windowMaterial);
+            sideWindow.position.set(0, 3.3, 2.01);
+            carGroup.add(sideWindow);
+
+            const sideWindowOther = sideWindow.clone();
+            sideWindowOther.position.z = -2.01;
+            sideWindowOther.rotation.y = Math.PI;
+            carGroup.add(sideWindowOther);
+        }
+
+        function createStripe() {
+            const stripeGeometry = new THREE.BoxGeometry(7.5, 0.05, 0.6);
+            const stripeMaterial = new THREE.MeshStandardMaterial({
+                color: currentConfig.stripeColor,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+            stripeMesh = new THREE.Mesh(stripeGeometry, stripeMaterial);
+            stripeMesh.position.set(0.5, 3.02, 0);
+            stripeMesh.visible = currentConfig.showStripe;
+            carGroup.add(stripeMesh);
+        }
+
+        function createWheels() {
+            wheels = [];
+            const positions = [
+                { x: 2.5, z: 2.3 },
+                { x: 2.5, z: -2.3 },
+                { x: -2.5, z: 2.3 },
+                { x: -2.5, z: -2.3 }
             ];
 
-            legPositions.forEach(pos => {
-                const leg = new THREE.Mesh(legGeometry, legMaterial.clone());
-                leg.position.set(...pos);
-                leg.castShadow = true;
-                leg.receiveShadow = true;
-                chair.legs.add(leg);
+            positions.forEach(pos => {
+                const wheel = createWheel();
+                wheel.position.set(pos.x, 1, pos.z);
+                carGroup.add(wheel);
+                wheels.push(wheel);
             });
-            chair.group.add(chair.legs);
+        }
 
-            // Armrests
-            chair.armrests = new THREE.Group();
-            const armrestGeometry = new THREE.BoxGeometry(0.2, 1, 1.5);
-            const armrestMaterial = new THREE.MeshStandardMaterial({
-                color: config.colors.seat,
-                roughness: config.properties.roughness,
-                metalness: config.properties.metalness
-            });
+        function createWheel() {
+            const wheelGroup = new THREE.Group();
 
-            [-1.1, 1.1].forEach(x => {
-                const armrest = new THREE.Mesh(armrestGeometry, armrestMaterial.clone());
-                armrest.position.set(x, 1.8, 0);
-                armrest.castShadow = true;
-                armrest.receiveShadow = true;
-                chair.armrests.add(armrest);
-            });
-            chair.group.add(chair.armrests);
-
-            // Cushion
-            const cushionGeometry = new THREE.BoxGeometry(1.8, 0.2, 1.8);
-            cushionGeometry.translate(0, 0.1, 0);
-            const cushionMaterial = new THREE.MeshStandardMaterial({
-                color: config.colors.seat,
-                roughness: 0.8,
+            // Tire
+            const tireGeometry = new THREE.CylinderGeometry(1, 1, 0.8, 32);
+            const tireMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a1a1a,
+                roughness: 0.9,
                 metalness: 0.1
             });
-            chair.cushion = new THREE.Mesh(cushionGeometry, cushionMaterial);
-            chair.cushion.position.y = 1.65;
-            chair.cushion.castShadow = true;
-            chair.cushion.receiveShadow = true;
-            chair.group.add(chair.cushion);
+            const tire = new THREE.Mesh(tireGeometry, tireMaterial);
+            tire.rotation.z = Math.PI / 2;
+            tire.castShadow = true;
+            wheelGroup.add(tire);
 
-            scene.add(chair.group);
+            // Rim
+            const rimGeometry = new THREE.CylinderGeometry(0.7, 0.7, 0.85, 32);
+            const rimMaterial = new THREE.MeshStandardMaterial({
+                color: currentConfig.wheelColor,
+                metalness: 0.9,
+                roughness: 0.2
+            });
+            const rim = new THREE.Mesh(rimGeometry, rimMaterial);
+            rim.rotation.z = Math.PI / 2;
+            wheelGroup.add(rim);
+
+            // Spokes based on style
+            createSpokes(wheelGroup, currentConfig.wheelStyle);
+
+            return wheelGroup;
         }
 
-        // Simplified OrbitControls
-        function setupControls() {
-            controls = {
-                target: new THREE.Vector3(0, 1.5, 0),
-                rotateSpeed: 0.005,
-                zoomSpeed: 0.1,
-                panSpeed: 0.002,
-                minDistance: 2,
-                maxDistance: 15,
-                isRotating: false,
-                isPanning: false,
-                previousMousePosition: { x: 0, y: 0 }
-            };
+        function createSpokes(wheelGroup, style) {
+            const spokeMaterial = new THREE.MeshStandardMaterial({
+                color: currentConfig.wheelColor,
+                metalness: 0.9,
+                roughness: 0.2
+            });
 
-            renderer.domElement.addEventListener('mousedown', onMouseDown);
-            renderer.domElement.addEventListener('mousemove', onMouseMove);
-            renderer.domElement.addEventListener('mouseup', onMouseUp);
-            renderer.domElement.addEventListener('wheel', onMouseWheel);
-            renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-        }
+            let spokeCount = 5;
+            if (style === 'racing') spokeCount = 10;
+            if (style === 'classic') spokeCount = 3;
 
-        function onMouseDown(event) {
-            if (event.button === 0) {
-                controls.isRotating = true;
-            } else if (event.button === 2) {
-                controls.isPanning = true;
+            for (let i = 0; i < spokeCount; i++) {
+                const angle = (i / spokeCount) * Math.PI * 2;
+                const spokeGeometry = new THREE.BoxGeometry(0.1, 0.6, 0.9);
+                const spoke = new THREE.Mesh(spokeGeometry, spokeMaterial);
+                spoke.position.x = Math.cos(angle) * 0.3;
+                spoke.position.y = Math.sin(angle) * 0.3;
+                spoke.rotation.z = angle;
+                wheelGroup.add(spoke);
             }
-            controls.previousMousePosition = {
-                x: event.clientX,
-                y: event.clientY
-            };
         }
 
-        function onMouseMove(event) {
-            if (controls.isRotating) {
-                const deltaX = event.clientX - controls.previousMousePosition.x;
-                const deltaY = event.clientY - controls.previousMousePosition.y;
+        function createSpoiler() {
+            const spoilerGroup = new THREE.Group();
+            
+            // Main spoiler wing
+            const wingGeometry = new THREE.BoxGeometry(0.3, 0.1, 4.5);
+            const spoilerMaterial = new THREE.MeshStandardMaterial({
+                color: currentConfig.bodyColor,
+                metalness: 0.8,
+                roughness: 0.3
+            });
+            const wing = new THREE.Mesh(wingGeometry, spoilerMaterial);
+            wing.position.set(-4.2, 3.5, 0);
+            wing.castShadow = true;
+            spoilerGroup.add(wing);
 
-                const spherical = new THREE.Spherical();
-                const offset = new THREE.Vector3();
-                offset.copy(camera.position).sub(controls.target);
-                spherical.setFromVector3(offset);
+            // Support pillars
+            const pillarGeometry = new THREE.BoxGeometry(0.15, 0.8, 0.15);
+            const pillarLeft = new THREE.Mesh(pillarGeometry, spoilerMaterial);
+            pillarLeft.position.set(-4.1, 3, 1.5);
+            spoilerGroup.add(pillarLeft);
 
-                spherical.theta -= deltaX * controls.rotateSpeed;
-                spherical.phi -= deltaY * controls.rotateSpeed;
-                spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi));
+            const pillarRight = pillarLeft.clone();
+            pillarRight.position.z = -1.5;
+            spoilerGroup.add(pillarRight);
 
-                offset.setFromSpherical(spherical);
-                camera.position.copy(controls.target).add(offset);
-                camera.lookAt(controls.target);
-            } else if (controls.isPanning) {
-                const deltaX = event.clientX - controls.previousMousePosition.x;
-                const deltaY = event.clientY - controls.previousMousePosition.y;
+            spoilerMesh = spoilerGroup;
+            spoilerMesh.visible = currentConfig.showSpoiler;
+            carGroup.add(spoilerMesh);
+        }
 
-                const offset = new THREE.Vector3();
-                offset.setFromMatrixColumn(camera.matrix, 0);
-                offset.multiplyScalar(-deltaX * controls.panSpeed);
+        function createMirrors() {
+            const mirrorMaterial = new THREE.MeshStandardMaterial({
+                color: currentConfig.bodyColor,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+
+            // Left mirror
+            const mirrorGeometry = new THREE.BoxGeometry(0.3, 0.3, 0.6);
+            mirrorLeft = new THREE.Mesh(mirrorGeometry, mirrorMaterial);
+            mirrorLeft.position.set(1.5, 3.2, 2.5);
+            mirrorLeft.castShadow = true;
+            mirrorLeft.visible = currentConfig.showMirrors;
+            carGroup.add(mirrorLeft);
+
+            // Right mirror
+            mirrorRight = mirrorLeft.clone();
+            mirrorRight.position.z = -2.5;
+            mirrorRight.visible = currentConfig.showMirrors;
+            carGroup.add(mirrorRight);
+
+            // Mirror glass
+            const glassMaterial = new THREE.MeshStandardMaterial({
+                color: 0x444444,
+                metalness: 1,
+                roughness: 0
+            });
+            const glassGeometry = new THREE.BoxGeometry(0.32, 0.25, 0.01);
+            const glassLeft = new THREE.Mesh(glassGeometry, glassMaterial);
+            glassLeft.position.set(1.5, 3.2, 2.65);
+            glassLeft.visible = currentConfig.showMirrors;
+            carGroup.add(glassLeft);
+
+            const glassRight = glassLeft.clone();
+            glassRight.position.z = -2.65;
+            glassRight.visible = currentConfig.showMirrors;
+            carGroup.add(glassRight);
+        }
+
+        function createLights() {
+            const lightMaterial = new THREE.MeshStandardMaterial({
+                color: 0xffffcc,
+                emissive: 0xffffcc,
+                emissiveIntensity: 0.5,
+                metalness: 0.3,
+                roughness: 0.5
+            });
+
+            // Front headlights
+            const headlightGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.2, 16);
+            const headlightLeft = new THREE.Mesh(headlightGeometry, lightMaterial);
+            headlightLeft.rotation.z = Math.PI / 2;
+            headlightLeft.position.set(5.5, 2, 1.3);
+            carGroup.add(headlightLeft);
+
+            const headlightRight = headlightLeft.clone();
+            headlightRight.position.z = -1.3;
+            carGroup.add(headlightRight);
+
+            // Tail lights
+            const tailLightMaterial = new THREE.MeshStandardMaterial({
+                color: 0xff0000,
+                emissive: 0xff0000,
+                emissiveIntensity: 0.5
+            });
+            const tailLightGeometry = new THREE.BoxGeometry(0.15, 0.4, 0.8);
+            const tailLightLeft = new THREE.Mesh(tailLightGeometry, tailLightMaterial);
+            tailLightLeft.position.set(-4.7, 2.2, 1.5);
+            carGroup.add(tailLightLeft);
+
+            const tailLightRight = tailLightLeft.clone();
+            tailLightRight.position.z = -1.5;
+            carGroup.add(tailLightRight);
+        }
+
+        function createBumpers() {
+            const bumperMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1a1a1a,
+                roughness: 0.6,
+                metalness: 0.3
+            });
+
+            // Front bumper
+            const frontBumperGeo = new THREE.BoxGeometry(1, 0.4, 4.2);
+            const frontBumper = new THREE.Mesh(frontBumperGeo, bumperMaterial);
+            frontBumper.position.set(5.5, 1.2, 0);
+            frontBumper.castShadow = true;
+            carGroup.add(frontBumper);
+
+            // Rear bumper
+            const rearBumper = frontBumper.clone();
+            rearBumper.position.x = -5;
+            carGroup.add(rearBumper);
+
+            // Grille
+            const grilleGeo = new THREE.BoxGeometry(0.1, 0.6, 2);
+            const grilleMaterial = new THREE.MeshStandardMaterial({
+                color: 0x0a0a0a,
+                roughness: 0.8,
+                metalness: 0.5
+            });
+            const grille = new THREE.Mesh(grilleGeo, grilleMaterial);
+            grille.position.set(5.9, 1.8, 0);
+            carGroup.add(grille);
+        }
+
+        function createEnvironment() {
+            // Add some background buildings/objects
+            const buildingMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2a2a3e,
+                roughness: 0.7,
+                metalness: 0.3
+            });
+
+            for (let i = 0; i < 8; i++) {
+                const height = 10 + Math.random() * 20;
+                const buildingGeo = new THREE.BoxGeometry(5, height, 5);
+                const building = new THREE.Mesh(buildingGeo, buildingMaterial);
                 
-                const offset2 = new THREE.Vector3();
-                offset2.setFromMatrixColumn(camera.matrix, 1);
-                offset2.multiplyScalar(deltaY * controls.panSpeed);
-
-                camera.position.add(offset).add(offset2);
-                controls.target.add(offset).add(offset2);
+                const angle = (i / 8) * Math.PI * 2;
+                const distance = 40;
+                building.position.x = Math.cos(angle) * distance;
+                building.position.z = Math.sin(angle) * distance;
+                building.position.y = height / 2;
+                building.castShadow = true;
+                building.receiveShadow = true;
+                
+                scene.add(building);
             }
 
-            controls.previousMousePosition = {
-                x: event.clientX,
-                y: event.clientY
-            };
+            // Add ambient particles/stars
+            const particlesGeometry = new THREE.BufferGeometry();
+            const particleCount = 200;
+            const positions = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 100;
+                positions[i + 1] = Math.random() * 50 + 10;
+                positions[i + 2] = (Math.random() - 0.5) * 100;
+            }
+
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particlesMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.1,
+                transparent: true,
+                opacity: 0.6
+            });
+            const particles = new THREE.Points(particlesGeometry, particlesMaterial);
+            scene.add(particles);
         }
 
-        function onMouseUp() {
-            controls.isRotating = false;
-            controls.isPanning = false;
-        }
-
-        function onMouseWheel(event) {
-            const delta = event.deltaY;
-            const offset = new THREE.Vector3();
-            offset.copy(camera.position).sub(controls.target);
-            
-            const distance = offset.length();
-            const newDistance = Math.max(controls.minDistance, 
-                Math.min(controls.maxDistance, distance + delta * controls.zoomSpeed * 0.01));
-            
-            offset.normalize().multiplyScalar(newDistance);
-            camera.position.copy(controls.target).add(offset);
-        }
-
-        // Event Listeners
         function setupEventListeners() {
-            // Color selection
-            document.querySelectorAll('.color-option').forEach(option => {
-                option.addEventListener('click', function() {
-                    const color = this.dataset.color;
-                    const part = this.dataset.part;
+            // Body color
+            document.getElementById('body-color').addEventListener('input', (e) => {
+                updateBodyColor(e.target.value);
+            });
+
+            document.querySelectorAll('#body-colors .color-option').forEach(option => {
+                option.addEventListener('click', (e) => {
+                    const color = e.target.dataset.color;
+                    document.getElementById('body-color').value = color;
+                    updateBodyColor(color);
                     
-                    // Update active state
-                    this.parentElement.querySelectorAll('.color-option').forEach(opt => 
+                    document.querySelectorAll('#body-colors .color-option').forEach(opt => 
                         opt.classList.remove('active'));
-                    this.classList.add('active');
+                    e.target.classList.add('active');
+                });
+            });
+
+            // Stripe color
+            document.getElementById('stripe-color').addEventListener('input', (e) => {
+                updateStripeColor(e.target.value);
+            });
+
+            document.querySelectorAll('#stripe-colors .color-option').forEach(option => {
+                option.addEventListener('click', (e) => {
+                    const color = e.target.dataset.color;
+                    document.getElementById('stripe-color').value = color;
+                    updateStripeColor(color);
                     
-                    // Update config
-                    config.colors[part] = color;
-                    
-                    // Update 3D model
-                    updatePartColor(part, color);
+                    document.querySelectorAll('#stripe-colors .color-option').forEach(opt => 
+                        opt.classList.remove('active'));
+                    e.target.classList.add('active');
                 });
             });
 
-            // Material selection
-            document.getElementById('seat-material').addEventListener('change', function() {
-                config.materials.seat = this.value;
-                updateMaterial('seat', this.value);
+            // Wheel color
+            document.getElementById('wheel-color').addEventListener('input', (e) => {
+                updateWheelColor(e.target.value);
             });
 
-            document.getElementById('legs-material').addEventListener('change', function() {
-                config.materials.legs = this.value;
-                updateMaterial('legs', this.value);
+            // Material
+            document.getElementById('body-material').addEventListener('change', (e) => {
+                updateBodyMaterial(e.target.value);
             });
 
-            // Material properties
-            document.getElementById('metalness').addEventListener('input', function() {
-                config.properties.metalness = parseFloat(this.value);
-                document.getElementById('metalness-value').textContent = this.value;
-                updateMaterialProperties();
+            // Wheel style
+            document.getElementById('wheel-style').addEventListener('change', (e) => {
+                updateWheelStyle(e.target.value);
             });
 
-            document.getElementById('roughness').addEventListener('input', function() {
-                config.properties.roughness = parseFloat(this.value);
-                document.getElementById('roughness-value').textContent = this.value;
-                updateMaterialProperties();
+            // Window tint
+            document.getElementById('window-tint').addEventListener('change', (e) => {
+                updateWindowTint(parseFloat(e.target.value));
             });
 
-            // Visibility toggles
-            document.getElementById('toggle-armrests').addEventListener('change', function() {
-                config.visibility.armrests = this.checked;
-                chair.armrests.visible = this.checked;
+            // Toggles
+            document.getElementById('toggle-stripe').addEventListener('change', (e) => {
+                toggleStripe(e.target.checked);
             });
 
-            document.getElementById('toggle-cushion').addEventListener('change', function() {
-                config.visibility.cushion = this.checked;
-                chair.cushion.visible = this.checked;
+            document.getElementById('toggle-spoiler').addEventListener('change', (e) => {
+                toggleSpoiler(e.target.checked);
             });
+
+            document.getElementById('toggle-mirrors').addEventListener('change', (e) => {
+                toggleMirrors(e.target.checked);
+            });
+
+            // Window resize
+            window.addEventListener('resize', onWindowResize);
         }
 
-        // Update Functions
-        function updatePartColor(part, color) {
-            if (part === 'seat') {
-                chair.seat.material.color.set(color);
-                chair.armrests.children.forEach(armrest => {
-                    armrest.material.color.set(color);
+        function updateBodyColor(color) {
+            currentConfig.bodyColor = color;
+            carGroup.children.forEach(child => {
+                if (child.material && child !== stripeMesh && 
+                    !wheels.includes(child) && child !== spoilerMesh &&
+                    child !== mirrorLeft && child !== mirrorRight) {
+                    if (child.material.color) {
+                        child.material.color.set(color);
+                    }
+                }
+            });
+            if (spoilerMesh) {
+                spoilerMesh.children.forEach(child => {
+                    if (child.material) child.material.color.set(color);
                 });
-                chair.cushion.material.color.set(color);
-            } else if (part === 'backrest') {
-                chair.backrest.material.color.set(color);
-            } else if (part === 'legs') {
-                chair.legs.children.forEach(leg => {
-                    leg.material.color.set(color);
-                });
+            }
+            if (mirrorLeft && mirrorLeft.material) mirrorLeft.material.color.set(color);
+            if (mirrorRight && mirrorRight.material) mirrorRight.material.color.set(color);
+        }
+
+        function updateStripeColor(color) {
+            currentConfig.stripeColor = color;
+            if (stripeMesh && stripeMesh.material) {
+                stripeMesh.material.color.set(color);
             }
         }
 
-        function updateMaterial(part, materialType) {
-            let roughness = 0.5;
-            let metalness = 0.3;
-
-            if (materialType === 'leather') {
-                roughness = 0.3;
-                metalness = 0.1;
-            } else if (materialType === 'fabric') {
-                roughness = 0.9;
-                metalness = 0.0;
-            } else if (materialType === 'velvet') {
-                roughness = 0.8;
-                metalness = 0.0;
-            } else if (materialType === 'metal') {
-                roughness = 0.3;
-                metalness = 0.8;
-            } else if (materialType === 'wood') {
-                roughness = 0.6;
-                metalness = 0.1;
-            } else if (materialType === 'plastic') {
-                roughness = 0.4;
-                metalness = 0.2;
-            }
-
-            if (part === 'seat') {
-                chair.seat.material.roughness = roughness;
-                chair.seat.material.metalness = metalness;
-                chair.seat.material.needsUpdate = true;
-            } else if (part === 'legs') {
-                chair.legs.children.forEach(leg => {
-                    leg.material.roughness = roughness;
-                    leg.material.metalness = metalness;
-                    leg.material.needsUpdate = true;
+        function updateWheelColor(color) {
+            currentConfig.wheelColor = color;
+            wheels.forEach(wheel => {
+                wheel.children.forEach(child => {
+                    if (child.material && child.material.color) {
+                        const currentColor = child.material.color.getHex();
+                        if (currentColor !== 0x1a1a1a) { // Not tire
+                            child.material.color.set(color);
+                        }
+                    }
                 });
-            }
-        }
-
-        function updateMaterialProperties() {
-            const metalness = config.properties.metalness;
-            const roughness = config.properties.roughness;
-
-            chair.seat.material.metalness = metalness;
-            chair.seat.material.roughness = roughness;
-            chair.seat.material.needsUpdate = true;
-
-            chair.backrest.material.metalness = metalness;
-            chair.backrest.material.roughness = roughness;
-            chair.backrest.material.needsUpdate = true;
-
-            chair.armrests.children.forEach(armrest => {
-                armrest.material.metalness = metalness;
-                armrest.material.roughness = roughness;
-                armrest.material.needsUpdate = true;
             });
         }
 
-        // Camera Views
+        function updateBodyMaterial(type) {
+            currentConfig.bodyMaterial = type;
+            let metalness = 0.7;
+            let roughness = 0.3;
+
+            switch(type) {
+                case 'matte':
+                    metalness = 0.1;
+                    roughness = 0.9;
+                    break;
+                case 'glossy':
+                    metalness = 0.9;
+                    roughness = 0.1;
+                    break;
+                case 'carbon':
+                    metalness = 0.5;
+                    roughness = 0.4;
+                    break;
+            }
+
+            carGroup.children.forEach(child => {
+                if (child.material && child !== stripeMesh && !wheels.includes(child)) {
+                    if (child.material.metalness !== undefined) {
+                        child.material.metalness = metalness;
+                        child.material.roughness = roughness;
+                        child.material.needsUpdate = true;
+                    }
+                }
+            });
+        }
+
+        function updateWheelStyle(style) {
+            currentConfig.wheelStyle = style;
+            // Remove old wheels
+            wheels.forEach(wheel => carGroup.remove(wheel));
+            wheels = [];
+            // Create new wheels
+            createWheels();
+        }
+
+        function updateWindowTint(level) {
+            currentConfig.windowTint = level;
+            carGroup.children.forEach(child => {
+                if (child.material && child.material.transparent && child.material.opacity < 1) {
+                    child.material.opacity = level;
+                    child.material.needsUpdate = true;
+                }
+            });
+        }
+
+        function toggleStripe(visible) {
+            currentConfig.showStripe = visible;
+            if (stripeMesh) stripeMesh.visible = visible;
+        }
+
+        function toggleSpoiler(visible) {
+            currentConfig.showSpoiler = visible;
+            if (spoilerMesh) spoilerMesh.visible = visible;
+        }
+
+        function toggleMirrors(visible) {
+            currentConfig.showMirrors = visible;
+            if (mirrorLeft) mirrorLeft.visible = visible;
+            if (mirrorRight) mirrorRight.visible = visible;
+            
+            // Also toggle mirror glass
+            carGroup.children.forEach(child => {
+                if (child.material && child.material.metalness === 1 && 
+                    child.material.roughness === 0) {
+                    child.visible = visible;
+                }
+            });
+        }
+
         function setCameraView(view) {
-            const distance = 8;
-            let position;
-
-            switch(view) {
-                case 'front':
-                    position = new THREE.Vector3(0, 2, distance);
-                    break;
-                case 'side':
-                    position = new THREE.Vector3(distance, 2, 0);
-                    break;
-                case 'top':
-                    position = new THREE.Vector3(0, distance, 0.1);
-                    break;
-                case 'angle':
-                    position = new THREE.Vector3(5, 4, 5);
-                    break;
-            }
-
-            animateCameraTo(position, controls.target, 1000);
-        }
-
-        function animateCameraTo(targetPosition, lookAt, duration) {
-            const startPosition = camera.position.clone();
+            const duration = 1000; // Animation duration in ms
+            const startPos = camera.position.clone();
             const startTime = Date.now();
 
-            function animate() {
-                const now = Date.now();
-                const progress = Math.min((now - startTime) / duration, 1);
-                const eased = easeInOutCubic(progress);
+            let targetPos;
+            switch(view) {
+                case 'front':
+                    targetPos = new THREE.Vector3(20, 8, 0);
+                    break;
+                case 'rear':
+                    targetPos = new THREE.Vector3(-20, 8, 0);
+                    break;
+                case 'side':
+                    targetPos = new THREE.Vector3(0, 8, 20);
+                    break;
+                case 'top':
+                    targetPos = new THREE.Vector3(0, 25, 0.1);
+                    break;
+                default:
+                    targetPos = new THREE.Vector3(15, 8, 15);
+            }
 
-                camera.position.lerpVectors(startPosition, targetPosition, eased);
-                camera.lookAt(lookAt);
+            function animateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Easing function (ease-in-out)
+                const eased = progress < 0.5 
+                    ? 2 * progress * progress 
+                    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+
+                camera.position.lerpVectors(startPos, targetPos, eased);
+                camera.lookAt(0, 2, 0);
 
                 if (progress < 1) {
-                    requestAnimationFrame(animate);
+                    requestAnimationFrame(animateCamera);
                 }
             }
 
-            animate();
+            animateCamera();
         }
 
-        function easeInOutCubic(t) {
-            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-        }
+        function exportJSON() {
+            const config = {
+                ...currentConfig,
+                timestamp: new Date().toISOString(),
+                version: '1.0'
+            };
 
-        // Export Functions
-        function exportConfig() {
-            const configJSON = JSON.stringify(config, null, 2);
-            const blob = new Blob([configJSON], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
+            const dataStr = JSON.stringify(config, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            
             const link = document.createElement('a');
             link.href = url;
-            link.download = 'chair_config_' + Date.now() + '.json';
+            link.download = `car-config-${Date.now()}.json`;
             link.click();
+            
             URL.revokeObjectURL(url);
         }
 
-        function takeSnapshot() {
-            renderer.render(scene, camera);
-            const dataURL = renderer.domElement.toDataURL('image/png');
-            const link = document.createElement('a');
-            link.href = dataURL;
-            link.download = 'chair_snapshot_' + Date.now() + '.png';
-            link.click();
-        }
-
-        function resetConfiguration() {
-            config = {
-                colors: {
-                    seat: '#e74c3c',
-                    backrest: '#3498db',
-                    legs: '#7f8c8d'
-                },
-                materials: {
-                    seat: 'standard',
-                    legs: 'metal'
-                },
-                properties: {
-                    metalness: 0.3,
-                    roughness: 0.5
-                },
-                visibility: {
-                    armrests: true,
-                    cushion: true
-                }
-            };
-
-            // Reset colors
-            updatePartColor('seat', config.colors.seat);
-            updatePartColor('backrest', config.colors.backrest);
-            updatePartColor('legs', config.colors.legs);
-
-            // Reset UI
-            document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('active'));
-            document.querySelector('[data-color="#e74c3c"][data-part="seat"]').classList.add('active');
-            document.querySelector('[data-color="#3498db"][data-part="backrest"]').classList.add('active');
-            document.querySelector('[data-color="#7f8c8d"][data-part="legs"]').classList.add('active');
-
-            document.getElementById('seat-material').value = 'standard';
-            document.getElementById('legs-material').value = 'metal';
-            document.getElementById('metalness').value = 0.3;
-            document.getElementById('roughness').value = 0.5;
-            document.getElementById('metalness-value').textContent = '0.3';
-            document.getElementById('roughness-value').textContent = '0.5';
-            document.getElementById('toggle-armrests').checked = true;
-            document.getElementById('toggle-cushion').checked = true;
-
-            updateMaterialProperties();
-            chair.armrests.visible = true;
-            chair.cushion.visible = true;
-
-            setCameraView('angle');
-        }
-
-        // Animation Loop
-        function animate() {
-            requestAnimationFrame(animate);
+        function exportSnapshot() {
+            // Render at higher resolution
+            const originalWidth = renderer.domElement.width;
+            const originalHeight = renderer.domElement.height;
             
-            // Subtle rotation animation
-            chair.group.rotation.y += 0.001;
-            
+            renderer.setSize(1920, 1080);
             renderer.render(scene, camera);
+            
+            renderer.domElement.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `car-snapshot-${Date.now()}.png`;
+                link.click();
+                URL.revokeObjectURL(url);
+                
+                // Restore original size
+                renderer.setSize(originalWidth, originalHeight);
+            });
         }
 
-        // Window Resize
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Initialize on load
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Rotate car slowly
+            if (carGroup) {
+                carGroup.rotation.y += 0.002;
+            }
+
+            // Rotate wheels
+            wheels.forEach(wheel => {
+                wheel.rotation.x += 0.02;
+            });
+
+            // Update stats
+            updateStats();
+
+            renderer.render(scene, camera);
+        }
+
+        function updateStats() {
+            const stats = document.getElementById('stats');
+            if (stats) {
+                const triangles = renderer.info.render.triangles;
+                const calls = renderer.info.render.calls;
+                stats.innerHTML = `
+                    Triangles: ${triangles.toLocaleString()}<br>
+                    Draw Calls: ${calls}<br>
+                    FPS: ${Math.round(1000 / 16)}
+                `;
+            }
+        }
+
+        // Start the application
         window.addEventListener('load', init);
     </script>
 </body>

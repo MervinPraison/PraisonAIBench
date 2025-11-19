@@ -10,18 +10,15 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
         body {
             font-family: 'Arial', sans-serif;
             overflow: hidden;
             background: #000;
         }
-        
         #container {
             width: 100vw;
             height: 100vh;
         }
-        
         #minimap {
             position: absolute;
             top: 20px;
@@ -33,41 +30,17 @@
             background: rgba(0, 0, 0, 0.5);
             overflow: hidden;
         }
-        
-        #controls-info {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            font-size: 14px;
-            max-width: 300px;
-        }
-        
-        #controls-info h3 {
-            margin-bottom: 10px;
-            color: #4CAF50;
-        }
-        
-        #controls-info ul {
-            list-style: none;
-            line-height: 1.6;
-        }
-        
-        #room-info {
+        #info {
             position: absolute;
             top: 20px;
             left: 20px;
-            background: rgba(0, 0, 0, 0.7);
             color: white;
+            background: rgba(0, 0, 0, 0.7);
             padding: 15px;
-            border-radius: 8px;
-            font-size: 16px;
-            min-width: 150px;
+            border-radius: 10px;
+            font-size: 14px;
+            max-width: 300px;
         }
-        
         #crosshair {
             position: absolute;
             top: 50%;
@@ -77,40 +50,36 @@
             height: 20px;
             pointer-events: none;
         }
-        
         #crosshair::before,
         #crosshair::after {
             content: '';
             position: absolute;
             background: rgba(255, 255, 255, 0.8);
         }
-        
         #crosshair::before {
             width: 2px;
-            height: 20px;
-            left: 9px;
-        }
-        
-        #crosshair::after {
-            width: 20px;
-            height: 2px;
-            top: 9px;
-        }
-        
-        #interaction-hint {
-            position: absolute;
-            top: 50%;
+            height: 100%;
             left: 50%;
-            transform: translate(-50%, calc(-50% + 40px));
-            background: rgba(76, 175, 80, 0.9);
+            transform: translateX(-50%);
+        }
+        #crosshair::after {
+            width: 100%;
+            height: 2px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        #interaction-prompt {
+            position: absolute;
+            top: 60%;
+            left: 50%;
+            transform: translateX(-50%);
             color: white;
+            background: rgba(0, 0, 0, 0.8);
             padding: 10px 20px;
             border-radius: 5px;
-            font-size: 14px;
             display: none;
-            pointer-events: none;
+            font-size: 16px;
         }
-        
         #loading {
             position: absolute;
             top: 50%;
@@ -118,51 +87,38 @@
             transform: translate(-50%, -50%);
             color: white;
             font-size: 24px;
-            text-align: center;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 40px;
+            border-radius: 10px;
         }
-        
-        .loader {
-            border: 5px solid #f3f3f3;
-            border-top: 5px solid #4CAF50;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .room-label {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 18px;
+            display: none;
         }
     </style>
 </head>
 <body>
     <div id="container"></div>
-    <canvas id="minimap"></canvas>
-    
-    <div id="room-info">
-        <strong>Room:</strong> <span id="current-room">Entrance Hall</span>
-    </div>
-    
-    <div id="controls-info">
-        <h3>Controls</h3>
-        <ul>
-            <li>🖱️ Mouse - Look around</li>
-            <li>⌨️ WASD - Move</li>
-            <li>⇧ Shift - Run</li>
-            <li>🖱️ Click - Interact with hotspots</li>
-            <li>📍 Minimap shows your position</li>
-        </ul>
-    </div>
-    
+    <div id="minimap"></div>
     <div id="crosshair"></div>
-    <div id="interaction-hint">Click to interact</div>
-    
-    <div id="loading">
-        <div class="loader"></div>
-        <p>Generating House...</p>
+    <div id="info">
+        <strong>Controls:</strong><br>
+        WASD - Move<br>
+        Mouse - Look Around<br>
+        E - Interact<br>
+        Click to lock pointer
     </div>
+    <div id="interaction-prompt">Press E to interact</div>
+    <div id="loading">Loading environment...</div>
+    <div class="room-label" id="room-label">Living Room</div>
 
     <script type="importmap">
     {
@@ -178,992 +134,894 @@
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
         import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
-        // ==================== CONFIGURATION ====================
-        const CONFIG = {
-            playerHeight: 1.7,
-            playerRadius: 0.3,
-            walkSpeed: 3,
-            runSpeed: 6,
-            mouseSensitivity: 0.002,
-            gravity: 9.8,
-            jumpForce: 5
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, 0, 50);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 1.6, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
+        document.getElementById('container').appendChild(renderer.domElement);
+
+        // Minimap setup
+        const minimapScene = new THREE.Scene();
+        const minimapCamera = new THREE.OrthographicCamera(-15, 15, 15, -15, 0.1, 100);
+        minimapCamera.position.set(0, 20, 0);
+        minimapCamera.lookAt(0, 0, 0);
+        
+        const minimapRenderer = new THREE.WebGLRenderer({ alpha: true });
+        minimapRenderer.setSize(200, 200);
+        minimapRenderer.setClearColor(0x000000, 0.3);
+        document.getElementById('minimap').appendChild(minimapRenderer.domElement);
+
+        // Player marker for minimap
+        const playerMarkerGeom = new THREE.ConeGeometry(0.3, 0.8, 3);
+        const playerMarkerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const playerMarker = new THREE.Mesh(playerMarkerGeom, playerMarkerMat);
+        playerMarker.rotation.x = Math.PI;
+        minimapScene.add(playerMarker);
+
+        // Controls
+        const controls = new PointerLockControls(camera, document.body);
+        
+        const moveState = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            canJump: false
         };
 
-        // ==================== GAME STATE ====================
-        class GameState {
-            constructor() {
-                this.scene = new THREE.Scene();
-                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-                this.renderer = new THREE.WebGLRenderer({ antialias: true });
-                this.clock = new THREE.Clock();
-                this.controls = null;
-                
-                this.velocity = new THREE.Vector3();
-                this.direction = new THREE.Vector3();
-                this.moveForward = false;
-                this.moveBackward = false;
-                this.moveLeft = false;
-                this.moveRight = false;
-                this.canJump = true;
-                this.isRunning = false;
-                
-                this.rooms = [];
-                this.furniture = [];
-                this.hotspots = [];
-                this.walls = [];
-                this.currentRoom = null;
-                
-                this.raycaster = new THREE.Raycaster();
-                this.mouse = new THREE.Vector2();
-                this.hoveredHotspot = null;
-                
-                this.lightProbes = [];
-                this.minimapCamera = null;
-                this.minimapRenderer = null;
-            }
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        const moveSpeed = 5.0;
+        const raycaster = new THREE.Raycaster(new THREE.Vector3(), new THREE.Vector3(0, -1, 0), 0, 2);
+
+        // Lighting setup
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+
+        const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        sunLight.position.set(5, 10, 5);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 0.5;
+        sunLight.shadow.camera.far = 50;
+        sunLight.shadow.camera.left = -20;
+        sunLight.shadow.camera.right = 20;
+        sunLight.shadow.camera.top = 20;
+        sunLight.shadow.camera.bottom = -20;
+        scene.add(sunLight);
+
+        // Light probes for indirect lighting
+        const lightProbe = new THREE.LightProbe();
+        scene.add(lightProbe);
+
+        // Materials library
+        const materials = {
+            wall: new THREE.MeshStandardMaterial({ 
+                color: 0xf5f5dc, 
+                roughness: 0.9, 
+                metalness: 0.0 
+            }),
+            wallAlt: new THREE.MeshStandardMaterial({ 
+                color: 0xe6e6fa, 
+                roughness: 0.9, 
+                metalness: 0.0 
+            }),
+            floor: new THREE.MeshStandardMaterial({ 
+                color: 0x8b4513, 
+                roughness: 0.8, 
+                metalness: 0.0 
+            }),
+            floorAlt: new THREE.MeshStandardMaterial({ 
+                color: 0xd2b48c, 
+                roughness: 0.7, 
+                metalness: 0.0 
+            }),
+            ceiling: new THREE.MeshStandardMaterial({ 
+                color: 0xffffff, 
+                roughness: 0.9, 
+                metalness: 0.0 
+            }),
+            wood: new THREE.MeshStandardMaterial({ 
+                color: 0x654321, 
+                roughness: 0.6, 
+                metalness: 0.0 
+            }),
+            metal: new THREE.MeshStandardMaterial({ 
+                color: 0x808080, 
+                roughness: 0.3, 
+                metalness: 0.8 
+            }),
+            glass: new THREE.MeshPhysicalMaterial({ 
+                color: 0xffffff, 
+                metalness: 0, 
+                roughness: 0, 
+                transmission: 0.9, 
+                thickness: 0.5 
+            }),
+            fabric: new THREE.MeshStandardMaterial({ 
+                color: 0x4169e1, 
+                roughness: 0.9, 
+                metalness: 0.0 
+            }),
+            fabricAlt: new THREE.MeshStandardMaterial({ 
+                color: 0x8b0000, 
+                roughness: 0.9, 
+                metalness: 0.0 
+            })
+        };
+
+        // House structure
+        const house = {
+            rooms: [],
+            walls: [],
+            furniture: [],
+            hotspots: [],
+            collisionObjects: []
+        };
+
+        // Room definitions
+        const roomDefinitions = [
+            { name: 'Living Room', x: 0, z: 0, width: 8, depth: 8, material: materials.floor },
+            { name: 'Kitchen', x: 8, z: 0, width: 6, depth: 6, material: materials.floorAlt },
+            { name: 'Bedroom', x: 0, z: 8, width: 6, depth: 6, material: materials.floor },
+            { name: 'Bathroom', x: 6, z: 8, width: 4, depth: 4, material: materials.floorAlt },
+            { name: 'Hallway', x: 6, z: 0, width: 2, depth: 8, material: materials.floor }
+        ];
+
+        let currentRoom = null;
+
+        // Create procedural house
+        function createHouse() {
+            // Create rooms
+            roomDefinitions.forEach(roomDef => {
+                const room = createRoom(roomDef);
+                house.rooms.push(room);
+            });
+
+            // Add furniture to rooms
+            addFurniture();
+
+            // Create exterior walls
+            createExteriorWalls();
+
+            // Add minimap representation
+            createMinimapRepresentation();
         }
 
-        const game = new GameState();
+        function createRoom(roomDef) {
+            const room = {
+                name: roomDef.name,
+                bounds: {
+                    minX: roomDef.x,
+                    maxX: roomDef.x + roomDef.width,
+                    minZ: roomDef.z,
+                    maxZ: roomDef.z + roomDef.depth
+                },
+                objects: [],
+                visible: true
+            };
 
-        // ==================== HOUSE GENERATOR ====================
-        class Room {
-            constructor(x, z, width, depth, name, color) {
-                this.x = x;
-                this.z = z;
-                this.width = width;
-                this.depth = depth;
-                this.name = name;
-                this.color = color;
-                this.meshes = [];
-                this.furniture = [];
-                this.isVisible = true;
-            }
+            // Floor
+            const floorGeometry = new THREE.BoxGeometry(roomDef.width, 0.1, roomDef.depth);
+            const floor = new THREE.Mesh(floorGeometry, roomDef.material);
+            floor.position.set(roomDef.x + roomDef.width/2, 0, roomDef.z + roomDef.depth/2);
+            floor.receiveShadow = true;
+            scene.add(floor);
+            room.objects.push(floor);
+            house.collisionObjects.push(floor);
 
-            containsPoint(x, z) {
-                return x >= this.x - this.width / 2 && 
-                       x <= this.x + this.width / 2 && 
-                       z >= this.z - this.depth / 2 && 
-                       z <= this.z + this.depth / 2;
-            }
+            // Ceiling
+            const ceiling = new THREE.Mesh(floorGeometry, materials.ceiling);
+            ceiling.position.set(roomDef.x + roomDef.width/2, 3, roomDef.z + roomDef.depth/2);
+            ceiling.receiveShadow = true;
+            scene.add(ceiling);
+            room.objects.push(ceiling);
 
-            setVisible(visible) {
-                this.isVisible = visible;
-                this.meshes.forEach(mesh => mesh.visible = visible);
-                this.furniture.forEach(furn => furn.visible = visible);
-            }
+            // Room light
+            const roomLight = new THREE.PointLight(0xffffff, 0.6, 10);
+            roomLight.position.set(roomDef.x + roomDef.width/2, 2.5, roomDef.z + roomDef.depth/2);
+            roomLight.castShadow = true;
+            scene.add(roomLight);
+            room.objects.push(roomLight);
+
+            return room;
         }
 
-        class HouseGenerator {
-            constructor() {
-                this.rooms = [];
-            }
+        function createWall(x, y, z, width, height, depth, material) {
+            const wallGeometry = new THREE.BoxGeometry(width, height, depth);
+            const wall = new THREE.Mesh(wallGeometry, material);
+            wall.position.set(x, y, z);
+            wall.castShadow = true;
+            wall.receiveShadow = true;
+            scene.add(wall);
+            house.walls.push(wall);
+            house.collisionObjects.push(wall);
+            
+            // Minimap representation
+            const minimapWall = wall.clone();
+            minimapWall.material = new THREE.MeshBasicMaterial({ color: 0x666666 });
+            minimapScene.add(minimapWall);
+            
+            return wall;
+        }
 
-            generate() {
-                // Define room layout
-                const roomConfigs = [
-                    { x: 0, z: 0, width: 6, depth: 6, name: 'Entrance Hall', color: 0xd4a574 },
-                    { x: -6, z: 0, width: 5, depth: 5, name: 'Living Room', color: 0xc9b99b },
-                    { x: 6, z: 0, width: 4, depth: 5, name: 'Kitchen', color: 0xe8dcc4 },
-                    { x: 0, z: -6, width: 4, depth: 4, name: 'Bedroom', color: 0xb8a590 },
-                    { x: 6, z: -6, width: 3, depth: 3, name: 'Bathroom', color: 0xdee5e5 },
-                    { x: -6, z: -6, width: 4, depth: 4, name: 'Study', color: 0xa89070 }
-                ];
+        function createExteriorWalls() {
+            const wallHeight = 3;
+            const wallThickness = 0.2;
 
-                roomConfigs.forEach(config => {
-                    const room = new Room(config.x, config.z, config.width, config.depth, config.name, config.color);
-                    this.createRoomGeometry(room);
-                    this.rooms.push(room);
+            // Living room walls
+            createWall(0, wallHeight/2, -wallThickness/2, 8, wallHeight, wallThickness, materials.wall);
+            createWall(-wallThickness/2, wallHeight/2, 4, wallThickness, wallHeight, 8, materials.wall);
+            
+            // Kitchen walls
+            createWall(14, wallHeight/2, 3, wallThickness, wallHeight, 6, materials.wallAlt);
+            createWall(11, wallHeight/2, -wallThickness/2, 6, wallHeight, wallThickness, materials.wallAlt);
+            
+            // Bedroom walls
+            createWall(-wallThickness/2, wallHeight/2, 11, wallThickness, wallHeight, 6, materials.wall);
+            
+            // Bathroom walls
+            createWall(10, wallHeight/2, 10, wallThickness, wallHeight, 4, materials.wallAlt);
+            
+            // Internal walls with doorways
+            // Living room to kitchen (with door)
+            createWall(8, wallHeight/2, 1.5, wallThickness, wallHeight, 3, materials.wall);
+            createWall(8, wallHeight/2, 4.5, wallThickness, wallHeight, 3, materials.wall);
+            
+            // Living room to bedroom (with door)
+            createWall(1.5, wallHeight/2, 8, 3, wallHeight, wallThickness, materials.wall);
+            createWall(4.5, wallHeight/2, 8, 3, wallHeight, wallThickness, materials.wall);
+            
+            // Bedroom to bathroom (with door)
+            createWall(6, wallHeight/2, 9.5, wallThickness, wallHeight, 3, materials.wall);
+            
+            // Kitchen to hallway
+            createWall(8, wallHeight/2, 8, wallThickness, wallHeight, 3, materials.wallAlt);
+            
+            // South wall
+            createWall(7, wallHeight/2, 14, 14, wallHeight, wallThickness, materials.wall);
+        }
+
+        function addFurniture() {
+            // Living room furniture
+            const sofa = createSofa(-1, 0.4, 3, materials.fabric);
+            addHotspot(sofa, 'Toggle Sofa Color', () => {
+                sofa.children.forEach(child => {
+                    if (child.material === materials.fabric) {
+                        child.material = materials.fabricAlt;
+                    } else {
+                        child.material = materials.fabric;
+                    }
                 });
+            });
 
-                this.createDoorways();
-                return this.rooms;
-            }
-
-            createRoomGeometry(room) {
-                const wallHeight = 3;
-                const wallThickness = 0.2;
-
-                // Floor
-                const floorGeometry = new THREE.BoxGeometry(room.width, 0.1, room.depth);
-                const floorMaterial = new THREE.MeshStandardMaterial({ 
-                    color: room.color,
-                    roughness: 0.8,
-                    metalness: 0.2
+            const coffeeTable = createTable(2, 0.25, 3, 2, 0.5, 1, materials.wood);
+            addHotspot(coffeeTable, 'Toggle Table Material', () => {
+                coffeeTable.children.forEach(child => {
+                    if (child.material === materials.wood) {
+                        child.material = materials.metal;
+                    } else {
+                        child.material = materials.wood;
+                    }
                 });
-                const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-                floor.position.set(room.x, 0, room.z);
-                floor.receiveShadow = true;
-                game.scene.add(floor);
-                room.meshes.push(floor);
+            });
 
-                // Ceiling
-                const ceilingMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0xffffff,
-                    roughness: 0.9,
-                    metalness: 0.1
+            createLamp(5, 0, 5, materials.metal);
+            createTV(0.2, 1, 0.5, materials.metal);
+
+            // Kitchen furniture
+            createCounter(10, 0.45, 2, 3, 0.9, 0.6, materials.wood);
+            createRefrigerator(13.5, 0.9, 1, materials.metal);
+            createTable(10, 0.4, 4.5, 1.5, 0.8, 1.5, materials.wood);
+
+            // Bedroom furniture
+            const bed = createBed(2, 0.3, 11, materials.fabric);
+            addHotspot(bed, 'Toggle Bed Color', () => {
+                bed.children.forEach(child => {
+                    if (child.isMesh && child.geometry.type !== 'BoxGeometry') {
+                        if (child.material === materials.fabric) {
+                            child.material = materials.fabricAlt;
+                        } else {
+                            child.material = materials.fabric;
+                        }
+                    }
                 });
-                const ceiling = new THREE.Mesh(floorGeometry, ceilingMaterial);
-                ceiling.position.set(room.x, wallHeight, room.z);
-                ceiling.receiveShadow = true;
-                game.scene.add(ceiling);
-                room.meshes.push(ceiling);
+            });
 
-                // Walls
-                const wallMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0xf5f5f5,
-                    roughness: 0.7,
-                    metalness: 0.1
-                });
+            createWardrobe(5.7, 1, 9.3, materials.wood);
+            createNightstand(4, 0.3, 10.5, materials.wood);
 
-                // North wall
-                this.createWall(room.x, wallHeight / 2, room.z - room.depth / 2, room.width, wallHeight, wallThickness, wallMaterial, room);
-                // South wall
-                this.createWall(room.x, wallHeight / 2, room.z + room.depth / 2, room.width, wallHeight, wallThickness, wallMaterial, room);
-                // East wall
-                this.createWall(room.x + room.width / 2, wallHeight / 2, room.z, wallThickness, wallHeight, room.depth, wallMaterial, room);
-                // West wall
-                this.createWall(room.x - room.width / 2, wallHeight / 2, room.z, wallThickness, wallHeight, room.depth, wallMaterial, room);
+            // Bathroom furniture
+            createToilet(7, 0.4, 9, materials.glass);
+            createSink(9.7, 0.4, 10, materials.metal);
+            createBathtub(8, 0.3, 12.5, materials.glass);
 
-                // Add furniture
-                this.addFurniture(room);
-            }
+            // Hallway decoration
+            createPlant(7, 0, 4, materials.wood);
+        }
 
-            createWall(x, y, z, width, height, depth, material, room) {
-                const geometry = new THREE.BoxGeometry(width, height, depth);
-                const wall = new THREE.Mesh(geometry, material);
-                wall.position.set(x, y, z);
-                wall.castShadow = true;
-                wall.receiveShadow = true;
-                game.scene.add(wall);
-                room.meshes.push(wall);
-                game.walls.push(wall);
-            }
+        function createSofa(x, y, z, material) {
+            const sofa = new THREE.Group();
+            
+            // Base
+            const baseGeom = new THREE.BoxGeometry(3, 0.6, 1.5);
+            const base = new THREE.Mesh(baseGeom, material);
+            base.castShadow = true;
+            sofa.add(base);
+            
+            // Back
+            const backGeom = new THREE.BoxGeometry(3, 1, 0.3);
+            const back = new THREE.Mesh(backGeom, material);
+            back.position.set(0, 0.5, -0.6);
+            back.castShadow = true;
+            sofa.add(back);
+            
+            // Arms
+            const armGeom = new THREE.BoxGeometry(0.3, 0.8, 1.5);
+            const leftArm = new THREE.Mesh(armGeom, material);
+            leftArm.position.set(-1.35, 0.1, 0);
+            leftArm.castShadow = true;
+            sofa.add(leftArm);
+            
+            const rightArm = leftArm.clone();
+            rightArm.position.set(1.35, 0.1, 0);
+            sofa.add(rightArm);
+            
+            sofa.position.set(x, y, z);
+            scene.add(sofa);
+            house.furniture.push(sofa);
+            house.collisionObjects.push(sofa);
+            
+            return sofa;
+        }
 
-            createDoorways() {
-                // Create doorways between rooms
-                const doorways = [
-                    { x: -3, z: 0, width: 1.5, room1: 0, room2: 1 }, // Entrance to Living Room
-                    { x: 3, z: 0, width: 1.2, room1: 0, room2: 2 },  // Entrance to Kitchen
-                    { x: 0, z: -3, width: 1.2, room1: 0, room2: 3 }, // Entrance to Bedroom
-                    { x: 4.5, z: -4.5, width: 1, room1: 2, room2: 4 }, // Kitchen to Bathroom
-                    { x: -4.5, z: -3, width: 1.2, room1: 1, room2: 5 } // Living Room to Study
-                ];
+        function createTable(x, y, z, width, height, depth, material) {
+            const table = new THREE.Group();
+            
+            // Top
+            const topGeom = new THREE.BoxGeometry(width, 0.1, depth);
+            const top = new THREE.Mesh(topGeom, material);
+            top.position.y = height - 0.05;
+            top.castShadow = true;
+            table.add(top);
+            
+            // Legs
+            const legGeom = new THREE.CylinderGeometry(0.05, 0.05, height - 0.1);
+            const positions = [
+                [width/2 - 0.2, height/2 - 0.05, depth/2 - 0.2],
+                [-width/2 + 0.2, height/2 - 0.05, depth/2 - 0.2],
+                [width/2 - 0.2, height/2 - 0.05, -depth/2 + 0.2],
+                [-width/2 + 0.2, height/2 - 0.05, -depth/2 + 0.2]
+            ];
+            
+            positions.forEach(pos => {
+                const leg = new THREE.Mesh(legGeom, material);
+                leg.position.set(...pos);
+                leg.castShadow = true;
+                table.add(leg);
+            });
+            
+            table.position.set(x, y, z);
+            scene.add(table);
+            house.furniture.push(table);
+            house.collisionObjects.push(table);
+            
+            return table;
+        }
 
-                doorways.forEach(door => {
-                    // Remove wall segments for doorway
-                    const doorGeometry = new THREE.BoxGeometry(door.width, 2.5, 0.1);
-                    const doorMaterial = new THREE.MeshStandardMaterial({ 
-                        color: 0x8B4513,
-                        roughness: 0.8
-                    });
-                    const doorMesh = new THREE.Mesh(doorGeometry, doorMaterial);
-                    doorMesh.position.set(door.x, 1.25, door.z);
-                    doorMesh.castShadow = true;
-                    // Note: In a full implementation, we'd use CSG to cut doorways
-                });
-            }
+        function createLamp(x, y, z, material) {
+            const lamp = new THREE.Group();
+            
+            // Base
+            const baseGeom = new THREE.CylinderGeometry(0.2, 0.3, 0.1);
+            const base = new THREE.Mesh(baseGeom, material);
+            base.castShadow = true;
+            lamp.add(base);
+            
+            // Pole
+            const poleGeom = new THREE.CylinderGeometry(0.05, 0.05, 1.2);
+            const pole = new THREE.Mesh(poleGeom, material);
+            pole.position.y = 0.6;
+            pole.castShadow = true;
+            lamp.add(pole);
+            
+            // Shade
+            const shadeGeom = new THREE.ConeGeometry(0.4, 0.6, 8);
+            const shade = new THREE.Mesh(shadeGeom, materials.fabric);
+            shade.position.y = 1.4;
+            shade.castShadow = true;
+            lamp.add(shade);
+            
+            // Light
+            const lampLight = new THREE.PointLight(0xffffcc, 0.5, 5);
+            lampLight.position.y = 1.2;
+            lampLight.castShadow = true;
+            lamp.add(lampLight);
+            
+            lamp.position.set(x, y, z);
+            scene.add(lamp);
+            house.furniture.push(lamp);
+            
+            return lamp;
+        }
 
-            addFurniture(room) {
-                switch(room.name) {
-                    case 'Living Room':
-                        this.addSofa(room, -7, 0.4, 1, 0xcc6666);
-                        this.addTable(room, -6, 0.3, -1, 0x8B4513);
-                        this.addLamp(room, -5, 0.5, -1);
-                        break;
-                    case 'Kitchen':
-                        this.addCounter(room, 7, 0.5, -1, 0xe8dcc4);
-                        this.addTable(room, 6, 0.4, 1, 0x8B4513);
-                        break;
-                    case 'Bedroom':
-                        this.addBed(room, 0, 0.4, -7, 0x4169E1);
-                        this.addNightstand(room, 1.5, 0.3, -7);
-                        break;
-                    case 'Study':
-                        this.addDesk(room, -6, 0.4, -6, 0x8B4513);
-                        this.addChair(room, -5.5, 0.3, -6);
-                        break;
-                    case 'Bathroom':
-                        this.addSink(room, 7, 0.5, -6);
-                        break;
-                }
-            }
+        function createTV(x, y, z, material) {
+            const tv = new THREE.Group();
+            
+            // Screen
+            const screenGeom = new THREE.BoxGeometry(2, 1.2, 0.1);
+            const screen = new THREE.Mesh(screenGeom, new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            screen.castShadow = true;
+            tv.add(screen);
+            
+            // Stand base
+            const standBaseGeom = new THREE.CylinderGeometry(0.3, 0.3, 0.1);
+            const standBase = new THREE.Mesh(standBaseGeom, material);
+            standBase.position.set(0, -0.7, 0.1);
+            standBase.castShadow = true;
+            tv.add(standBase);
+            
+            // Stand pole
+            const standPoleGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.5);
+            const standPole = new THREE.Mesh(standPoleGeom, material);
+            standPole.position.set(0, -0.45, 0.1);
+            standPole.castShadow = true;
+            tv.add(standPole);
+            
+            tv.position.set(x, y, z);
+            scene.add(tv);
+            house.furniture.push(tv);
+            house.collisionObjects.push(tv);
+            
+            return tv;
+        }
 
-            addSofa(room, x, y, z, color) {
-                const sofa = new THREE.Group();
-                
-                // Base
-                const baseGeometry = new THREE.BoxGeometry(2.5, 0.4, 1);
-                const baseMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
-                const base = new THREE.Mesh(baseGeometry, baseMaterial);
-                base.castShadow = true;
-                sofa.add(base);
-                
-                // Back
-                const backGeometry = new THREE.BoxGeometry(2.5, 0.8, 0.2);
-                const back = new THREE.Mesh(backGeometry, baseMaterial);
-                back.position.set(0, 0.4, -0.4);
-                back.castShadow = true;
-                sofa.add(back);
-                
-                // Arms
-                const armGeometry = new THREE.BoxGeometry(0.2, 0.6, 1);
-                const arm1 = new THREE.Mesh(armGeometry, baseMaterial);
-                arm1.position.set(-1.15, 0.1, 0);
-                arm1.castShadow = true;
-                sofa.add(arm1);
-                
-                const arm2 = arm1.clone();
-                arm2.position.set(1.15, 0.1, 0);
-                sofa.add(arm2);
-                
-                sofa.position.set(x, y, z);
-                game.scene.add(sofa);
-                room.furniture.push(sofa);
-                game.furniture.push(sofa);
-                
-                // Add hotspot
-                this.createHotspot(x, y + 0.5, z, 'Toggle Sofa Color', () => {
-                    baseMaterial.color.setHex(baseMaterial.color.getHex() === color ? 0x6666cc : color);
-                });
-            }
+        function createCounter(x, y, z, width, height, depth, material) {
+            const counter = new THREE.Group();
+            
+            const counterGeom = new THREE.BoxGeometry(width, height, depth);
+            const counterMesh = new THREE.Mesh(counterGeom, material);
+            counterMesh.castShadow = true;
+            counter.add(counterMesh);
+            
+            counter.position.set(x, y, z);
+            scene.add(counter);
+            house.furniture.push(counter);
+            house.collisionObjects.push(counter);
+            
+            return counter;
+        }
 
-            addTable(room, x, y, z, color) {
-                const table = new THREE.Group();
-                
-                // Top
-                const topGeometry = new THREE.BoxGeometry(1.5, 0.1, 1.5);
-                const topMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
-                const top = new THREE.Mesh(topGeometry, topMaterial);
-                top.position.y = 0.6;
-                top.castShadow = true;
-                table.add(top);
-                
-                // Legs
-                const legGeometry = new THREE.BoxGeometry(0.1, 0.6, 0.1);
-                const legMaterial = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.8 });
-                
-                const positions = [
-                    [-0.6, 0.3, -0.6],
-                    [0.6, 0.3, -0.6],
-                    [-0.6, 0.3, 0.6],
-                    [0.6, 0.3, 0.6]
-                ];
-                
-                positions.forEach(pos => {
-                    const leg = new THREE.Mesh(legGeometry, legMaterial);
-                    leg.position.set(...pos);
-                    leg.castShadow = true;
-                    table.add(leg);
-                });
-                
-                table.position.set(x, y, z);
-                game.scene.add(table);
-                room.furniture.push(table);
-                game.furniture.push(table);
-            }
+        function createRefrigerator(x, y, z, material) {
+            const fridge = new THREE.Group();
+            
+            const fridgeGeom = new THREE.BoxGeometry(0.8, 1.8, 0.8);
+            const fridgeMesh = new THREE.Mesh(fridgeGeom, material);
+            fridgeMesh.castShadow = true;
+            fridge.add(fridgeMesh);
+            
+            fridge.position.set(x, y, z);
+            scene.add(fridge);
+            house.furniture.push(fridge);
+            house.collisionObjects.push(fridge);
+            
+            return fridge;
+        }
 
-            addBed(room, x, y, z, color) {
-                const bed = new THREE.Group();
-                
-                // Mattress
-                const mattressGeometry = new THREE.BoxGeometry(2, 0.4, 3);
-                const mattressMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.9 });
-                const mattress = new THREE.Mesh(mattressGeometry, mattressMaterial);
-                mattress.castShadow = true;
-                bed.add(mattress);
-                
-                // Headboard
-                const headboardGeometry = new THREE.BoxGeometry(2.2, 1, 0.2);
-                const headboardMaterial = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.7 });
-                const headboard = new THREE.Mesh(headboardGeometry, headboardMaterial);
-                headboard.position.set(0, 0.3, -1.4);
-                headboard.castShadow = true;
-                bed.add(headboard);
-                
-                bed.position.set(x, y, z);
-                game.scene.add(bed);
-                room.furniture.push(bed);
-                game.furniture.push(bed);
-                
-                // Add hotspot
-                this.createHotspot(x, y + 0.5, z, 'Toggle Bed Covers', () => {
-                    mattressMaterial.color.setHex(mattressMaterial.color.getHex() === color ? 0xE74C3C : color);
-                });
-            }
+        function createBed(x, y, z, material) {
+            const bed = new THREE.Group();
+            
+            // Mattress
+            const mattressGeom = new THREE.BoxGeometry(2, 0.4, 3);
+            const mattress = new THREE.Mesh(mattressGeom, material);
+            mattress.position.y = 0.2;
+            mattress.castShadow = true;
+            bed.add(mattress);
+            
+            // Frame
+            const frameGeom = new THREE.BoxGeometry(2.2, 0.3, 3.2);
+            const frame = new THREE.Mesh(frameGeom, materials.wood);
+            frame.castShadow = true;
+            bed.add(frame);
+            
+            // Headboard
+            const headboardGeom = new THREE.BoxGeometry(2.2, 1, 0.2);
+            const headboard = new THREE.Mesh(headboardGeom, materials.wood);
+            headboard.position.set(0, 0.5, -1.5);
+            headboard.castShadow = true;
+            bed.add(headboard);
+            
+            bed.position.set(x, y, z);
+            scene.add(bed);
+            house.furniture.push(bed);
+            house.collisionObjects.push(bed);
+            
+            return bed;
+        }
 
-            addNightstand(room, x, y, z) {
-                const nightstand = new THREE.Group();
-                
-                const geometry = new THREE.BoxGeometry(0.8, 0.6, 0.6);
-                const material = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.7 });
-                const body = new THREE.Mesh(geometry, material);
-                body.castShadow = true;
-                nightstand.add(body);
-                
-                nightstand.position.set(x, y, z);
-                game.scene.add(nightstand);
-                room.furniture.push(nightstand);
-                game.furniture.push(nightstand);
-            }
+        function createWardrobe(x, y, z, material) {
+            const wardrobe = new THREE.Group();
+            
+            const wardrobeGeom = new THREE.BoxGeometry(1.5, 2, 0.6);
+            const wardrobeMesh = new THREE.Mesh(wardrobeGeom, material);
+            wardrobeMesh.castShadow = true;
+            wardrobe.add(wardrobeMesh);
+            
+            wardrobe.position.set(x, y, z);
+            scene.add(wardrobe);
+            house.furniture.push(wardrobe);
+            house.collisionObjects.push(wardrobe);
+            
+            return wardrobe;
+        }
 
-            addDesk(room, x, y, z, color) {
-                const desk = new THREE.Group();
-                
-                // Top
-                const topGeometry = new THREE.BoxGeometry(2, 0.1, 1);
-                const topMaterial = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
-                const top = new THREE.Mesh(topGeometry, topMaterial);
-                top.position.y = 0.7;
-                top.castShadow = true;
-                desk.add(top);
-                
-                // Legs
-                const legGeometry = new THREE.BoxGeometry(0.1, 0.7, 0.1);
-                const legMaterial = new THREE.MeshStandardMaterial({ color: 0x654321, roughness: 0.8 });
-                
-                [-0.9, 0.9].forEach(xPos => {
-                    [-0.4, 0.4].forEach(zPos => {
-                        const leg = new THREE.Mesh(legGeometry, legMaterial);
-                        leg.position.set(xPos, 0.35, zPos);
-                        leg.castShadow = true;
-                        desk.add(leg);
-                    });
-                });
-                
-                desk.position.set(x, y, z);
-                game.scene.add(desk);
-                room.furniture.push(desk);
-                game.furniture.push(desk);
-            }
+        function createNightstand(x, y, z, material) {
+            const nightstand = new THREE.Group();
+            
+            const nightstandGeom = new THREE.BoxGeometry(0.5, 0.6, 0.4);
+            const nightstandMesh = new THREE.Mesh(nightstandGeom, material);
+            nightstandMesh.castShadow = true;
+            nightstand.add(nightstandMesh);
+            
+            nightstand.position.set(x, y, z);
+            scene.add(nightstand);
+            house.furniture.push(nightstand);
+            house.collisionObjects.push(nightstand);
+            
+            return nightstand;
+        }
 
-            addChair(room, x, y, z) {
-                const chair = new THREE.Group();
-                
-                // Seat
-                const seatGeometry = new THREE.BoxGeometry(0.6, 0.1, 0.6);
-                const chairMaterial = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.8 });
-                const seat = new THREE.Mesh(seatGeometry, chairMaterial);
-                seat.position.y = 0.4;
-                seat.castShadow = true;
-                chair.add(seat);
-                
-                // Back
-                const backGeometry = new THREE.BoxGeometry(0.6, 0.6, 0.1);
-                const back = new THREE.Mesh(backGeometry, chairMaterial);
-                back.position.set(0, 0.7, -0.25);
-                back.castShadow = true;
-                chair.add(back);
-                
-                // Legs
-                const legGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.4);
-                const legMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
-                
-                [-0.25, 0.25].forEach(xPos => {
-                    [-0.25, 0.25].forEach(zPos => {
-                        const leg = new THREE.Mesh(legGeometry, legMaterial);
-                        leg.position.set(xPos, 0.2, zPos);
-                        leg.castShadow = true;
-                        chair.add(leg);
-                    });
-                });
-                
-                chair.position.set(x, y, z);
-                game.scene.add(chair);
-                room.furniture.push(chair);
-                game.furniture.push(chair);
-                
-                // Add hotspot
-                this.createHotspot(x, y + 0.5, z, 'Remove/Add Chair', () => {
-                    chair.visible = !chair.visible;
-                });
-            }
+        function createToilet(x, y, z, material) {
+            const toilet = new THREE.Group();
+            
+            // Bowl
+            const bowlGeom = new THREE.CylinderGeometry(0.3, 0.25, 0.4, 16);
+            const bowl = new THREE.Mesh(bowlGeom, material);
+            bowl.position.y = 0.2;
+            bowl.castShadow = true;
+            toilet.add(bowl);
+            
+            // Tank
+            const tankGeom = new THREE.BoxGeometry(0.4, 0.5, 0.2);
+            const tank = new THREE.Mesh(tankGeom, material);
+            tank.position.set(0, 0.5, -0.25);
+            tank.castShadow = true;
+            toilet.add(tank);
+            
+            toilet.position.set(x, y, z);
+            scene.add(toilet);
+            house.furniture.push(toilet);
+            house.collisionObjects.push(toilet);
+            
+            return toilet;
+        }
 
-            addCounter(room, x, y, z, color) {
-                const counter = new THREE.Group();
-                
-                const geometry = new THREE.BoxGeometry(0.8, 1, 2);
-                const material = new THREE.MeshStandardMaterial({ color: color, roughness: 0.5 });
-                const body = new THREE.Mesh(geometry, material);
-                body.castShadow = true;
-                counter.add(body);
-                
-                // Countertop
-                const topGeometry = new THREE.BoxGeometry(1, 0.1, 2.2);
-                const topMaterial = new THREE.MeshStandardMaterial({ color: 0x696969, roughness: 0.3 });
-                const top = new THREE.Mesh(topGeometry, topMaterial);
-                top.position.y = 0.55;
-                top.castShadow = true;
-                counter.add(top);
-                
-                counter.position.set(x, y, z);
-                game.scene.add(counter);
-                room.furniture.push(counter);
-                game.furniture.push(counter);
-            }
+        function createSink(x, y, z, material) {
+            const sink = new THREE.Group();
+            
+            // Basin
+            const basinGeom = new THREE.CylinderGeometry(0.3, 0.25, 0.2, 16);
+            const basin = new THREE.Mesh(basinGeom, material);
+            basin.position.y = 0.3;
+            basin.castShadow = true;
+            sink.add(basin);
+            
+            // Counter
+            const counterGeom = new THREE.BoxGeometry(0.6, 0.1, 0.5);
+            const counter = new THREE.Mesh(counterGeom, materials.wood);
+            counter.position.y = 0.3;
+            counter.castShadow = true;
+            sink.add(counter);
+            
+            sink.position.set(x, y, z);
+            scene.add(sink);
+            house.furniture.push(sink);
+            house.collisionObjects.push(sink);
+            
+            return sink;
+        }
 
-            addSink(room, x, y, z) {
-                const sink = new THREE.Group();
-                
-                // Basin
-                const basinGeometry = new THREE.CylinderGeometry(0.3, 0.25, 0.2, 16);
-                const basinMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0xffffff, 
-                    roughness: 0.2,
-                    metalness: 0.8
-                });
-                const basin = new THREE.Mesh(basinGeometry, basinMaterial);
-                basin.castShadow = true;
-                sink.add(basin);
-                
-                // Faucet
-                const faucetGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.3);
-                const faucetMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0xC0C0C0, 
-                    roughness: 0.3,
-                    metalness: 0.9
-                });
-                const faucet = new THREE.Mesh(faucetGeometry, faucetMaterial);
-                faucet.position.set(0, 0.2, 0);
-                faucet.castShadow = true;
-                sink.add(faucet);
-                
-                sink.position.set(x, y, z);
-                game.scene.add(sink);
-                room.furniture.push(sink);
-                game.furniture.push(sink);
-            }
+        function createBathtub(x, y, z, material) {
+            const bathtub = new THREE.Group();
+            
+            const tubGeom = new THREE.BoxGeometry(1.5, 0.6, 0.8);
+            const tub = new THREE.Mesh(tubGeom, material);
+            tub.castShadow = true;
+            bathtub.add(tub);
+            
+            bathtub.position.set(x, y, z);
+            scene.add(bathtub);
+            house.furniture.push(bathtub);
+            house.collisionObjects.push(bathtub);
+            
+            return bathtub;
+        }
 
-            addLamp(room, x, y, z) {
-                const lamp = new THREE.Group();
-                
-                // Base
-                const baseGeometry = new THREE.CylinderGeometry(0.1, 0.15, 0.1, 16);
-                const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.7 });
-                const base = new THREE.Mesh(baseGeometry, baseMaterial);
-                lamp.add(base);
-                
-                // Pole
-                const poleGeometry = new THREE.CylinderGeometry(0.03, 0.03, 0.8);
-                const pole = new THREE.Mesh(poleGeometry, baseMaterial);
-                pole.position.y = 0.4;
-                lamp.add(pole);
-                
-                // Shade
-                const shadeGeometry = new THREE.CylinderGeometry(0.2, 0.3, 0.3, 16, 1, true);
-                const shadeMaterial = new THREE.MeshStandardMaterial({ 
-                    color: 0xFFF8DC, 
-                    roughness: 0.8,
+        function createPlant(x, y, z, material) {
+            const plant = new THREE.Group();
+            
+            // Pot
+            const potGeom = new THREE.CylinderGeometry(0.2, 0.15, 0.3, 8);
+            const pot = new THREE.Mesh(potGeom, material);
+            pot.position.y = 0.15;
+            pot.castShadow = true;
+            plant.add(pot);
+            
+            // Leaves
+            const leafGeom = new THREE.SphereGeometry(0.3, 8, 8);
+            const leafMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+            const leaves = new THREE.Mesh(leafGeom, leafMat);
+            leaves.position.y = 0.6;
+            leaves.castShadow = true;
+            plant.add(leaves);
+            
+            plant.position.set(x, y, z);
+            scene.add(plant);
+            house.furniture.push(plant);
+            
+            return plant;
+        }
+
+        function createMinimapRepresentation() {
+            // Add floor plan to minimap
+            roomDefinitions.forEach(roomDef => {
+                const floorGeom = new THREE.PlaneGeometry(roomDef.width, roomDef.depth);
+                const floorMat = new THREE.MeshBasicMaterial({ 
+                    color: 0x333333,
                     side: THREE.DoubleSide
                 });
-                const shade = new THREE.Mesh(shadeGeometry, shadeMaterial);
-                shade.position.y = 0.85;
-                lamp.add(shade);
-                
-                // Light
-                const light = new THREE.PointLight(0xffffcc, 1, 5);
-                light.position.y = 0.8;
-                light.castShadow = true;
-                lamp.add(light);
-                
-                lamp.position.set(x, y, z);
-                game.scene.add(lamp);
-                room.furniture.push(lamp);
-                game.furniture.push(lamp);
-                
-                // Add hotspot
-                this.createHotspot(x, y + 0.5, z, 'Toggle Lamp', () => {
-                    light.visible = !light.visible;
-                });
-            }
+                const floor = new THREE.Mesh(floorGeom, floorMat);
+                floor.rotation.x = -Math.PI / 2;
+                floor.position.set(
+                    roomDef.x + roomDef.width/2,
+                    0.05,
+                    roomDef.z + roomDef.depth/2
+                );
+                minimapScene.add(floor);
+            });
+        }
 
-            createHotspot(x, y, z, description, action) {
-                const geometry = new THREE.SphereGeometry(0.15, 16, 16);
-                const material = new THREE.MeshBasicMaterial({ 
-                    color: 0x00ff00,
-                    transparent: true,
-                    opacity: 0.6
-                });
-                const hotspot = new THREE.Mesh(geometry, material);
-                hotspot.position.set(x, y, z);
-                hotspot.userData = { description, action, isHotspot: true };
-                game.scene.add(hotspot);
-                game.hotspots.push(hotspot);
-                
-                // Pulsing animation
-                hotspot.userData.originalScale = hotspot.scale.clone();
-                hotspot.userData.pulseTime = Math.random() * Math.PI * 2;
+        // Hotspot system
+        function addHotspot(object, label, callback) {
+            const hotspot = {
+                object: object,
+                label: label,
+                callback: callback,
+                position: object.position.clone()
+            };
+            house.hotspots.push(hotspot);
+        }
+
+        let currentHotspot = null;
+        const interactionRaycaster = new THREE.Raycaster();
+        const interactionDistance = 3;
+
+        function checkHotspots() {
+            interactionRaycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            
+            let closestHotspot = null;
+            let closestDistance = interactionDistance;
+            
+            house.hotspots.forEach(hotspot => {
+                const distance = camera.position.distanceTo(hotspot.position);
+                if (distance < closestDistance) {
+                    // Check if looking at the hotspot
+                    const intersects = interactionRaycaster.intersectObject(hotspot.object, true);
+                    if (intersects.length > 0 && intersects[0].distance < interactionDistance) {
+                        closestHotspot = hotspot;
+                        closestDistance = distance;
+                    }
+                }
+            });
+            
+            if (closestHotspot !== currentHotspot) {
+                currentHotspot = closestHotspot;
+                const prompt = document.getElementById('interaction-prompt');
+                if (currentHotspot) {
+                    prompt.textContent = `Press E: ${currentHotspot.label}`;
+                    prompt.style.display = 'block';
+                } else {
+                    prompt.style.display = 'none';
+                }
             }
         }
 
-        // ==================== COLLISION DETECTION ====================
-        class CollisionDetector {
-            checkCollision(position, velocity) {
+        // Collision detection
+        function checkCollisions(position) {
+            const playerRadius = 0.3;
+            const playerHeight = 1.6;
+            
+            for (let obj of house.collisionObjects) {
+                if (!obj.geometry) continue;
+                
+                const box = new THREE.Box3().setFromObject(obj);
                 const playerBox = new THREE.Box3(
                     new THREE.Vector3(
-                        position.x - CONFIG.playerRadius,
-                        position.y - CONFIG.playerHeight,
-                        position.z - CONFIG.playerRadius
+                        position.x - playerRadius,
+                        position.y,
+                        position.z - playerRadius
                     ),
                     new THREE.Vector3(
-                        position.x + CONFIG.playerRadius,
-                        position.y + CONFIG.playerHeight / 2,
-                        position.z + CONFIG.playerRadius
+                        position.x + playerRadius,
+                        position.y + playerHeight,
+                        position.z + playerRadius
                     )
                 );
-
-                // Check walls
-                for (let wall of game.walls) {
-                    const wallBox = new THREE.Box3().setFromObject(wall);
-                    if (playerBox.intersectsBox(wallBox)) {
-                        return true;
-                    }
-                }
-
-                // Check furniture
-                for (let furniture of game.furniture) {
-                    if (!furniture.visible) continue;
-                    const furnitureBox = new THREE.Box3().setFromObject(furniture);
-                    if (playerBox.intersectsBox(furnitureBox)) {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-
-            resolveCollision(oldPosition, newPosition) {
-                // Try moving only on X axis
-                const testX = new THREE.Vector3(newPosition.x, oldPosition.y, oldPosition.z);
-                if (!this.checkCollision(testX, new THREE.Vector3())) {
-                    return testX;
-                }
-
-                // Try moving only on Z axis
-                const testZ = new THREE.Vector3(oldPosition.x, oldPosition.y, newPosition.z);
-                if (!this.checkCollision(testZ, new THREE.Vector3())) {
-                    return testZ;
-                }
-
-                // Can't move, return old position
-                return oldPosition;
-            }
-        }
-
-        const collisionDetector = new CollisionDetector();
-
-        // ==================== LIGHTING ====================
-        class LightingSystem {
-            constructor() {
-                this.lightProbes = [];
-            }
-
-            setupLighting() {
-                // Ambient light
-                const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
-                game.scene.add(ambientLight);
-
-                // Hemisphere light for realistic sky/ground lighting
-                const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
-                hemiLight.position.set(0, 20, 0);
-                game.scene.add(hemiLight);
-
-                // Directional light (sun)
-                const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-                dirLight.position.set(5, 10, 5);
-                dirLight.castShadow = true;
-                dirLight.shadow.camera.top = 15;
-                dirLight.shadow.camera.bottom = -15;
-                dirLight.shadow.camera.left = -15;
-                dirLight.shadow.camera.right = 15;
-                dirLight.shadow.mapSize.width = 2048;
-                dirLight.shadow.mapSize.height = 2048;
-                game.scene.add(dirLight);
-
-                // Add point lights to each room
-                game.rooms.forEach(room => {
-                    const roomLight = new THREE.PointLight(0xffffee, 0.8, 10);
-                    roomLight.position.set(room.x, 2.5, room.z);
-                    roomLight.castShadow = true;
-                    game.scene.add(roomLight);
-                    room.meshes.push(roomLight);
-                });
-
-                // Create light probes for IBL
-                this.createLightProbes();
-            }
-
-            createLightProbes() {
-                // Create simple light probes at strategic locations
-                const probePositions = [
-                    { x: 0, z: 0 },   // Entrance
-                    { x: -6, z: 0 },  // Living Room
-                    { x: 6, z: 0 },   // Kitchen
-                    { x: 0, z: -6 },  // Bedroom
-                ];
-
-                probePositions.forEach(pos => {
-                    const probe = new THREE.LightProbe();
-                    probe.position.set(pos.x, 1.5, pos.z);
-                    
-                    // Set up basic SH coefficients for warm interior lighting
-                    const coefficients = probe.sh.coefficients;
-                    for (let i = 0; i < 9; i++) {
-                        coefficients[i] = new THREE.Vector3(0.5, 0.5, 0.4);
-                    }
-                    
-                    game.scene.add(probe);
-                    this.lightProbes.push(probe);
-                });
-            }
-        }
-
-        const lightingSystem = new LightingSystem();
-
-        // ==================== ROOM CULLING ====================
-        class RoomCullingSystem {
-            update(playerPosition) {
-                let currentRoom = null;
                 
-                // Determine which room the player is in
-                for (let room of game.rooms) {
-                    if (room.containsPoint(playerPosition.x, playerPosition.z)) {
-                        currentRoom = room;
-                        break;
-                    }
+                if (box.intersectsBox(playerBox)) {
+                    return true;
                 }
-
-                if (currentRoom !== game.currentRoom) {
-                    game.currentRoom = currentRoom;
-                    document.getElementById('current-room').textContent = 
-                        currentRoom ? currentRoom.name : 'Outside';
-                }
-
-                // Show current room and adjacent rooms, hide others
-                game.rooms.forEach(room => {
-                    if (currentRoom) {
-                        const distance = Math.hypot(
-                            room.x - currentRoom.x,
-                            room.z - currentRoom.z
-                        );
-                        room.setVisible(distance < 12); // Show rooms within 12 units
-                    } else {
-                        room.setVisible(true);
-                    }
-                });
             }
+            
+            return false;
         }
 
-        const cullingSystem = new RoomCullingSystem();
-
-        // ==================== MINIMAP ====================
-        class Minimap {
-            constructor() {
-                this.canvas = document.getElementById('minimap');
-                this.ctx = this.canvas.getContext('2d');
-                this.canvas.width = 200;
-                this.canvas.height = 200;
-                this.scale = 8;
+        // Room-based culling
+        function updateRoomCulling() {
+            const playerPos = camera.position;
+            
+            // Find current room
+            let newCurrentRoom = null;
+            house.rooms.forEach(room => {
+                if (playerPos.x >= room.bounds.minX && playerPos.x <= room.bounds.maxX &&
+                    playerPos.z >= room.bounds.minZ && playerPos.z <= room.bounds.maxZ) {
+                    newCurrentRoom = room;
+                }
+            });
+            
+            if (newCurrentRoom !== currentRoom) {
+                currentRoom = newCurrentRoom;
+                const roomLabel = document.getElementById('room-label');
+                if (currentRoom) {
+                    roomLabel.textContent = currentRoom.name;
+                    roomLabel.style.display = 'block';
+                    setTimeout(() => {
+                        roomLabel.style.display = 'none';
+                    }, 2000);
+                }
             }
-
-            update(playerPosition, playerRotation) {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            
+            // Simple culling: show adjacent rooms
+            house.rooms.forEach(room => {
+                if (!currentRoom) {
+                    room.visible = true;
+                    return;
+                }
                 
-                const centerX = this.canvas.width / 2;
-                const centerY = this.canvas.height / 2;
-
-                // Draw rooms
-                game.rooms.forEach(room => {
-                    const x = centerX + (room.x - playerPosition.x) * this.scale;
-                    const y = centerY + (room.z - playerPosition.z) * this.scale;
-                    const w = room.width * this.scale;
-                    const h = room.depth * this.scale;
-
-                    this.ctx.fillStyle = room.isVisible ? 
-                        `#${room.color.toString(16).padStart(6, '0')}` : 
-                        '#333333';
-                    this.ctx.fillRect(x - w / 2, y - h / 2, w, h);
-                    
-                    this.ctx.strokeStyle = '#ffffff';
-                    this.ctx.strokeRect(x - w / 2, y - h / 2, w, h);
+                const distance = Math.sqrt(
+                    Math.pow((room.bounds.minX + room.bounds.maxX)/2 - playerPos.x, 2) +
+                    Math.pow((room.bounds.minZ + room.bounds.maxZ)/2 - playerPos.z, 2)
+                );
+                
+                room.visible = distance < 15;
+                room.objects.forEach(obj => {
+                    obj.visible = room.visible;
                 });
-
-                // Draw hotspots
-                game.hotspots.forEach(hotspot => {
-                    const x = centerX + (hotspot.position.x - playerPosition.x) * this.scale;
-                    const y = centerY + (hotspot.position.z - playerPosition.z) * this.scale;
-                    
-                    this.ctx.fillStyle = '#00ff00';
-                    this.ctx.beginPath();
-                    this.ctx.arc(x, y, 3, 0, Math.PI * 2);
-                    this.ctx.fill();
-                });
-
-                // Draw player
-                this.ctx.save();
-                this.ctx.translate(centerX, centerY);
-                this.ctx.rotate(playerRotation);
-                
-                this.ctx.fillStyle = '#ff0000';
-                this.ctx.beginPath();
-                this.ctx.moveTo(0, -8);
-                this.ctx.lineTo(-5, 5);
-                this.ctx.lineTo(5, 5);
-                this.ctx.closePath();
-                this.ctx.fill();
-                
-                this.ctx.restore();
-
-                // Draw compass
-                this.ctx.fillStyle = '#ffffff';
-                this.ctx.font = '12px Arial';
-                this.ctx.fillText('N', centerX - 4, 15);
-            }
+            });
         }
 
-        const minimap = new Minimap();
+        // Event listeners
+        document.addEventListener('click', () => {
+            controls.lock();
+        });
 
-        // ==================== INPUT HANDLING ====================
-        class InputHandler {
-            constructor() {
-                this.setupEventListeners();
-            }
-
-            setupEventListeners() {
-                // Keyboard
-                document.addEventListener('keydown', (e) => this.onKeyDown(e));
-                document.addEventListener('keyup', (e) => this.onKeyUp(e));
-
-                // Mouse
-                document.addEventListener('click', (e) => {
-                    if (!game.controls.isLocked) {
-                        game.controls.lock();
-                    } else {
-                        this.checkHotspotClick();
+        document.addEventListener('keydown', (event) => {
+            switch(event.code) {
+                case 'KeyW': moveState.forward = true; break;
+                case 'KeyS': moveState.backward = true; break;
+                case 'KeyA': moveState.left = true; break;
+                case 'KeyD': moveState.right = true; break;
+                case 'KeyE':
+                    if (currentHotspot) {
+                        currentHotspot.callback();
                     }
-                });
-
-                document.addEventListener('mousemove', (e) => {
-                    if (game.controls.isLocked) {
-                        game.mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-                        game.mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-                    }
-                });
-
-                // Pointer lock
-                game.controls.addEventListener('lock', () => {
-                    document.getElementById('controls-info').style.display = 'none';
-                });
-
-                game.controls.addEventListener('unlock', () => {
-                    document.getElementById('controls-info').style.display = 'block';
-                });
-
-                // Window resize
-                window.addEventListener('resize', () => this.onWindowResize());
+                    break;
             }
+        });
 
-            onKeyDown(event) {
-                switch (event.code) {
-                    case 'KeyW':
-                    case 'ArrowUp':
-                        game.moveForward = true;
-                        break;
-                    case 'KeyS':
-                    case 'ArrowDown':
-                        game.moveBackward = true;
-                        break;
-                    case 'KeyA':
-                    case 'ArrowLeft':
-                        game.moveLeft = true;
-                        break;
-                    case 'KeyD':
-                    case 'ArrowRight':
-                        game.moveRight = true;
-                        break;
-                    case 'ShiftLeft':
-                    case 'ShiftRight':
-                        game.isRunning = true;
-                        break;
-                    case 'Space':
-                        if (game.canJump) {
-                            game.velocity.y += CONFIG.jumpForce;
-                            game.canJump = false;
-                        }
-                        break;
+        document.addEventListener('keyup', (event) => {
+            switch(event.code) {
+                case 'KeyW': moveState.forward = false; break;
+                case 'KeyS': moveState.backward = false; break;
+                case 'KeyA': moveState.left = false; break;
+                case 'KeyD': moveState.right = false; break;
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        const clock = new THREE.Clock();
+        let previousTime = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const time = performance.now();
+            const delta = clock.getDelta();
+
+            if (controls.isLocked) {
+                // Update velocity
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(moveState.forward) - Number(moveState.backward);
+                direction.x = Number(moveState.right) - Number(moveState.left);
+                direction.normalize();
+
+                if (moveState.forward || moveState.backward) velocity.z -= direction.z * moveSpeed * delta;
+                if (moveState.left || moveState.right) velocity.x -= direction.x * moveSpeed * delta;
+
+                // Save current position
+                const oldPosition = camera.position.clone();
+
+                // Move
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+
+                // Check collisions
+                if (checkCollisions(camera.position)) {
+                    camera.position.copy(oldPosition);
+                    velocity.set(0, 0, 0);
                 }
-            }
 
-            onKeyUp(event) {
-                switch (event.code) {
-                    case 'KeyW':
-                    case 'ArrowUp':
-                        game.moveForward = false;
-                        break;
-                    case 'KeyS':
-                    case 'ArrowDown':
-                        game.moveBackward = false;
-                        break;
-                    case 'KeyA':
-                    case 'ArrowLeft':
-                        game.moveLeft = false;
-                        break;
-                    case 'KeyD':
-                    case 'ArrowRight':
-                        game.moveRight = false;
-                        break;
-                    case 'ShiftLeft':
-                    case 'ShiftRight':
-                        game.isRunning = false;
-                        break;
+                // Keep player above ground
+                if (camera.position.y < 1.6) {
+                    camera.position.y = 1.6;
                 }
+                
+                // Keep player in bounds
+                camera.position.x = Math.max(-2, Math.min(15, camera.position.x));
+                camera.position.z = Math.max(-2, Math.min(15, camera.position.z));
+
+                // Update systems
+                checkHotspots();
+                updateRoomCulling();
+
+                // Update minimap player marker
+                playerMarker.position.set(camera.position.x, 0, camera.position.z);
+                playerMarker.rotation.y = -controls.getObject().rotation.y;
             }
 
-            checkHotspotClick() {
-                game.raycaster.setFromCamera(new THREE.Vector2(0, 0), game.camera);
-                const intersects = game.raycaster.intersectObjects(game.hotspots);
+            previousTime = time;
 
-                if (intersects.length > 0) {
-                    const hotspot = intersects[0].object;
-                    if (hotspot.userData.action) {
-                        hotspot.userData.action();
-                    }
-                }
-            }
-
-            onWindowResize() {
-                game.camera.aspect = window.innerWidth / window.innerHeight;
-                game.camera.updateProjectionMatrix();
-                game.renderer.setSize(window.innerWidth, window.innerHeight);
-            }
+            // Render main scene
+            renderer.render(scene, camera);
+            
+            // Render minimap
+            minimapRenderer.render(minimapScene, minimapCamera);
         }
 
-        // ==================== INITIALIZATION ====================
-        function init() {
-            // Renderer setup
-            game.renderer.setPixelRatio(window.devicePixelRatio);
-            game.renderer.setSize(window.innerWidth, window.innerHeight);
-            game.renderer.shadowMap.enabled = true;
-            game.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            game.renderer.outputEncoding = THREE.sRGBEncoding;
-            game.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            game.renderer.toneMappingExposure = 1.0;
-            document.getElementById('container').appendChild(game.renderer.domElement);
+        // Initialize
+        async function init() {
+            // Create house
+            createHouse();
 
-            // Camera setup
-            game.camera.position.set(0, CONFIG.playerHeight, 3);
-
-            // Controls setup
-            game.controls = new PointerLockControls(game.camera, game.renderer.domElement);
-
-            // Scene setup
-            game.scene.background = new THREE.Color(0x87CEEB);
-            game.scene.fog = new THREE.Fog(0x87CEEB, 10, 50);
-
-            // Generate house
-            const houseGenerator = new HouseGenerator();
-            game.rooms = houseGenerator.generate();
-
-            // Setup lighting
-            lightingSystem.setupLighting();
-
-            // Input handling
-            new InputHandler();
-
+            // Setup light probe (simple approximation)
+            const lightProbeGen = new THREE.LightProbeGenerator();
+            
             // Hide loading screen
             document.getElementById('loading').style.display = 'none';
 
-            // Start animation loop
+            // Start animation
             animate();
         }
 
-        // ==================== ANIMATION LOOP ====================
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const delta = game.clock.getDelta();
-            const time = game.clock.getElapsedTime();
-
-            // Update movement
-            if (game.controls.isLocked) {
-                const speed = game.isRunning ? CONFIG.runSpeed : CONFIG.walkSpeed;
-
-                game.velocity.x -= game.velocity.x * 10.0 * delta;
-                game.velocity.z -= game.velocity.z * 10.0 * delta;
-
-                game.direction.z = Number(game.moveForward) - Number(game.moveBackward);
-                game.direction.x = Number(game.moveRight) - Number(game.moveLeft);
-                game.direction.normalize();
-
-                if (game.moveForward || game.moveBackward) {
-                    game.velocity.z -= game.direction.z * speed * delta;
-                }
-                if (game.moveLeft || game.moveRight) {
-                    game.velocity.x -= game.direction.x * speed * delta;
-                }
-
-                const oldPosition = game.controls.getObject().position.clone();
-                game.controls.moveRight(-game.velocity.x * delta);
-                game.controls.moveForward(-game.velocity.z * delta);
-                const newPosition = game.controls.getObject().position.clone();
-
-                // Collision detection
-                if (collisionDetector.checkCollision(newPosition, game.velocity)) {
-                    const resolvedPosition = collisionDetector.resolveCollision(oldPosition, newPosition);
-                    game.controls.getObject().position.copy(resolvedPosition);
-                }
-
-                // Keep player on ground
-                if (game.controls.getObject().position.y < CONFIG.playerHeight) {
-                    game.controls.getObject().position.y = CONFIG.playerHeight;
-                    game.canJump = true;
-                }
-
-                // Room culling
-                cullingSystem.update(game.controls.getObject().position);
-
-                // Check for hotspot hover
-                checkHotspotHover();
-
-                // Update minimap
-                minimap.update(
-                    game.controls.getObject().position,
-                    game.camera.rotation.y
-                );
-            }
-
-            // Animate hotspots
-            game.hotspots.forEach(hotspot => {
-                hotspot.userData.pulseTime += delta * 2;
-                const scale = 1 + Math.sin(hotspot.userData.pulseTime) * 0.2;
-                hotspot.scale.set(scale, scale, scale);
-            });
-
-            // Render
-            game.renderer.render(game.scene, game.camera);
-        }
-
-        function checkHotspotHover() {
-            game.raycaster.setFromCamera(new THREE.Vector2(0, 0), game.camera);
-            const intersects = game.raycaster.intersectObjects(game.hotspots);
-
-            const hintElement = document.getElementById('interaction-hint');
-
-            if (intersects.length > 0 && intersects[0].distance < 3) {
-                const hotspot = intersects[0].object;
-                if (game.hoveredHotspot !== hotspot) {
-                    game.hoveredHotspot = hotspot;
-                    hintElement.textContent = hotspot.userData.description;
-                    hintElement.style.display = 'block';
-                }
-            } else {
-                if (game.hoveredHotspot) {
-                    game.hoveredHotspot = null;
-                    hintElement.style.display = 'none';
-                }
-            }
-        }
-
-        // Start the application
         init();
     </script>
 </body>
