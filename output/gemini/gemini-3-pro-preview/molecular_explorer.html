@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Molecular Explorer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: white;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100vh;
+            display: block;
+        }
+        #ui-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            background: rgba(30, 30, 30, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            backdrop-filter: blur(5px);
+            border: 1px solid #444;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        h1 { font-size: 1.2rem; margin-top: 0; color: #4db8ff; }
+        .control-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #ccc; }
+        select, button {
+            width: 100%;
+            padding: 8px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 5px;
+        }
+        select:hover, button:hover { background: #444; }
+        button.primary { background: #0066cc; border: none; }
+        button.primary:hover { background: #0052a3; }
+        input[type="range"] { width: 100%; cursor: pointer; }
+        .radio-group { display: flex; gap: 10px; }
+        .radio-item { display: flex; align-items: center; cursor: pointer; }
+        .radio-item input { margin-right: 5px; }
+        
+        /* Loading overlay */
+        #loader {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            transition: opacity 0.5s;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #4db8ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+    
+    <!-- Load Three.js and OrbitControls from CDN -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="loader"><div class="spinner"></div></div>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-panel">
+        <h1>Molecular Explorer</h1>
+        
+        <div class="control-group">
+            <label>Molecule</label>
+            <select id="molecule-select">
+                <option value="water">Water (H2O)</option>
+                <option value="caffeine" selected>Caffeine</option>
+                <option value="ethanol">Ethanol</option>
+                <option value="dna">DNA Segment (Generated)</option>
+                <option value="random">Random Random Cluster</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>Visualization Mode</label>
+            <div class="radio-group">
+                <label class="radio-item">
+                    <input type="radio" name="mode" value="ball" checked> Ball & Stick
+                </label>
+                <label class="radio-item">
+                    <input type="radio" name="mode" value="cpk"> Space Fill
+                </label>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Explode View (Expansion)</label>
+            <input type="range" id="explode-slider" min="0" max="2" step="0.01" value="0">
+        </div>
+
+        <div class="control-group">
+            <label>Section Clipping (Y-Axis)</label>
+            <input type="range" id="clip-slider" min="-20" max="20" step="0.1" value="20">
+        </div>
+
+        <div class="control-group">
+            <button id="btn-snapshot" class="primary">📸 Take Snapshot</button>
+        </div>
+        
+        <div style="font-size: 0.8rem; color: #666; margin-top: 10px;">
+            Left Click: Rotate | Right Click: Pan | Scroll: Zoom
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration & Data ---
+
+        // CPK Coloring and Atomic Radii (Angstroms approx)
+        const ELEMENT_DATA = {
+            'H': { color: 0xFFFFFF, radius: 0.37, vdw: 1.2 },
+            'C': { color: 0x909090, radius: 0.77, vdw: 1.7 },
+            'N': { color: 0x3050F8, radius: 0.75, vdw: 1.55 },
+            'O': { color: 0xFF0D0D, radius: 0.73, vdw: 1.52 },
+            'P': { color: 0xFF8000, radius: 1.10, vdw: 1.8 },
+            'S': { color: 0xFFFF30, radius: 1.02, vdw: 1.8 },
+            'Cl': { color: 0x1FF01F, radius: 0.99, vdw: 1.75 },
+            'Unknown': { color: 0xFF00FF, radius: 0.70, vdw: 1.5 }
+        };
+
+        const BOND_THRESHOLD = 1.2; // Factor of sum of covalent radii
+        
+        // Static Molecule Data (Simplified coordinates)
+        const MOLECULES = {
+            water: [
+                { elem: 'O', x: 0, y: 0, z: 0 },
+                { elem: 'H', x: 0.95, y: 0, z: 0 },
+                { elem: 'H', x: -0.24, y: 0.92, z: 0 }
+            ],
+            ethanol: [
+                { elem: 'C', x: -0.08, y: 0.02, z: 0.01 },
+                { elem: 'C', x: -1.50, y: -0.46, z: -0.26 },
+                { elem: 'O', x: 0.65, y: -0.75, z: -0.88 },
+                { elem: 'H', x: 0.24, y: 1.06, z: -0.19 },
+                { elem: 'H', x: 0.03, y: -0.15, z: 1.07 },
+                { elem: 'H', x: -2.20, y: 0.36, z: -0.06 },
+                { elem: 'H', x: -1.61, y: -1.36, z: 0.35 },
+                { elem: 'H', x: -1.66, y: -0.71, z: -1.31 },
+                { elem: 'H', x: 1.56, y: -0.52, z: -0.78 }
+            ],
+            caffeine: [
+                // Approximate coordinates for Caffeine
+                { elem: 'N', x: -1.06, y: -0.87, z: -0.25 },
+                { elem: 'C', x: -1.16, y: 0.45, z: -0.02 },
+                { elem: 'N', x: 0.06, y: 0.96, z: -0.03 },
+                { elem: 'C', x: 0.93, y: -0.06, z: -0.28 },
+                { elem: 'C', x: 0.39, y: -1.33, z: -0.54 },
+                { elem: 'O', x: -2.24, y: 1.01, z: 0.17 },
+                { elem: 'O', x: 0.80, y: -2.44, z: -0.76 },
+                { elem: 'C', x: 2.29, y: 0.08, z: -0.23 },
+                { elem: 'N', x: 2.48, y: 1.35, z: 0.08 },
+                { elem: 'C', x: 1.15, y: 1.86, z: 0.19 },
+                { elem: 'N', x: 3.40, y: -0.71, z: -0.38 },
+                { elem: 'C', x: -2.18, y: -1.83, z: -0.28 },
+                { elem: 'C', x: 0.27, y: 3.30, z: 0.51 },
+                { elem: 'C', x: 4.77, y: -0.33, z: -0.30 },
+                { elem: 'H', x: 3.18, y: 1.15, z: 0.19 } // Simplified H
+            ]
+        };
+
+        // --- Scene Setup ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x1a1a1a);
+        
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 15);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // Enable clipping
+        renderer.localClippingEnabled = true;
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 1024;
+        dirLight.shadow.mapSize.height = 1024;
+        scene.add(dirLight);
+        
+        const fillLight = new THREE.DirectionalLight(0xaaaaff, 0.5);
+        fillLight.position.set(-5, 0, -5);
+        scene.add(fillLight);
+
+        // Clipping Plane
+        const clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 20);
+        
+        // State
+        let currentAtoms = [];
+        let currentBonds = [];
+        let atomMeshes = [];
+        let bondMeshes = [];
+        let moleculeGroup = new THREE.Group();
+        scene.add(moleculeGroup);
+        
+        // --- Logic Functions ---
+
+        function getElement(symbol) {
+            return ELEMENT_DATA[symbol] || ELEMENT_DATA['Unknown'];
+        }
+
+        function generateDNA(basePairs = 6) {
+            const atoms = [];
+            const twist = 36; // degrees per step
+            const rise = 3.4; // angstroms per step
+            const radius = 10;
+
+            // Simplified backbone + base logic
+            for (let i = 0; i < basePairs; i++) {
+                const angle = (i * twist) * (Math.PI / 180);
+                const y = i * rise - (basePairs * rise / 2);
+
+                // Strand 1 (Sugar-Phosphate)
+                atoms.push({ elem: 'P', x: Math.cos(angle) * radius, y: y, z: Math.sin(angle) * radius });
+                atoms.push({ elem: 'O', x: Math.cos(angle) * radius * 0.8, y: y, z: Math.sin(angle) * radius * 0.8 });
+                // Base 1
+                atoms.push({ elem: 'N', x: Math.cos(angle) * radius * 0.5, y: y, z: Math.sin(angle) * radius * 0.5 });
+                atoms.push({ elem: 'C', x: Math.cos(angle) * radius * 0.3, y: y, z: Math.sin(angle) * radius * 0.3 });
+
+                // Strand 2 (Anti-parallel)
+                const angle2 = angle + Math.PI; // 180 degrees offset
+                atoms.push({ elem: 'P', x: Math.cos(angle2) * radius, y: y, z: Math.sin(angle2) * radius });
+                atoms.push({ elem: 'O', x: Math.cos(angle2) * radius * 0.8, y: y, z: Math.sin(angle2) * radius * 0.8 });
+                // Base 2
+                atoms.push({ elem: 'N', x: Math.cos(angle2) * radius * 0.5, y: y, z: Math.sin(angle2) * radius * 0.5 });
+                atoms.push({ elem: 'C', x: Math.cos(angle2) * radius * 0.3, y: y, z: Math.sin(angle2) * radius * 0.3 });
+                
+                // Hydrogen bond connectors (fake logic for visuals)
+                atoms.push({ elem: 'H', x: 0, y: y, z: 0 });
+            }
+            return atoms;
+        }
+
+        function generateRandomCluster(count = 20) {
+            const atoms = [];
+            const elements = ['C', 'H', 'O', 'N'];
+            for(let i=0; i<count; i++) {
+                atoms.push({
+                    elem: elements[Math.floor(Math.random() * elements.length)],
+                    x: (Math.random() - 0.5) * 8,
+                    y: (Math.random() - 0.5) * 8,
+                    z: (Math.random() - 0.5) * 8
+                });
+            }
+            return atoms;
+        }
+
+        function calculateBonds(atoms) {
+            const bonds = [];
+            for (let i = 0; i < atoms.length; i++) {
+                for (let j = i + 1; j < atoms.length; j++) {
+                    const a1 = atoms[i];
+                    const a2 = atoms[j];
+                    const d = Math.sqrt(
+                        Math.pow(a1.x - a2.x, 2) + 
+                        Math.pow(a1.y - a2.y, 2) + 
+                        Math.pow(a1.z - a2.z, 2)
+                    );
+                    
+                    const r1 = getElement(a1.elem).radius;
+                    const r2 = getElement(a2.elem).radius;
+                    
+                    // Bond if distance is less than sum of radii * threshold
+                    if (d < (r1 + r2) * BOND_THRESHOLD && d > 0.1) {
+                        bonds.push({ source: i, target: j, dist: d });
+                    }
+                }
+            }
+            return bonds;
+        }
+
+        function clearScene() {
+            // Remove old meshes
+            while(moleculeGroup.children.length > 0){ 
+                const child = moleculeGroup.children[0];
+                if(child.geometry) child.geometry.dispose();
+                if(child.material) child.material.dispose();
+                moleculeGroup.remove(child); 
+            }
+            atomMeshes = [];
+            bondMeshes = [];
+        }
+
+        function createGeometry() {
+            clearScene();
+
+            const isSpaceFill = document.querySelector('input[name="mode"]:checked').value === 'cpk';
+            
+            // Calculate Center of Mass for Explode Effect
+            const center = new THREE.Vector3();
+            currentAtoms.forEach(a => center.add(new THREE.Vector3(a.x, a.y, a.z)));
+            center.divideScalar(currentAtoms.length);
+
+            // 1. Create Atoms
+            const sphereGeo = new THREE.SphereGeometry(1, 32, 32);
+            
+            currentAtoms.forEach((atom, index) => {
+                const data = getElement(atom.elem);
+                
+                // Scale: If Space Fill, use VDW radius. If Ball & Stick, use ~30% covalent.
+                const scale = isSpaceFill ? data.vdw : data.radius * 0.4;
+                
+                const material = new THREE.MeshPhysicalMaterial({
+                    color: data.color,
+                    roughness: 0.3,
+                    metalness: 0.1,
+                    clearcoat: 0.3,
+                    clippingPlanes: [ clippingPlane ],
+                    clipShadows: true
+                });
+
+                const mesh = new THREE.Mesh(sphereGeo, material);
+                mesh.position.set(atom.x, atom.y, atom.z);
+                mesh.scale.set(scale, scale, scale);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                
+                // Store original position relative to center for animation
+                mesh.userData = {
+                    originalPos: mesh.position.clone(),
+                    centerRef: center
+                };
+
+                moleculeGroup.add(mesh);
+                atomMeshes.push(mesh);
+            });
+
+            // 2. Create Bonds (Only if not space filling)
+            if (!isSpaceFill) {
+                const bondGeo = new THREE.CylinderGeometry(0.1, 0.1, 1, 16);
+                const bondMat = new THREE.MeshStandardMaterial({ 
+                    color: 0x888888,
+                    clippingPlanes: [ clippingPlane ]
+                });
+
+                currentBonds.forEach(bond => {
+                    const start = new THREE.Vector3(currentAtoms[bond.source].x, currentAtoms[bond.source].y, currentAtoms[bond.source].z);
+                    const end = new THREE.Vector3(currentAtoms[bond.target].x, currentAtoms[bond.target].y, currentAtoms[bond.target].z);
+                    
+                    const distance = start.distanceTo(end);
+                    const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+                    
+                    const mesh = new THREE.Mesh(bondGeo, bondMat);
+                    
+                    // Orientation logic
+                    const direction = new THREE.Vector3().subVectors(end, start).normalize();
+                    const quaternion = new THREE.Quaternion();
+                    quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+                    
+                    mesh.position.copy(mid);
+                    mesh.setRotationFromQuaternion(quaternion);
+                    mesh.scale.set(1, distance, 1); // Stretch cylinder to bond length
+                    
+                    mesh.userData = {
+                        originalPos: mesh.position.clone(),
+                        centerRef: center
+                    };
+
+                    moleculeGroup.add(mesh);
+                    bondMeshes.push(mesh);
+                });
+            }
+            
+            // Center camera target
+            controls.target.copy(center);
+        }
+
+        function updateExplode() {
+            const factor = parseFloat(document.getElementById('explode-slider').value);
+            
+            [...atomMeshes, ...bondMeshes].forEach(mesh => {
+                const original = mesh.userData.originalPos;
+                const center = mesh.userData.centerRef;
+                
+                // vector from center to atom
+                const dir = new THREE.Vector3().subVectors(original, center);
+                
+                // new position = original + dir * factor
+                mesh.position.copy(original).add(dir.multiplyScalar(factor));
+            });
+        }
+
+        function updateClipping() {
+            const val = parseFloat(document.getElementById('clip-slider').value);
+            clippingPlane.constant = val;
+        }
+
+        function loadMolecule(type) {
+            let atoms = [];
+            
+            if (type === 'dna') {
+                atoms = generateDNA(10);
+            } else if (type === 'random') {
+                atoms = generateRandomCluster(25);
+            } else if (MOLECULES[type]) {
+                atoms = JSON.parse(JSON.stringify(MOLECULES[type])); // Deep copy
+            }
+
+            // Center molecule data (normalize coordinates)
+            const center = {x:0, y:0, z:0};
+            atoms.forEach(a => { center.x+=a.x; center.y+=a.y; center.z+=a.z; });
+            center.x /= atoms.length; center.y /= atoms.length; center.z /= atoms.length;
+            atoms.forEach(a => { a.x-=center.x; a.y-=center.y; a.z-=center.z; });
+
+            currentAtoms = atoms;
+            currentBonds = calculateBonds(atoms);
+            
+            createGeometry();
+        }
+
+        function takeSnapshot() {
+            // Render once explicitly to ensure buffer is fresh
+            renderer.render(scene, camera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            
+            const link = document.createElement('a');
+            link.download = 'molecule_snapshot.png';
+            link.href = dataURL;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- Event Listeners ---
+
+        document.getElementById('molecule-select').addEventListener('change', (e) => {
+            loadMolecule(e.target.value);
+        });
+
+        document.querySelectorAll('input[name="mode"]').forEach(r => {
+            r.addEventListener('change', () => {
+                createGeometry();
+                updateExplode(); // Re-apply explode if set
+            });
+        });
+
+        document.getElementById('explode-slider').addEventListener('input', updateExplode);
+        document.getElementById('clip-slider').addEventListener('input', updateClipping);
+        document.getElementById('btn-snapshot').addEventListener('click', takeSnapshot);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- Init ---
+
+        // Remove loader
+        window.addEventListener('load', () => {
+            document.getElementById('loader').style.opacity = 0;
+            setTimeout(() => { document.getElementById('loader').style.display = 'none'; }, 500);
+        });
+
+        loadMolecule('caffeine');
+        
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+    </script>
+</body>
+</html>

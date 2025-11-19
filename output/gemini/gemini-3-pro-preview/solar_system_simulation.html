@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple 3D Solar System</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: sans-serif;
+            font-size: 14px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Simple Solar System<br>Left Click: Rotate | Right Click: Pan | Scroll: Zoom</div>
+    
+    <!-- Import Three.js and OrbitControls from CDN -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Scene Setup
+        const scene = new THREE.Scene();
+        
+        // Camera setup
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 20, 40);
+
+        // Renderer setup
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // Controls (to move around with mouse)
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        
+        // 2. Lighting
+        // Ambient light (soft general light so shadows aren't pitch black)
+        const ambientLight = new THREE.AmbientLight(0x333333);
+        scene.add(ambientLight);
+
+        // Point light (The Sun's light)
+        const pointLight = new THREE.PointLight(0xffffff, 2, 300);
+        pointLight.position.set(0, 0, 0);
+        scene.add(pointLight);
+
+        // 3. Objects
+
+        // --- THE SUN ---
+        // MeshBasicMaterial does not react to light (it looks like it glows)
+        const sunGeometry = new THREE.SphereGeometry(5, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+
+        // --- THE EARTH SYSTEM ---
+        // We create a container (pivot) for the Earth to orbit the sun
+        const earthOrbitNode = new THREE.Object3D();
+        scene.add(earthOrbitNode);
+
+        // The Earth Mesh
+        // MeshPhongMaterial reacts to light (allows for shading)
+        const earthGeometry = new THREE.SphereGeometry(1.5, 32, 32);
+        const earthMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x2233ff, 
+            emissive: 0x112244,
+            shininess: 10,
+            flatShading: false
+        });
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        
+        // Position Earth away from center (Sun)
+        earth.position.x = 20; 
+        
+        // Add Earth to its orbit pivot
+        earthOrbitNode.add(earth);
+
+        // --- THE MOON SYSTEM ---
+        // We create a container (pivot) for the Moon to orbit the Earth
+        const moonOrbitNode = new THREE.Object3D();
+        // IMPORTANT: Add the moon's orbit pivot to the Earth, so it moves with the Earth
+        earth.add(moonOrbitNode);
+
+        // The Moon Mesh
+        const moonGeometry = new THREE.SphereGeometry(0.4, 32, 32);
+        const moonMaterial = new THREE.MeshPhongMaterial({ color: 0x888888 });
+        const moon = new THREE.Mesh(moonGeometry, moonMaterial);
+        
+        // Position Moon away from Earth
+        moon.position.x = 4;
+        
+        // Add Moon to its orbit pivot
+        moonOrbitNode.add(moon);
+
+        // --- STARS BACKGROUND ---
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 3000;
+        const posArray = new Float32Array(starCount * 3); // x, y, z for each star
+
+        for(let i = 0; i < starCount * 3; i++) {
+            // Random positions spread wide
+            posArray[i] = (Math.random() - 0.5) * 500; 
+        }
+
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const starMaterial = new THREE.PointsMaterial({
+            size: 0.2,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.8,
+        });
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        // 4. Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Rotate Sun on its axis
+            sun.rotation.y += 0.004;
+
+            // Orbit Earth around Sun (Rotate the pivot)
+            earthOrbitNode.rotation.y += 0.01;
+
+            // Rotate Earth on its axis
+            earth.rotation.y += 0.02;
+
+            // Orbit Moon around Earth (Rotate the pivot)
+            moonOrbitNode.rotation.y += 0.03;
+
+            // Rotate Moon on its axis
+            moon.rotation.y += 0.01;
+
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebXR VR Gallery</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            color: #fff;
+            font-family: sans-serif;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            z-index: 1;
+        }
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 18px;
+            cursor: pointer;
+            background: #fff;
+            border: none;
+            border-radius: 4px;
+        }
+        .hidden { display: none !important; }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.150.1/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.150.1/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="info">
+        <strong>VR Gallery</strong><br/>
+        VR: Point & Trigger to Teleport | Point & Trigger to Select Art<br/>
+        Desktop: Click to Start | W,A,S,D to Move | Mouse to Look | Click to Select
+    </div>
+
+    <!-- Desktop Start Overlay -->
+    <div id="overlay">
+        <h1>Virtual Gallery</h1>
+        <p>Enter VR via the button below, or click "Start Desktop" for non-VR.</p>
+        <button id="btn-desktop">Start Desktop Experience</button>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+        // --- CONFIGURATION & PERFORMANCE BUDGET ---
+        const CONFIG = {
+            roomSize: { w: 20, h: 5, d: 20 },
+            shadowMapSize: 1024, // Reduced for VR performance
+            lightColor: 0xffffff,
+            bgColor: 0x111111
+        };
+
+        let camera, scene, renderer;
+        let raycaster, tempMatrix;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let prevTime = performance.now();
+        let desktopControls;
+        
+        // XR Variables
+        let controller1, controller2;
+        let controllerGrip1, controllerGrip2;
+        let teleportMarker;
+        let intersection;
+        let group; // The user container (dolly)
+        const interactableObjects = [];
+
+        // Audio
+        let audioListener, positionalAudio;
+
+        init();
+        animate();
+
+        function init() {
+            // 1. Setup Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(CONFIG.bgColor);
+            scene.fog = new THREE.Fog(CONFIG.bgColor, 0, 25);
+
+            // 2. Setup Camera & User Group (Dolly)
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 50);
+            group = new THREE.Group();
+            scene.add(group);
+            group.add(camera);
+
+            // 3. Setup Audio
+            setupAudio();
+
+            // 4. Setup Room & Art
+            createRoom();
+            createGalleryContent();
+            
+            // 5. Setup Lights
+            setupLighting();
+
+            // 6. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true }); // VR needs anti-aliasing
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Cap pixel ratio for performance
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            renderer.shadowMap.enabled = true;
+            renderer.xr.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // 7. Controls & Interactions
+            setupDesktopControls();
+            setupXRControls();
+
+            // 8. Resize Handler
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // --- TEXTURE GENERATION (To avoid external assets) ---
+        function createTexture(type, color1, color2) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            if (type === 'floor') {
+                ctx.fillStyle = color1;
+                ctx.fillRect(0, 0, 512, 512);
+                ctx.fillStyle = color2;
+                // Tile pattern
+                for (let i=0; i<512; i+=64) {
+                    for(let j=0; j<512; j+=64) {
+                        if ((i+j)%128 === 0) ctx.fillRect(i, j, 64, 64);
+                    }
+                }
+                // Vignette for "baked" look
+                const grad = ctx.createRadialGradient(256,256, 100, 256, 256, 300);
+                grad.addColorStop(0, 'rgba(0,0,0,0)');
+                grad.addColorStop(1, 'rgba(0,0,0,0.5)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0,0,512,512);
+            } else if (type === 'wall') {
+                ctx.fillStyle = color1;
+                ctx.fillRect(0,0,512,512);
+                // Noise for texture
+                for(let i=0; i<5000; i++) {
+                    ctx.fillStyle = `rgba(255,255,255,0.05)`;
+                    ctx.fillRect(Math.random()*512, Math.random()*512, 2, 2);
+                }
+                // Fake ambient occlusion at bottom/top
+                const grad = ctx.createLinearGradient(0, 0, 0, 512);
+                grad.addColorStop(0, 'rgba(0,0,0,0.4)');
+                grad.addColorStop(0.2, 'rgba(0,0,0,0)');
+                grad.addColorStop(0.8, 'rgba(0,0,0,0)');
+                grad.addColorStop(1, 'rgba(0,0,0,0.4)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0,0,512,512);
+            } else if (type === 'art') {
+                // Abstract art generation
+                ctx.fillStyle = color1;
+                ctx.fillRect(0,0,512,512);
+                ctx.beginPath();
+                ctx.arc(256, 256, 150, 0, Math.PI*2);
+                ctx.fillStyle = color2;
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.font = '40px Arial';
+                ctx.fillText("ART", 210, 270);
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createTextTexture(title, desc) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            
+            // Background
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.fillRect(0,0, 512, 256);
+            
+            // Border
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 10;
+            ctx.strokeRect(0,0,512,256);
+
+            // Text
+            ctx.fillStyle = '#000';
+            ctx.font = 'bold 40px Arial';
+            ctx.fillText(title, 20, 60);
+            
+            ctx.font = '24px Arial';
+            // Simple word wrap logic
+            const words = desc.split(' ');
+            let line = '';
+            let y = 110;
+            for(let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > 480 && n > 0) {
+                    ctx.fillText(line, 20, y);
+                    line = words[n] + ' ';
+                    y += 30;
+                } else {
+                    line = testLine;
+                }
+            }
+            ctx.fillText(line, 20, y);
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // --- SCENE CONTENT ---
+
+        function setupLighting() {
+            const ambientLight = new THREE.AmbientLight(0x404040, 1.0); // Soft white light
+            scene.add(ambientLight);
+
+            // Central spotlight to cast shadows
+            const spotLight = new THREE.SpotLight(0xffffff, 1);
+            spotLight.position.set(0, 8, 0);
+            spotLight.angle = Math.PI / 4;
+            spotLight.penumbra = 0.5;
+            spotLight.castShadow = true;
+            spotLight.shadow.mapSize.width = CONFIG.shadowMapSize;
+            spotLight.shadow.mapSize.height = CONFIG.shadowMapSize;
+            scene.add(spotLight);
+        }
+
+        function createRoom() {
+            const roomGeo = new THREE.BoxGeometry(CONFIG.roomSize.w, CONFIG.roomSize.h, CONFIG.roomSize.d);
+            
+            const floorTex = createTexture('floor', '#333', '#444');
+            const wallTex = createTexture('wall', '#606060', '#000');
+            
+            floorTex.repeat.set(4, 4);
+            wallTex.repeat.set(2, 1);
+
+            const materials = [
+                new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.BackSide }), // Right
+                new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.BackSide }), // Left
+                new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.BackSide }), // Top
+                new THREE.MeshStandardMaterial({ map: floorTex, side: THREE.BackSide }), // Bottom (Floor)
+                new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.BackSide }), // Front
+                new THREE.MeshStandardMaterial({ map: wallTex, side: THREE.BackSide })  // Back
+            ];
+
+            const room = new THREE.Mesh(roomGeo, materials);
+            room.position.y = CONFIG.roomSize.h / 2;
+            room.receiveShadow = true; // Floor receives shadow
+            scene.add(room);
+            
+            // Teleport surface (Floor collider)
+            // We reuse the bottom of the room logic, but for raycasting we check intersection with this room mesh.
+            // To make it cleaner, let's add an invisible plane specifically for teleporting.
+            const floorPlane = new THREE.Mesh(
+                new THREE.PlaneGeometry(CONFIG.roomSize.w, CONFIG.roomSize.d),
+                new THREE.MeshBasicMaterial({ visible: false })
+            );
+            floorPlane.rotation.x = -Math.PI / 2;
+            floorPlane.name = "floor";
+            scene.add(floorPlane);
+            interactableObjects.push(floorPlane);
+        }
+
+        function createGalleryContent() {
+            // Create 4 Paintings
+            const positions = [
+                { x: 0, y: 1.6, z: -9.9, rot: 0, color: '#ff6347', title: 'Red Sphere', desc: 'A study in procedural red geometry.' },
+                { x: 9.9, y: 1.6, z: 0, rot: -Math.PI/2, color: '#4682b4', title: 'Blue Moon', desc: 'Calming blue hues generated by code.' },
+                { x: 0, y: 1.6, z: 9.9, rot: Math.PI, color: '#32cd32', title: 'Green Peace', desc: 'Nature simulated via algorithms.' },
+                { x: -9.9, y: 1.6, z: 0, rot: Math.PI/2, color: '#dda0dd', title: 'Purple Haze', desc: 'Digital mist in a box.' }
+            ];
+
+            positions.forEach((data, idx) => {
+                // Frame
+                const frameGeo = new THREE.BoxGeometry(2.2, 2.2, 0.1);
+                const frameMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+                const frame = new THREE.Mesh(frameGeo, frameMat);
+                frame.position.set(data.x, data.y, data.z);
+                frame.rotation.y = data.rot;
+                frame.castShadow = true;
+                scene.add(frame);
+
+                // Canvas
+                const artTex = createTexture('art', data.color, '#ffffff');
+                const canvasGeo = new THREE.PlaneGeometry(2, 2);
+                const canvasMat = new THREE.MeshStandardMaterial({ map: artTex });
+                const artMesh = new THREE.Mesh(canvasGeo, canvasMat);
+                artMesh.position.z = 0.06; // Pop out of frame
+                frame.add(artMesh);
+
+                // Interaction Data
+                artMesh.userData = {
+                    isArt: true,
+                    id: idx,
+                    title: data.title,
+                    desc: data.desc,
+                    infoPanel: null
+                };
+                interactableObjects.push(artMesh);
+            });
+
+            // Central Sculpture (Source of Audio)
+            const sculptGeo = new THREE.TorusKnotGeometry(0.8, 0.3, 100, 16);
+            const sculptMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.7, roughness: 0.2 });
+            const sculpture = new THREE.Mesh(sculptGeo, sculptMat);
+            sculpture.position.set(0, 1.5, 0);
+            sculpture.castShadow = true;
+            sculpture.userData = { isSculpture: true }; // Tag for interaction logic
+            scene.add(sculpture);
+            interactableObjects.push(sculpture);
+
+            // Add Audio to Sculpture
+            if(positionalAudio) sculpture.add(positionalAudio);
+            
+            // Store for animation
+            scene.userData.sculpture = sculpture;
+        }
+
+        function setupAudio() {
+            audioListener = new THREE.AudioListener();
+            camera.add(audioListener);
+
+            // Create a PositionalAudio source
+            positionalAudio = new THREE.PositionalAudio(audioListener);
+            
+            // Create an oscillator via Web Audio API (no external files)
+            const oscillator = audioListener.context.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(220, audioListener.context.currentTime); // A3
+            
+            const gain = audioListener.context.createGain();
+            gain.gain.value = 0.1; // Low volume
+            
+            oscillator.connect(gain);
+            positionalAudio.setNodeSource(oscillator);
+            positionalAudio.setRefDistance(1);
+            positionalAudio.setRolloffFactor(2); // Fades out quickly
+            
+            // Start only on user interaction (browser policy)
+            window.addEventListener('click', () => {
+                if(audioListener.context.state === 'suspended') audioListener.context.resume();
+                if(!oscillator.started) {
+                    oscillator.start(0);
+                    oscillator.started = true;
+                }
+            }, { once: true });
+        }
+
+        // --- XR SETUP ---
+
+        function setupXRControls() {
+            document.body.appendChild(VRButton.createButton(renderer));
+
+            controller1 = renderer.xr.getController(0);
+            controller1.addEventListener('selectstart', onSelectStart);
+            controller1.addEventListener('selectend', onSelectEnd);
+            controller1.addEventListener('connected', function(event) { this.add(buildController(event.data)); });
+            controller1.addEventListener('disconnected', function() { this.remove(this.children[0]); });
+            scene.add(controller1);
+
+            controller2 = renderer.xr.getController(1);
+            controller2.addEventListener('selectstart', onSelectStart);
+            controller2.addEventListener('selectend', onSelectEnd);
+            controller2.addEventListener('connected', function(event) { this.add(buildController(event.data)); });
+            controller2.addEventListener('disconnected', function() { this.remove(this.children[0]); });
+            scene.add(controller2);
+
+            const controllerModelFactory = new XRControllerModelFactory();
+            controllerGrip1 = renderer.xr.getControllerGrip(0);
+            controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+            scene.add(controllerGrip1);
+            controllerGrip2 = renderer.xr.getControllerGrip(1);
+            controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+            scene.add(controllerGrip2);
+
+            // Raycaster configuration
+            raycaster = new THREE.Raycaster();
+            tempMatrix = new THREE.Matrix4();
+
+            // Teleport Marker
+            teleportMarker = new THREE.Mesh(
+                new THREE.RingGeometry(0.2, 0.3, 32).rotateX(-Math.PI / 2),
+                new THREE.MeshBasicMaterial({ color: 0x00ffff, opacity: 0.8, transparent: true })
+            );
+            teleportMarker.visible = false;
+            scene.add(teleportMarker);
+        }
+
+        function buildController(data) {
+            // Simple beam
+            let geometry, material;
+            switch (data.targetRayMode) {
+                case 'tracked-pointer':
+                    geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, -1], 3));
+                    geometry.setAttribute('color', new THREE.Float32BufferAttribute([0.5, 0.5, 0.5, 0, 0, 0], 3));
+                    material = new THREE.LineBasicMaterial({ vertexColors: true, blending: THREE.AdditiveBlending });
+                    return new THREE.Line(geometry, material);
+                case 'gaze':
+                    geometry = new THREE.RingGeometry(0.02, 0.04, 32).translate(0, 0, -1);
+                    material = new THREE.MeshBasicMaterial({ opacity: 0.5, transparent: true });
+                    return new THREE.Mesh(geometry, material);
+            }
+        }
+
+        function onSelectStart() {
+            this.userData.isSelecting = true;
+        }
+
+        function onSelectEnd() {
+            this.userData.isSelecting = false;
+
+            if (this.userData.isTeleporting) {
+                // Execute Teleport
+                const target = teleportMarker.position;
+                // Move the dolly (group)
+                group.position.set(target.x, 0, target.z);
+                teleportMarker.visible = false;
+                this.userData.isTeleporting = false;
+            } else if (this.userData.hitObject) {
+                // Clicked Artwork
+                handleObjectInteraction(this.userData.hitObject);
+            }
+        }
+
+        // --- DESKTOP FALLBACK ---
+
+        function setupDesktopControls() {
+            desktopControls = new PointerLockControls(camera, document.body);
+
+            const btnDesktop = document.getElementById('btn-desktop');
+            btnDesktop.addEventListener('click', () => {
+                document.getElementById('overlay').classList.add('hidden');
+                desktopControls.lock();
+                // Start audio context if needed
+                if(audioListener.context.state === 'suspended') audioListener.context.resume();
+            });
+
+            desktopControls.addEventListener('lock', () => { /* Controls active */ });
+            desktopControls.addEventListener('unlock', () => { 
+                 if(!renderer.xr.isPresenting) document.getElementById('overlay').classList.remove('hidden');
+            });
+
+            // Movement
+            document.addEventListener('keydown', (e) => {
+                switch (e.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = true; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = true; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = true; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = true; break;
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                switch (e.code) {
+                    case 'ArrowUp': case 'KeyW': moveForward = false; break;
+                    case 'ArrowLeft': case 'KeyA': moveLeft = false; break;
+                    case 'ArrowDown': case 'KeyS': moveBackward = false; break;
+                    case 'ArrowRight': case 'KeyD': moveRight = false; break;
+                }
+            });
+
+            // Click Interaction (Raycast from camera center)
+            document.addEventListener('click', () => {
+                if (desktopControls.isLocked) {
+                    raycaster.setFromCamera( new THREE.Vector2(0,0), camera );
+                    const intersects = raycaster.intersectObjects( interactableObjects );
+                    
+                    if (intersects.length > 0) {
+                        // Filter out floor
+                        const hit = intersects.find(i => i.object.name !== "floor");
+                        if (hit) handleObjectInteraction(hit.object);
+                    }
+                }
+            });
+        }
+
+        function handleObjectInteraction(object) {
+            // Remove existing info panel if clicked again or click other
+            scene.traverse((child) => {
+                if (child.userData.isInfoPanel) {
+                    child.parent.remove(child);
+                }
+            });
+
+            if (object.userData.isArt) {
+                const tex = createTextTexture(object.userData.title, object.userData.desc);
+                const mat = new THREE.SpriteMaterial({ map: tex });
+                const sprite = new THREE.Sprite(mat);
+                
+                // Position in front of art
+                sprite.position.set(0, 0, 0.5); 
+                sprite.scale.set(2, 1, 1);
+                sprite.userData.isInfoPanel = true;
+                
+                // Attach to the art object so it moves/rotates with it (though art is static)
+                object.add(sprite);
+            }
+        }
+
+        // --- MAIN LOOP ---
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            // Rotate Sculpture
+            if (scene.userData.sculpture) {
+                scene.userData.sculpture.rotation.x += 0.01;
+                scene.userData.sculpture.rotation.y += 0.01;
+            }
+
+            // VR Controller Logic
+            if (renderer.xr.isPresenting) {
+                handleController(controller1);
+                handleController(controller2);
+            } else {
+                // Desktop Logic
+                if (desktopControls.isLocked) {
+                    // Simple physics movement
+                    const speed = 5.0 * delta;
+                    if (moveForward) desktopControls.moveForward(speed);
+                    if (moveBackward) desktopControls.moveForward(-speed);
+                    if (moveLeft) desktopControls.moveRight(-speed);
+                    if (moveRight) desktopControls.moveRight(speed);
+                }
+            }
+
+            renderer.render(scene, camera);
+            prevTime = time;
+        }
+
+        function handleController(controller) {
+            if (controller.userData.isSelecting) {
+                tempMatrix.identity().extractRotation(controller.matrixWorld);
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+
+                const intersects = raycaster.intersectObjects(interactableObjects);
+
+                if (intersects.length > 0) {
+                    const hit = intersects[0];
+                    
+                    if (hit.object.name === 'floor') {
+                        // Teleport Mode
+                        teleportMarker.position.copy(hit.point);
+                        teleportMarker.position.y += 0.01; // prevent z-fighting
+                        teleportMarker.visible = true;
+                        controller.userData.isTeleporting = true;
+                        controller.userData.hitObject = null;
+                    } else {
+                        // Selection Mode
+                        teleportMarker.visible = false;
+                        controller.userData.isTeleporting = false;
+                        controller.userData.hitObject = hit.object;
+                    }
+                } else {
+                    teleportMarker.visible = false;
+                    controller.userData.isTeleporting = false;
+                    controller.userData.hitObject = null;
+                }
+            }
+        }
+
+    </script>
+</body>
+</html>
