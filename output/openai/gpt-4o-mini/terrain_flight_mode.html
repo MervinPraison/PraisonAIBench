@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terrain Flight</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/perlin-noise/1.0.1/perlin.min.js"></script>
+    <script>
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const terrainSize = 256;
+        const terrainScale = 20;
+        const heightScale = 5;
+        const terrainData = new Float32Array(terrainSize * terrainSize);
+
+        // Generate heightmap using Perlin noise
+        function generateTerrain() {
+            const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize, terrainSize - 1, terrainSize - 1);
+            const vertices = geometry.attributes.position.array;
+
+            for (let i = 0; i < terrainSize; i++) {
+                for (let j = 0; j < terrainSize; j++) {
+                    const x = (i / terrainSize) * 2 - 1;
+                    const z = (j / terrainSize) * 2 - 1;
+                    const height = noise.perlin2(x * 5, z * 5) * heightScale;
+                    vertices[(j * terrainSize + i) * 3 + 1] = height;
+                }
+            }
+            geometry.computeVertexNormals();
+            const terrainTexture = new THREE.TextureLoader().load('https://threejs.org/examples/textures/terrain/grasslight-big.jpg');
+            const material = new THREE.MeshBasicMaterial({ map: terrainTexture, side: THREE.DoubleSide });
+            const terrainMesh = new THREE.Mesh(geometry, material);
+            terrainMesh.rotation.x = -Math.PI / 2;
+            scene.add(terrainMesh);
+        }
+
+        // Initialize trees as instanced meshes
+        const treeGeometry = new THREE.CylinderGeometry(0.1, 0.1, 2, 8);
+        const treeMaterial = new THREE.MeshBasicMaterial({ color: 0x8B4513 });
+        const treeCount = 200;
+        const trees = new THREE.InstancedMesh(treeGeometry, treeMaterial, treeCount);
+
+        function generateTrees() {
+            const matrix = new THREE.Matrix4();
+            for (let i = 0; i < treeCount; i++) {
+                const x = Math.random() * terrainSize - terrainSize / 2;
+                const z = Math.random() * terrainSize - terrainSize / 2;
+                const height = terrainData[Math.floor(x + terrainSize/2) + Math.floor(z + terrainSize/2) * terrainSize];
+                matrix.setPosition(x, height + 1, z);
+                trees.setMatrixAt(i, matrix);
+            }
+            scene.add(trees);
+        }
+
+        // Add the drone controller
+        const controls = {
+            pitch: 0,
+            yaw: 0,
+            roll: 0,
+            speed: 0.1,
+            speedBoost: 0.2,
+            maxHeight: 10,
+        };
+
+        camera.position.set(0, 10, 20);
+        
+        function handleControls() {
+            document.addEventListener('keydown', (e) => {
+                switch (e.key) {
+                    case 'ArrowUp':
+                        controls.pitch += 0.1; break;
+                    case 'ArrowDown':
+                        controls.pitch -= 0.1; break;
+                    case 'ArrowLeft':
+                        controls.yaw -= 0.1; break;
+                    case 'ArrowRight':
+                        controls.yaw += 0.1; break;
+                    case 'Shift':
+                        if (controls.speed < controls.speedBoost) controls.speed = controls.speedBoost; break;
+                }
+            });
+
+            document.addEventListener('keyup', (e) => {
+                if (e.key === 'Shift') controls.speed = 0.1;
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update camera position based on controls
+            camera.position.x += Math.sin(controls.yaw) * controls.speed;
+            camera.position.z += Math.cos(controls.yaw) * controls.speed;
+            camera.position.y += Math.sin(controls.pitch) * controls.speed;
+
+            // Simple collision avoidance
+            const terrainHeight = terrainSize; // example for demo
+            if (camera.position.y < terrainHeight) {
+                camera.position.y = terrainHeight + 1; // Avoid collisions with terrain
+            }
+
+            camera.lookAt(camera.position.x + Math.sin(controls.yaw), camera.position.y, camera.position.z + Math.cos(controls.yaw));
+
+            renderer.render(scene, camera);
+        }
+
+        generateTerrain();
+        generateTrees();
+        handleControls();
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>

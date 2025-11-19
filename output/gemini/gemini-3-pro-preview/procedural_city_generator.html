@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedural 3D City</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        canvas { display: block; }
+        
+        #ui-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            color: white;
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        #minimap-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid #444;
+            border-radius: 50%;
+            overflow: hidden;
+            z-index: 10;
+        }
+        
+        #minimap {
+            width: 100%;
+            height: 100%;
+            background: #222;
+        }
+
+        .control-group { margin-bottom: 10px; }
+        label { display: inline-block; width: 50px; font-size: 14px; }
+        input[type="text"] { width: 80px; padding: 4px; border: none; border-radius: 4px; }
+        button {
+            background: #007acc; color: white; border: none; padding: 6px 12px;
+            border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%;
+        }
+        button:hover { background: #005f9e; }
+        
+        #instructions {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: white;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 10px;
+            pointer-events: none;
+            transition: opacity 0.5s;
+        }
+        
+        .key {
+            background: #444;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            border-bottom: 2px solid #222;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Overlay -->
+    <div id="ui-container">
+        <div class="control-group">
+            <label>Seed:</label>
+            <input type="text" id="seedInput" value="city123">
+        </div>
+        <button id="btnGen">Regenerate City</button>
+        <div style="margin-top:10px; font-size:12px; color:#aaa">
+            Time: <span id="timeDisplay">12:00</span>
+        </div>
+    </div>
+
+    <!-- Instructions Overlay -->
+    <div id="instructions">
+        <h1>Procedural City</h1>
+        <p>Click to Fly</p>
+        <p><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> to Move</p>
+        <p><span class="key">Space</span> / <span class="key">Shift</span> to Go Up/Down</p>
+        <p><span class="key">Esc</span> to Exit Mouse Control</p>
+    </div>
+
+    <!-- Minimap -->
+    <div id="minimap-container">
+        <canvas id="minimap" width="200" height="200"></canvas>
+    </div>
+
+    <!-- Libraries -->
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+        import { PointerLockControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/PointerLockControls.js';
+
+        // --- CONFIGURATION ---
+        const CITY_SIZE = 60; // Size in grid units
+        const BLOCK_SIZE = 4; // Grid units per block
+        const TILE_SIZE = 20; // World units per grid unit
+        const BUILDING_MAX_HEIGHT = 200;
+        
+        // --- GLOBALS ---
+        let scene, camera, renderer, controls;
+        let cityGeometry, roadGeometry, trafficLights = [];
+        let seededRandom;
+        let sunLight, ambientLight, skyMesh, skyUniforms;
+        let minimapCtx, minimapCanvas;
+        
+        // Movement flags
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, moveUp = false, moveDown = false;
+        let prevTime = performance.now();
+        let velocity = new THREE.Vector3();
+        let direction = new THREE.Vector3();
+
+        // Day Cycle
+        let dayTime = 0; // 0 to 1
+        const dayDuration = 60; // Seconds for full day
+
+        // --- PSEUDO RANDOM NUMBER GENERATOR ---
+        class SeededRNG {
+            constructor(seedStr) {
+                // Simple hash of string to number
+                let h = 0xdeadbeef;
+                for(let i = 0; i < seedStr.length; i++)
+                    h = Math.imul(h ^ seedStr.charCodeAt(i), 2654435761);
+                this.seed = (h ^ h >>> 16) >>> 0;
+            }
+            
+            // Returns 0...1
+            next() {
+                this.seed = (this.seed * 9301 + 49297) % 233280;
+                return this.seed / 233280;
+            }
+        }
+
+        // --- INITIALIZATION ---
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            // SCENE
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.0015);
+
+            // CAMERA
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.set(0, 150, 0);
+
+            // RENDERER
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // CONTROLS
+            controls = new PointerLockControls(camera, document.body);
+            
+            const instructions = document.getElementById('instructions');
+            
+            instructions.addEventListener('click', () => {
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', () => {
+                instructions.style.display = 'none';
+            });
+
+            controls.addEventListener('unlock', () => {
+                instructions.style.display = 'block';
+            });
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            // LIGHTS & SKY
+            setupLighting();
+
+            // MINIMAP
+            minimapCanvas = document.getElementById('minimap');
+            minimapCtx = minimapCanvas.getContext('2d');
+
+            // GENERATE
+            generateCity();
+
+            // UI EVENTS
+            document.getElementById('btnGen').addEventListener('click', () => {
+                generateCity();
+            });
+
+            window.addEventListener('resize', onWindowResize);
+            
+            animate();
+        }
+
+        function setupLighting() {
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+            scene.add(ambientLight);
+
+            sunLight = new THREE.DirectionalLight(0xffffff, 1);
+            sunLight.position.set(100, 100, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 1500;
+            const d = 800;
+            sunLight.shadow.camera.left = -d;
+            sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d;
+            sunLight.shadow.camera.bottom = -d;
+            scene.add(sunLight);
+
+            // Procedural Sky Shader
+            const vertexShader = `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                }
+            `;
+            const fragmentShader = `
+                uniform vec3 topColor;
+                uniform vec3 bottomColor;
+                uniform float offset;
+                uniform float exponent;
+                varying vec3 vWorldPosition;
+                void main() {
+                    float h = normalize( vWorldPosition + offset ).y;
+                    gl_FragColor = vec4( mix( bottomColor, topColor, max( pow( max( h , 0.0), exponent ), 0.0 ) ), 1.0 );
+                }
+            `;
+
+            skyUniforms = {
+                topColor: { value: new THREE.Color(0x0077ff) },
+                bottomColor: { value: new THREE.Color(0xffffff) },
+                offset: { value: 33 },
+                exponent: { value: 0.6 }
+            };
+
+            const skyGeo = new THREE.SphereGeometry(1500, 32, 15);
+            const skyMat = new THREE.ShaderMaterial({
+                vertexShader: vertexShader,
+                fragmentShader: fragmentShader,
+                uniforms: skyUniforms,
+                side: THREE.BackSide
+            });
+
+            skyMesh = new THREE.Mesh(skyGeo, skyMat);
+            scene.add(skyMesh);
+        }
+
+        // --- PROCEDURAL TEXTURE GENERATION ---
+        function createBuildingTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+
+            // Base color
+            ctx.fillStyle = '#555';
+            ctx.fillRect(0, 0, 64, 128);
+
+            // Windows
+            ctx.fillStyle = '#aac'; // Glass reflection color
+            // Add noise
+            for(let y=0; y<128; y+=8) {
+                for(let x=0; x<64; x+=8) {
+                    if (Math.random() > 0.3) {
+                        ctx.fillRect(x+1, y+1, 6, 5);
+                    }
+                }
+            }
+            
+            // Emissive map (lights at night)
+            const canvasEmissive = document.createElement('canvas');
+            canvasEmissive.width = 64;
+            canvasEmissive.height = 128;
+            const ctxEmissive = canvasEmissive.getContext('2d');
+            ctxEmissive.fillStyle = '#000';
+            ctxEmissive.fillRect(0,0,64,128);
+            ctxEmissive.fillStyle = '#ffaa00';
+            
+            for(let y=0; y<128; y+=8) {
+                for(let x=0; x<64; x+=8) {
+                    if (Math.random() > 0.7) {
+                        ctxEmissive.fillRect(x+1, y+1, 6, 5);
+                    }
+                }
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            
+            const texEm = new THREE.CanvasTexture(canvasEmissive);
+            texEm.wrapS = THREE.RepeatWrapping;
+            texEm.wrapT = THREE.RepeatWrapping;
+
+            return { map: tex, emissive: texEm };
+        }
+
+        // --- CITY GENERATION ---
+        function generateCity() {
+            const seedInput = document.getElementById('seedInput').value;
+            seededRandom = new SeededRNG(seedInput);
+            
+            // Clear previous city
+            if(cityGeometry) {
+                scene.remove(cityGeometry);
+                cityGeometry.geometry.dispose();
+            }
+            if(roadGeometry) {
+                scene.remove(roadGeometry);
+                roadGeometry.geometry.dispose();
+            }
+            trafficLights.forEach(tl => {
+                scene.remove(tl.mesh);
+            });
+            trafficLights = [];
+
+            const instances = [];
+            const roads = [];
+            
+            // Mini-map setup
+            minimapCtx.fillStyle = '#222';
+            minimapCtx.fillRect(0,0,200,200);
+            const mapScale = 200 / CITY_SIZE;
+
+            // 1. Building Generation (InstancedMesh)
+            // Create textures
+            const textures = createBuildingTexture();
+            const material = new THREE.MeshStandardMaterial({ 
+                map: textures.map, 
+                emissiveMap: textures.emissive,
+                emissive: 0xffffff,
+                emissiveIntensity: 0, // controlled by day/night
+                roughness: 0.2,
+                metalness: 0.3
+            });
+            material.userData.baseEmissive = textures.emissive;
+
+            const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+            // Adjust UVs so windows tile vertically based on height
+            boxGeo.setAttribute('uv2', new THREE.BufferAttribute(boxGeo.attributes.uv.array, 2));
+
+            const dummy = new THREE.Object3D();
+            const buildingData = [];
+
+            for (let x = 0; x < CITY_SIZE; x++) {
+                for (let z = 0; z < CITY_SIZE; z++) {
+                    // Calculate world position centered
+                    const wx = (x - CITY_SIZE/2) * TILE_SIZE;
+                    const wz = (z - CITY_SIZE/2) * TILE_SIZE;
+
+                    // Determine if road or building
+                    // Simple grid logic: every Nth block is a road
+                    const isRoadX = (x % BLOCK_SIZE === 0);
+                    const isRoadZ = (z % BLOCK_SIZE === 0);
+
+                    if (isRoadX || isRoadZ) {
+                        // It's a road
+                        roads.push({x: wx, z: wz, isIntersection: isRoadX && isRoadZ});
+                        
+                        // Minimap Road
+                        minimapCtx.fillStyle = '#444';
+                        minimapCtx.fillRect(x * mapScale, z * mapScale, Math.max(1, mapScale), Math.max(1, mapScale));
+
+                        // Add Traffic Lights at intersections
+                        if (isRoadX && isRoadZ && x > 0 && x < CITY_SIZE-1 && z > 0 && z < CITY_SIZE-1) {
+                            // Only occasionally
+                            if (seededRandom.next() > 0.3) {
+                                createTrafficLight(wx, wz);
+                            }
+                        }
+                    } else {
+                        // It's a potential building block
+                        // Random height
+                        const h = 10 + Math.pow(seededRandom.next(), 3) * BUILDING_MAX_HEIGHT;
+                        
+                        // Some empty lots (parks)
+                        if (seededRandom.next() > 0.15) {
+                            dummy.position.set(wx, h/2, wz);
+                            dummy.scale.set(TILE_SIZE * 0.8, h, TILE_SIZE * 0.8);
+                            dummy.updateMatrix();
+                            buildingData.push(dummy.matrix.clone());
+
+                            // Minimap Building
+                            const cVal = Math.floor(50 + (h/BUILDING_MAX_HEIGHT)*200);
+                            minimapCtx.fillStyle = `rgb(${cVal}, ${cVal}, ${cVal})`;
+                            minimapCtx.fillRect(x * mapScale + 1, z * mapScale + 1, mapScale-2, mapScale-2);
+                        } else {
+                            // Park (green) on minimap
+                            minimapCtx.fillStyle = '#242';
+                            minimapCtx.fillRect(x * mapScale, z * mapScale, mapScale, mapScale);
+                        }
+                    }
+                }
+            }
+
+            // Create Instanced Mesh for buildings
+            cityGeometry = new THREE.InstancedMesh(boxGeo, material, buildingData.length);
+            cityGeometry.castShadow = true;
+            cityGeometry.receiveShadow = true;
+            
+            for (let i = 0; i < buildingData.length; i++) {
+                cityGeometry.setMatrixAt(i, buildingData[i]);
+            }
+            scene.add(cityGeometry);
+
+            // 2. Road Generation (Merged Geometry or Instancing)
+            // For simplicity, just a big plane with a grid texture or multiple planes? 
+            // Let's just use a large plane and use the background color, 
+            // but to be specific, let's add road markings geometry.
+            
+            // Simple approach: A dark floor plane
+            const roadMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+            const floorGeo = new THREE.PlaneGeometry(CITY_SIZE * TILE_SIZE, CITY_SIZE * TILE_SIZE);
+            floorGeo.rotateX(-Math.PI / 2);
+            roadGeometry = new THREE.Mesh(floorGeo, roadMat);
+            roadGeometry.position.y = 0.1; // slightly above 0
+            roadGeometry.receiveShadow = true;
+            scene.add(roadGeometry);
+
+            // 3. Draw Player Marker on Minimap
+            updateMinimap();
+        }
+
+        function createTrafficLight(x, z) {
+            // Simple pole with a box
+            const poleGeo = new THREE.BoxGeometry(1, 12, 1);
+            const poleMat = new THREE.MeshLambertMaterial({color: 0x333333});
+            const pole = new THREE.Mesh(poleGeo, poleMat);
+            pole.position.set(x - 8, 6, z - 8);
+            
+            const boxGeo = new THREE.BoxGeometry(2, 4, 2);
+            const boxMat = new THREE.MeshLambertMaterial({color: 0x111111});
+            const box = new THREE.Mesh(boxGeo, boxMat);
+            box.position.set(0, 4, 0);
+            pole.add(box);
+
+            // Lights (Emissive spheres)
+            const lightGeo = new THREE.SphereGeometry(0.6, 8, 8);
+            const redMat = new THREE.MeshBasicMaterial({ color: 0x330000 });
+            const greenMat = new THREE.MeshBasicMaterial({ color: 0x003300 });
+            
+            const redLight = new THREE.Mesh(lightGeo, redMat.clone());
+            redLight.position.set(0, 1, 1);
+            box.add(redLight);
+
+            const greenLight = new THREE.Mesh(lightGeo, greenMat.clone());
+            greenLight.position.set(0, -1, 1);
+            box.add(greenLight);
+
+            scene.add(pole);
+
+            // Store for animation
+            trafficLights.push({
+                mesh: pole,
+                red: redLight,
+                green: greenLight,
+                state: Math.random() > 0.5 ? 'red' : 'green',
+                timer: Math.random() * 5
+            });
+        }
+
+        // --- MOVEMENT LOGIC ---
+        function onKeyDown(event) {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW': moveForward = true; break;
+                case 'ArrowLeft':
+                case 'KeyA': moveLeft = true; break;
+                case 'ArrowDown':
+                case 'KeyS': moveBackward = true; break;
+                case 'ArrowRight':
+                case 'KeyD': moveRight = true; break;
+                case 'Space': moveUp = true; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': moveDown = true; break;
+            }
+        }
+
+        function onKeyUp(event) {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW': moveForward = false; break;
+                case 'ArrowLeft':
+                case 'KeyA': moveLeft = false; break;
+                case 'ArrowDown':
+                case 'KeyS': moveBackward = false; break;
+                case 'ArrowRight':
+                case 'KeyD': moveRight = false; break;
+                case 'Space': moveUp = false; break;
+                case 'ShiftLeft':
+                case 'ShiftRight': moveDown = false; break;
+            }
+        }
+
+        // --- UPDATE LOOPS ---
+        function updateDayNight(delta) {
+            dayTime += delta / dayDuration;
+            if(dayTime > 1) dayTime = 0;
+
+            // Display Time
+            const hours = Math.floor(dayTime * 24);
+            const mins = Math.floor((dayTime * 24 * 60) % 60);
+            document.getElementById('timeDisplay').innerText = 
+                `${hours.toString().padStart(2,'0')}:${mins.toString().padStart(2,'0')}`;
+
+            // Sun Position (Rotate around Z axis)
+            const angle = (dayTime * Math.PI * 2) - (Math.PI / 2); // start at dawn
+            const r = 500;
+            sunLight.position.set(Math.cos(angle)*r, Math.sin(angle)*r, 100);
+            sunLight.lookAt(0,0,0);
+
+            // Sky Color Interpolation
+            // Dawn: 0.25, Noon: 0.5, Dusk: 0.75, Night: 0-0.25 / 0.75-1
+            let intensity = 0;
+            let skyTop = new THREE.Color();
+            let skyBot = new THREE.Color();
+            let fogCol = new THREE.Color();
+
+            if (dayTime < 0.25) { // Night to Dawn
+                const t = dayTime / 0.25;
+                intensity = THREE.MathUtils.lerp(0, 1, t);
+                skyTop.setHex(0x000000).lerp(new THREE.Color(0x0077ff), t);
+                skyBot.setHex(0x000000).lerp(new THREE.Color(0xffaa00), t);
+                fogCol.setHex(0x000000).lerp(new THREE.Color(0xffaa00), t);
+            } else if (dayTime < 0.5) { // Dawn to Noon
+                const t = (dayTime - 0.25) / 0.25;
+                intensity = 1;
+                skyTop.setHex(0x0077ff).lerp(new THREE.Color(0x00aaff), t);
+                skyBot.setHex(0xffaa00).lerp(new THREE.Color(0xffffff), t);
+                fogCol.setHex(0xffaa00).lerp(new THREE.Color(0xaaccff), t);
+            } else if (dayTime < 0.75) { // Noon to Dusk
+                const t = (dayTime - 0.5) / 0.25;
+                intensity = THREE.MathUtils.lerp(1, 0.5, t);
+                skyTop.setHex(0x00aaff).lerp(new THREE.Color(0x001133), t);
+                skyBot.setHex(0xffffff).lerp(new THREE.Color(0xff5500), t);
+                fogCol.setHex(0xaaccff).lerp(new THREE.Color(0xff5500), t);
+            } else { // Dusk to Night
+                const t = (dayTime - 0.75) / 0.25;
+                intensity = THREE.MathUtils.lerp(0.5, 0, t);
+                skyTop.setHex(0x001133).lerp(new THREE.Color(0x000000), t);
+                skyBot.setHex(0xff5500).lerp(new THREE.Color(0x000000), t);
+                fogCol.setHex(0xff5500).lerp(new THREE.Color(0x000000), t);
+            }
+
+            sunLight.intensity = intensity;
+            ambientLight.intensity = Math.max(0.1, intensity * 0.4);
+            
+            skyUniforms.topColor.value.copy(skyTop);
+            skyUniforms.bottomColor.value.copy(skyBot);
+            scene.fog.color.copy(fogCol);
+            renderer.setClearColor(fogCol); // fallback
+
+            // Building Emissive lights (turn on at night)
+            if (cityGeometry) {
+                // Night is roughly > 0.75 or < 0.25
+                const nightFactor = (dayTime > 0.7 or dayTime < 0.3) ? 1 : 0;
+                // Smooth transition
+                let emInt = 0;
+                if(dayTime > 0.7) emInt = (dayTime - 0.7) * 4;
+                if(dayTime < 0.2) emInt = 1 - (dayTime * 4);
+                
+                cityGeometry.material.emissiveIntensity = Math.min(1, emInt);
+            }
+        }
+
+        function updateTrafficLights(delta) {
+            trafficLights.forEach(tl => {
+                tl.timer -= delta;
+                if (tl.timer <= 0) {
+                    tl.timer = 3 + Math.random() * 5;
+                    tl.state = tl.state === 'red' ? 'green' : 'red';
+                    
+                    if (tl.state === 'red') {
+                        tl.red.material.color.setHex(0xff0000);
+                        tl.green.material.color.setHex(0x003300);
+                    } else {
+                        tl.red.material.color.setHex(0x330000);
+                        tl.green.material.color.setHex(0x00ff00);
+                    }
+                }
+            });
+        }
+
+        function updateMinimap() {
+            // Clear player arrow area is hard without redrawing everything or layers.
+            // For simplicity, we are just moving a DOM element or redrawing canvas?
+            // Since we drew the static city on the canvas, let's not clear it every frame.
+            // Instead, we can use a second canvas for the player dot or just CSS.
+            // BUT, since the assignment asks for a minimap overlay, let's use a div on top of the canvas
+            // representing the player.
+            
+            let playerDot = document.getElementById('minimap-player');
+            if(!playerDot) {
+                playerDot = document.createElement('div');
+                playerDot.id = 'minimap-player';
+                playerDot.style.position = 'absolute';
+                playerDot.style.width = '6px';
+                playerDot.style.height = '6px';
+                playerDot.style.background = 'red';
+                playerDot.style.borderRadius = '50%';
+                playerDot.style.transform = 'translate(-50%, -50%)';
+                playerDot.style.zIndex = 11;
+                document.getElementById('minimap-container').appendChild(playerDot);
+            }
+
+            const mapScale = 200 / (CITY_SIZE * TILE_SIZE);
+            // Map center is 100,100 which corresponds to world 0,0
+            const cx = 100 + (camera.position.x * mapScale);
+            const cy = 100 + (camera.position.z * mapScale);
+            
+            // Clamp
+            const clampedX = Math.max(0, Math.min(200, cx));
+            const clampedY = Math.max(0, Math.min(200, cy));
+
+            playerDot.style.left = clampedX + 'px';
+            playerDot.style.top = clampedY + 'px';
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            if (controls.isLocked === true) {
+                velocity.x -= velocity.x * 5.0 * delta;
+                velocity.z -= velocity.z * 5.0 * delta;
+                velocity.y -= velocity.y * 5.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.y = Number(moveDown) - Number(moveUp); // Y is inverted in logic usually, but here Up is +Y
+                direction.normalize();
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
+                if (moveUp || moveDown) velocity.y -= direction.y * 400.0 * delta;
+
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+                camera.position.y += velocity.y * delta; // Vertical movement manually
+            }
+
+            updateDayNight(delta);
+            updateTrafficLights(delta);
+            updateMinimap();
+
+            renderer.render(scene, camera);
+            prevTime = time;
+        }
+
+        // Start
+        init();
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+[
+  {
+    "test_name": "rotating_cube_simulation",
+    "prompt": "Create a complete HTML file with Three.js that displays a rotating 3D cube. The cube should have different colored faces, rotate continuously, and include proper lighting. The HTML file should be self-contained with Three.js loaded from CDN. Include camera controls for user interaction. Save the output as 'rotating_cube.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.6240251064300537,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:17"
+  },
+  {
+    "test_name": "solar_system_simulation",
+    "prompt": "Create a complete HTML file with Three.js that simulates a simple solar system. Include the sun (yellow sphere) at the center, Earth (blue sphere) orbiting around it, and the moon (gray sphere) orbiting around Earth. Add realistic orbital speeds and include stars in the background. The HTML should be self-contained with Three.js from CDN. Save the output as 'solar_system.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.13897991180419922,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:17"
+  },
+  {
+    "test_name": "particle_system_simulation",
+    "prompt": "Create a complete HTML file with Three.js that displays an animated particle system. The particles should move in interesting patterns (like a fountain, explosion, or flowing stream), change colors over time, and respond to mouse movement. Include at least 1000 particles with realistic physics. The HTML should be self-contained with Three.js from CDN. Save the output as 'particle_system.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.15807199478149414,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:17"
+  },
+  {
+    "test_name": "terrain_simulation",
+    "prompt": "Create a complete HTML file with Three.js that generates and displays a 3D terrain landscape. The terrain should have hills and valleys using noise or height maps, include realistic texturing (grass, rock, etc.), and allow the user to fly through the scene with keyboard controls (WASD). Add fog effects for depth. The HTML should be self-contained with Three.js from CDN. Save the output as 'terrain_landscape.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.21970605850219727,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:17"
+  },
+  {
+    "test_name": "interactive_solar_system",
+    "prompt": "Create a complete HTML file with Three.js that builds an interactive 3D solar system with textured planets, axial rotation, elliptical orbits, adjustable time speed, and click-to-reveal planet facts. Include orbit lines, lighting from a sun mesh, and responsive camera controls. The HTML file should be self-contained with Three.js loaded from CDN and include all textures as data URLs or procedural materials. Save the output as 'interactive_solar_system.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.13671088218688965,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:17"
+  },
+  {
+    "test_name": "procedural_city_generator",
+    "prompt": "Create a complete HTML file with Three.js that generates a procedural 3D city with random blocks, building heights, road grid, traffic light animations, day/night cycle with HDRI sky, and a free-fly camera. Add a mini-map overlay and a seed input to reproduce layouts. The HTML file should be self-contained with Three.js loaded from CDN and include all necessary shaders and textures inline. Save the output as 'procedural_city.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.15891695022583008,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:18"
+  },
+  {
+    "test_name": "terrain_flight_mode",
+    "prompt": "Create a complete HTML file with Three.js that generates procedural terrain using heightmaps or Perlin noise with rivers, trees (instanced meshes), and LOD. Add a simple 'drone/plane' controller to fly above terrain with pitch/roll/yaw, speed boost, and collision avoidance. The HTML file should be self-contained with Three.js loaded from CDN and include all terrain generation code inline. Save the output as 'terrain_flight.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.12485504150390625,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:18"
+  },
+  {
+    "test_name": "product_configurator",
+    "prompt": "Create a complete HTML file with Three.js that implements a 3D product configurator. Create a 3D model (like a car, chair, or phone) with color, material, texture, and part toggles. Add environment reflections, soft shadows, and camera bookmarks. Include export current config as JSON and PNG snapshot functionality. The HTML file should be self-contained with Three.js loaded from CDN and include all 3D models as procedural geometry. Save the output as 'product_configurator.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.13296079635620117,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:18"
+  },
+  {
+    "test_name": "webxr_art_gallery",
+    "prompt": "Create a complete HTML file with Three.js and WebXR that builds a VR gallery with teleport navigation, hand/controller rays to select artworks, modal info panels, spatial audio, baked/lightmapped room, and performance budget for stable frame rate. Include fallback for non-VR devices with mouse controls. The HTML file should be self-contained with Three.js and WebXR libraries loaded from CDN. Save the output as 'webxr_gallery.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.329287052154541,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:18"
+  },
+  {
+    "test_name": "physics_playground",
+    "prompt": "Create a complete HTML file with Three.js integrated with a lightweight physics engine (cannon-es or similar) that includes stackable boxes, spheres, hinge joints, ragdoll, and interactive dragging with the mouse. Add reset button, gravity slider, and slow-motion toggle. The HTML file should be self-contained with Three.js and physics engine loaded from CDN. Save the output as 'physics_playground.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.15787506103515625,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:18"
+  },
+  {
+    "test_name": "data_driven_dashboard",
+    "prompt": "Create a complete HTML file with Three.js that creates a 3D analytics scene turning a random dataset into bars, scatter points, and ribbons on a 3D grid. Include axis helpers, tooltips on hover, camera tween to views, theme toggle (dark/light), and CSV export of generated data. The HTML file should be self-contained with Three.js loaded from CDN and include sample data generation. Save the output as 'data_dashboard.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.1654360294342041,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:19"
+  },
+  {
+    "test_name": "molecular_explorer",
+    "prompt": "Create a complete HTML file with Three.js that renders molecules from a provided or random molecular structure with ball-and-stick and space-filling modes, bond inference, atom coloring by element, section clipping, explode animation, and snapshot export. Include sample molecules (water, caffeine, DNA segment). The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'molecular_explorer.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.2563149929046631,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:19"
+  },
+  {
+    "test_name": "space_shooter_prototype",
+    "prompt": "Create a complete HTML file with Three.js that builds a simple on-rails space shooter with starfield background, enemy waves (instanced meshes), laser projectiles, hit effects (GPU particles), health/score UI, and post-processing bloom. Provide difficulty scaling and mobile touch controls. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'space_shooter.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.17370128631591797,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:19"
+  },
+  {
+    "test_name": "architectural_walkthrough",
+    "prompt": "Create a complete HTML file with Three.js that creates an interactive walkthrough for a procedurally generated house with first-person controls with collision detection, baked/IBL lighting, light probes, room-based culling, interactive hotspots that toggle materials/furniture, and a minimap. Include multiple rooms and furniture. The HTML file should be self-contained with Three.js loaded from CDN. Save the output as 'architectural_walkthrough.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "openrouter/qwen/qwen3-max"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.13337492942810059,
+    "status": "success",
+    "timestamp": "2025-09-06 08:45:19"
+  }
+]

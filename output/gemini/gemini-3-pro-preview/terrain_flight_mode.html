@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Procedural Terrain Flight</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        canvas { display: block; }
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ff00;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border: 1px solid #00ff00;
+        }
+        #controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            pointer-events: none;
+            font-size: 12px;
+            text-shadow: 1px 1px 0 #000;
+        }
+        h1 { margin: 0 0 5px 0; font-size: 18px; }
+    </style>
+    <!-- Load Three.js and Simplex Noise -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+</head>
+<body>
+
+<div id="hud">
+    <h1>DRONE OS v1.0</h1>
+    <div>SPD: <span id="speed">0</span> km/h</div>
+    <div>ALT: <span id="altitude">0</span> m</div>
+    <div>POS: <span id="coords">0, 0</span></div>
+</div>
+
+<div id="controls-hint">
+    <b>W/S</b>: Pitch | <b>A/D</b>: Roll | <b>Q/E</b>: Yaw | <b>SHIFT</b>: Boost | <b>SPACE</b>: Brake
+</div>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { BufferGeometryUtils } from 'three/addons/utils/BufferGeometryUtils.js';
+
+    // --- CONFIGURATION ---
+    const WORLD_SIZE = 20000; // Effectively infinite, but coordinate limit
+    const CHUNK_SIZE = 200;
+    const CHUNK_RES = 40; // Vertices per chunk side
+    const RENDER_DISTANCE = 3; // Radius of chunks around player (3 = 7x7 grid)
+    const WATER_LEVEL = -8;
+    
+    // --- GLOBALS ---
+    let scene, camera, renderer, simplex;
+    let terrainChunks = {}; // Map "x,z" -> Chunk Object
+    let treesGeometry, treesMaterial;
+    
+    // Flight Physics
+    const plane = {
+        mesh: null,
+        speed: 0,
+        maxSpeed: 1.5,
+        boostSpeed: 4.0,
+        rot: new THREE.Euler(0, 0, 0),
+        velocity: new THREE.Vector3()
+    };
+
+    const keys = { w:false, s:false, a:false, d:false, q:false, e:false, Shift:false, " ":false };
+
+    // --- INITIALIZATION ---
+    function init() {
+        // Setup Scene
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.Fog(0x87CEEB, CHUNK_SIZE * (RENDER_DISTANCE - 1), CHUNK_SIZE * (RENDER_DISTANCE + 1));
+
+        // Setup Camera
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        
+        // Setup Renderer
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // Setup Lights
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(100, 200, 50);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 100;
+        dirLight.shadow.camera.bottom = -100;
+        dirLight.shadow.camera.left = -100;
+        dirLight.shadow.camera.right = 100;
+        scene.add(dirLight);
+
+        // Noise Generator
+        simplex = new SimplexNoise();
+
+        // Prepare Tree Assets (Shared Geometry/Material for Instancing)
+        createTreeAssets();
+
+        // Create Player/Plane
+        createPlane();
+
+        // Event Listeners
+        window.addEventListener('resize', onWindowResize);
+        window.addEventListener('keydown', (e) => handleKey(e, true));
+        window.addEventListener('keyup', (e) => handleKey(e, false));
+
+        // Start Loop
+        animate();
+    }
+
+    // --- GENERATION ASSETS ---
+    function createTreeAssets() {
+        const trunkGeo = new THREE.CylinderGeometry(0.5, 1, 3, 6);
+        trunkGeo.translate(0, 1.5, 0);
+        const leavesGeo = new THREE.ConeGeometry(3, 7, 6);
+        leavesGeo.translate(0, 5.5, 0); // Stack on trunk
+
+        // Merge geometries to reduce draw calls
+        // Note: In raw three.js without utils, we can merge visually or just keep simple. 
+        // For simplicity in this file, we'll just use the Cone (Pine tree style)
+        const treeGeo = new THREE.ConeGeometry(3, 9, 7);
+        treeGeo.translate(0, 4.5, 0);
+        
+        treesGeometry = treeGeo;
+        treesMaterial = new THREE.MeshLambertMaterial({ color: 0x2d4c1e });
+    }
+
+    function createPlane() {
+        const geometry = new THREE.ConeGeometry(1, 4, 8);
+        geometry.rotateX(Math.PI / 2);
+        const material = new THREE.MeshStandardMaterial({ color: 0xff0000, roughness: 0.4 });
+        plane.mesh = new THREE.Mesh(geometry, material);
+        plane.mesh.castShadow = true;
+        scene.add(plane.mesh);
+        
+        // Start position high up
+        plane.mesh.position.set(0, 100, 0);
+    }
+
+    // --- TERRAIN LOGIC ---
+
+    function getNoiseHeight(x, z) {
+        // Multiple octaves for detail
+        let y = 0;
+        y += simplex.noise2D(x * 0.003, z * 0.003) * 60; // Big mountains
+        y += simplex.noise2D(x * 0.01, z * 0.01) * 15;   // Hills
+        y += simplex.noise2D(x * 0.05, z * 0.05) * 2;    // Detail
+        
+        // River logic: flatten areas that are low
+        if (y < WATER_LEVEL + 2) {
+            // Smooth out water edges
+            y = THREE.MathUtils.lerp(y, WATER_LEVEL, 0.8); 
+        }
+        
+        return y;
+    }
+
+    function getTerrainHeightAt(x, z) {
+        return getNoiseHeight(x, z);
+    }
+
+    class Chunk {
+        constructor(ox, oz) {
+            this.ox = ox; // Offset X (Chunk grid coord)
+            this.oz = oz; // Offset Z
+            this.mesh = null;
+            this.trees = null;
+            this.generate();
+        }
+
+        generate() {
+            const geometry = new THREE.PlaneGeometry(CHUNK_SIZE, CHUNK_SIZE, CHUNK_RES, CHUNK_RES);
+            geometry.rotateX(-Math.PI / 2);
+
+            const count = geometry.attributes.position.count;
+            const pos = geometry.attributes.position;
+            
+            const colors = [];
+            const treePositions = [];
+
+            // World position of chunk center
+            const wx = this.ox * CHUNK_SIZE;
+            const wz = this.oz * CHUNK_SIZE;
+
+            for (let i = 0; i < count; i++) {
+                // Local coords
+                const lx = pos.getX(i);
+                const lz = pos.getZ(i);
+
+                // World coords
+                const x = wx + lx;
+                const z = wz + lz;
+
+                // Height
+                const h = getNoiseHeight(x, z);
+                pos.setY(i, h);
+
+                // Color based on height (Vertex Coloring)
+                let r=0, g=0, b=0;
+
+                if (h < WATER_LEVEL) {
+                    // Water (Blue)
+                    r=0.1; g=0.3; b=0.8;
+                } else if (h < WATER_LEVEL + 4) {
+                    // Sand
+                    r=0.76; g=0.7; b=0.5;
+                } else if (h < 35) {
+                    // Grass
+                    r=0.2; g=0.5; b=0.1;
+                    
+                    // Chance to spawn tree if normal is roughly up and random chance
+                    if (Math.random() > 0.985) {
+                        treePositions.push({x: x, y: h, z: z});
+                    }
+                } else if (h < 55) {
+                    // Rock
+                    r=0.4; g=0.4; b=0.4;
+                } else {
+                    // Snow
+                    r=0.95; g=0.95; b=1.0;
+                }
+                
+                // Simple noise shading variation
+                const variation = (simplex.noise2D(x*0.1, z*0.1) + 1) * 0.1;
+                colors.push(r + variation, g + variation, b + variation);
+            }
+
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.computeVertexNormals();
+
+            const material = new THREE.MeshStandardMaterial({ 
+                vertexColors: true,
+                flatShading: true,
+                roughness: 0.8
+            });
+
+            this.mesh = new THREE.Mesh(geometry, material);
+            this.mesh.position.set(wx, 0, wz);
+            this.mesh.receiveShadow = true;
+            scene.add(this.mesh);
+
+            // Create Trees using InstancedMesh
+            if (treePositions.length > 0) {
+                this.trees = new THREE.InstancedMesh(treesGeometry, treesMaterial, treePositions.length);
+                const dummy = new THREE.Object3D();
+                
+                for (let i = 0; i < treePositions.length; i++) {
+                    const t = treePositions[i];
+                    // Local position relative to chunk center for InstancedMesh is not needed 
+                    // if we position the InstancedMesh at 0,0,0 and set world coords, 
+                    // OR position IM at chunk center and set local.
+                    // Let's keep IM at 0,0,0 world space for simplicity or child of mesh.
+                    
+                    // Scaling randomness
+                    const scale = 0.5 + Math.random() * 0.8;
+                    
+                    dummy.position.set(t.x, t.y, t.z);
+                    dummy.rotation.set(0, Math.random() * Math.PI, 0);
+                    dummy.scale.set(scale, scale, scale);
+                    dummy.updateMatrix();
+                    this.trees.setMatrixAt(i, dummy.matrix);
+                }
+                this.trees.castShadow = true;
+                this.trees.receiveShadow = true;
+                scene.add(this.trees);
+            }
+        }
+
+        dispose() {
+            scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh.material.dispose();
+            if (this.trees) {
+                scene.remove(this.trees);
+                this.trees.dispose();
+            }
+        }
+    }
+
+    function updateChunks() {
+        // Determine current chunk coordinate of player
+        const currentChunkX = Math.round(plane.mesh.position.x / CHUNK_SIZE);
+        const currentChunkZ = Math.round(plane.mesh.position.z / CHUNK_SIZE);
+
+        const activeKeys = new Set();
+
+        // Identify which chunks should exist
+        for (let x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++) {
+            for (let z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; z++) {
+                const cx = currentChunkX + x;
+                const cz = currentChunkZ + z;
+                const key = `${cx},${cz}`;
+                activeKeys.add(key);
+
+                if (!terrainChunks[key]) {
+                    terrainChunks[key] = new Chunk(cx, cz);
+                }
+            }
+        }
+
+        // Remove old chunks
+        for (const key in terrainChunks) {
+            if (!activeKeys.has(key)) {
+                terrainChunks[key].dispose();
+                delete terrainChunks[key];
+            }
+        }
+    }
+
+    // --- GAME LOOP & LOGIC ---
+
+    function handleKey(e, state) {
+        if (keys.hasOwnProperty(e.key) || keys.hasOwnProperty(e.code)) {
+            keys[e.key] = state;
+        }
+        if(e.key === "Shift") keys.Shift = state;
+        if(e.key === " ") keys[" "] = state;
+    }
+
+    function updatePhysics(dt) {
+        const moveSpeed = dt * 2.0;
+        const rotSpeed = dt * 1.5;
+
+        // Input Handling
+        // Pitch
+        if (keys.w) plane.mesh.rotateX(rotSpeed);
+        if (keys.s) plane.mesh.rotateX(-rotSpeed);
+        
+        // Roll
+        if (keys.a) plane.mesh.rotateZ(rotSpeed);
+        if (keys.d) plane.mesh.rotateZ(-rotSpeed);
+
+        // Yaw
+        if (keys.q) plane.mesh.rotateY(rotSpeed * 0.5);
+        if (keys.e) plane.mesh.rotateY(-rotSpeed * 0.5);
+
+        // Speed Control
+        let targetSpeed = plane.maxSpeed;
+        if (keys.Shift) targetSpeed = plane.boostSpeed;
+        if (keys[" "]) targetSpeed = 0.5; // Brake
+
+        // Accelerate/Decelerate
+        plane.speed += (targetSpeed - plane.speed) * dt * 2.0;
+
+        // Move Forward
+        plane.mesh.translateY(plane.speed); // Cone geometry points Y-up by default, rotated X 90 makes Y forward local
+
+        // --- Collision Avoidance ---
+        const pos = plane.mesh.position;
+        const groundHeight = getTerrainHeightAt(pos.x, pos.z);
+        const minAlt = groundHeight + 2.5; // Minimum safe altitude
+
+        if (pos.y < minAlt) {
+            pos.y = minAlt;
+            
+            // Add a little "bounce" or level out pitch if hitting ground
+            const forwardDir = new THREE.Vector3(0, 1, 0).applyQuaternion(plane.mesh.quaternion);
+            if (forwardDir.y < 0) {
+                // If pointing down, force pitch up slightly
+                plane.mesh.rotateX(rotSpeed * 2);
+            }
+            // Reduce speed on collision/skimming
+            plane.speed *= 0.95;
+        }
+
+        // Camera Follow
+        const relativeCameraOffset = new THREE.Vector3(0, -8, 3); // Behind and above (relative to plane orientation which is weird due to Cone)
+        // The Cone's "Top" is Y, but we rotated it -90 X.
+        // Let's calculate absolute follow.
+        
+        // Simple 3rd person camera: Position camera behind plane based on its rotation
+        const offset = new THREE.Vector3(0, -2, -10); // Local offset: Back 10, Up 2 (relative to model orientation)
+        offset.applyQuaternion(plane.mesh.quaternion);
+        offset.add(plane.mesh.position);
+        
+        // Smooth camera
+        camera.position.lerp(offset, 0.1);
+        camera.lookAt(plane.mesh.position);
+
+        // Update HUD
+        document.getElementById('speed').innerText = Math.round(plane.speed * 100);
+        document.getElementById('altitude').innerText = Math.round(pos.y - groundHeight);
+        document.getElementById('coords').innerText = `${Math.round(pos.x)}, ${Math.round(pos.z)}`;
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    const clock = new THREE.Clock();
+
+    function animate() {
+        requestAnimationFrame(animate);
+
+        const dt = clock.getDelta();
+        
+        updatePhysics(dt);
+        updateChunks();
+
+        renderer.render(scene, camera);
+    }
+
+    // Boot
+    init();
+
+</script>
+</body>
+</html>

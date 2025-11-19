@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotating 3D Cube with Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+    
+    <!-- Import Map to define where to load Three.js modules from -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- The canvas will be injected here by Three.js -->
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // 1. Setup Scene, Camera, and Renderer
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x202020); // Dark gray background
+
+        const camera = new THREE.PerspectiveCamera(
+            75, // Field of view
+            window.innerWidth / window.innerHeight, // Aspect ratio
+            0.1, // Near clipping plane
+            1000 // Far clipping plane
+        );
+        camera.position.z = 5; // Move camera back so we can see the cube
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 2. Add Controls (OrbitControls)
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; // Adds inertia to camera movement
+        controls.dampingFactor = 0.05;
+
+        // 3. Create the Cube with Multiple Colors
+        const geometry = new THREE.BoxGeometry(2, 2, 2);
+
+        // Define a different color for each of the 6 faces
+        // Order: Right, Left, Top, Bottom, Front, Back
+        const materials = [
+            new THREE.MeshStandardMaterial({ color: 0xff0000 }), // Red
+            new THREE.MeshStandardMaterial({ color: 0x00ff00 }), // Green
+            new THREE.MeshStandardMaterial({ color: 0x0000ff }), // Blue
+            new THREE.MeshStandardMaterial({ color: 0xffff00 }), // Yellow
+            new THREE.MeshStandardMaterial({ color: 0x00ffff }), // Cyan
+            new THREE.MeshStandardMaterial({ color: 0xff00ff })  // Magenta
+        ];
+
+        const cube = new THREE.Mesh(geometry, materials);
+        scene.add(cube);
+
+        // 4. Add Lighting
+        // Ambient light provides base illumination
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        // Directional light creates shadows and depth (like the sun)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(5, 5, 5);
+        scene.add(directionalLight);
+
+        // 5. Handle Window Resize
+        window.addEventListener('resize', onWindowResize, false);
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // 6. Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Continuous rotation logic
+            cube.rotation.x += 0.01;
+            cube.rotation.y += 0.01;
+
+            // Update controls (required if damping is enabled)
+            controls.update();
+
+            renderer.render(scene, camera);
+        }
+
+        // Start the animation
+        animate();
+    </script>
+</body>
+</html>

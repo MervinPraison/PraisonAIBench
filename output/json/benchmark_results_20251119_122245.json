@@ -1,0 +1,15 @@
+[
+  {
+    "test_name": "rotating_cube_simulation",
+    "prompt": "Create a complete HTML file with Three.js that displays a rotating 3D cube. The cube should have different colored faces, rotate continuously, and include proper lighting. The HTML file should be self-contained with Three.js loaded from CDN. Include camera controls for user interaction. Save the output as 'rotating_cube.html'.",
+    "response": "",
+    "model": {
+      "max_tokens": 100000,
+      "model": "gemini/gemini-3-pro-preview"
+    },
+    "agent_name": "BenchAgent",
+    "execution_time": 0.07267618179321289,
+    "status": "success",
+    "timestamp": "2025-11-19 12:22:45"
+  }
+]

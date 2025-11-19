@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>3D Procedural Terrain - Flight Mode</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            background-color: #000;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #instructions {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #ffffff;
+            text-align: center;
+            cursor: pointer;
+        }
+        h1 { font-size: 36px; margin-bottom: 10px; text-shadow: 2px 2px 4px #000; }
+        p { font-size: 18px; text-shadow: 1px 1px 2px #000; }
+        .keys { color: #ff9f43; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="blocker">
+        <div id="instructions">
+            <h1>Click to Enter Flight Mode</h1>
+            <p>
+                Move: <span class="keys">W, A, S, D</span><br/>
+                Up/Down: <span class="keys">Space / Shift</span><br/>
+                Look: <span class="keys">Mouse</span>
+            </p>
+        </div>
+    </div>
+
+    <!-- Import Map for Three.js and Addons -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+                "simplex-noise": "https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { createNoise2D } from 'simplex-noise';
+
+        // --- Configuration ---
+        const WORLD_WIDTH = 2000;
+        const WORLD_DEPTH = 2000;
+        const SEGMENTS = 150; // Higher = more detail, lower = better performance
+        const FOG_COLOR = 0xcce0ff;
+        const SPEED = 400.0;
+        
+        // --- Global Variables ---
+        let camera, scene, renderer, controls;
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let moveUp = false;
+        let moveDown = false;
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+
+        init();
+        animate();
+
+        function init() {
+            // 1. Setup Scene & Camera
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(FOG_COLOR);
+            scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0012);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
+            camera.position.set(0, 150, 400); // Start in the air
+
+            // 2. Lighting
+            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+            hemiLight.position.set(0, 200, 0);
+            scene.add(hemiLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(100, 200, 100);
+            dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            // 3. Generate Terrain
+            generateTerrain();
+
+            // 4. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // 5. Controls
+            controls = new PointerLockControls(camera, document.body);
+
+            const blocker = document.getElementById('blocker');
+            const instructions = document.getElementById('instructions');
+
+            instructions.addEventListener('click', function () {
+                controls.lock();
+            });
+
+            controls.addEventListener('lock', function () {
+                instructions.style.display = 'none';
+                blocker.style.display = 'none';
+            });
+
+            controls.addEventListener('unlock', function () {
+                blocker.style.display = 'flex';
+                instructions.style.display = 'flex';
+            });
+
+            scene.add(controls.getObject());
+
+            // 6. Event Listeners
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function generateTerrain() {
+            // Geometry
+            const geometry = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH, SEGMENTS, SEGMENTS);
+            geometry.rotateX(-Math.PI / 2);
+
+            // Noise Generation
+            const noise2D = createNoise2D();
+            const vertices = geometry.attributes.position.array;
+            const colors = [];
+            
+            // Colors for shading
+            const colorWater = new THREE.Color(0x205080); // Deep Blue (if we went below 0)
+            const colorGrassLow = new THREE.Color(0x3b7d34); // Darker Green
+            const colorGrassHigh = new THREE.Color(0x6db058); // Lighter Green
+            const colorRock = new THREE.Color(0x5a5a5a); // Grey
+            const colorSnow = new THREE.Color(0xffffff); // White
+
+            // Iterate over vertices to set Height (Y) and Color
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 2];
+
+                // Combine multiple noise layers (octaves) for realism
+                // Layer 1: Large mountains
+                let y = noise2D(x * 0.002, z * 0.002) * 120;
+                // Layer 2: Smaller details
+                y += noise2D(x * 0.01, z * 0.01) * 15;
+                // Layer 3: Roughness
+                y += noise2D(x * 0.03, z * 0.03) * 3;
+
+                // Flatten valleys slightly
+                if (y < 0) y = y * 0.5;
+
+                vertices[i + 1] = y;
+
+                // Vertex Coloring based on height
+                let finalColor = new THREE.Color();
+
+                if (y < 10) {
+                    // Lowlands / Grass
+                    finalColor.copy(colorGrassLow).lerp(colorGrassHigh, (y + 50) / 60);
+                } else if (y < 90) {
+                    // Mountains / Rock
+                    let t = (y - 10) / 80;
+                    finalColor.copy(colorGrassHigh).lerp(colorRock, t);
+                } else {
+                    // Peaks / Snow
+                    let t = (y - 90) / 50;
+                    // Clamp t
+                    if(t > 1) t = 1;
+                    finalColor.copy(colorRock).lerp(colorSnow, t);
+                }
+
+                colors.push(finalColor.r, finalColor.g, finalColor.b);
+            }
+
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.computeVertexNormals();
+
+            // Material
+            const material = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                roughness: 0.8,
+                metalness: 0.1,
+                side: THREE.DoubleSide // Render bottom just in case
+            });
+
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            // Add some water plane
+            const waterGeo = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH);
+            waterGeo.rotateX(-Math.PI / 2);
+            const waterMat = new THREE.MeshBasicMaterial({ color: 0x36689c, transparent: true, opacity: 0.6 });
+            const water = new THREE.Mesh(waterGeo, waterMat);
+            water.position.y = -5;
+            scene.add(water);
+        }
+
+        function onKeyDown(event) {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                    moveForward = true;
+                    break;
+                case 'ArrowLeft':
+                case 'KeyA':
+                    moveLeft = true;
+                    break;
+                case 'ArrowDown':
+                case 'KeyS':
+                    moveBackward = true;
+                    break;
+                case 'ArrowRight':
+                case 'KeyD':
+                    moveRight = true;
+                    break;
+                case 'Space':
+                    moveUp = true;
+                    break;
+                case 'ShiftLeft':
+                case 'ShiftRight':
+                    moveDown = true;
+                    break;
+            }
+        }
+
+        function onKeyUp(event) {
+            switch (event.code) {
+                case 'ArrowUp':
+                case 'KeyW':
+                    moveForward = false;
+                    break;
+                case 'ArrowLeft':
+                case 'KeyA':
+                    moveLeft = false;
+                    break;
+                case 'ArrowDown':
+                case 'KeyS':
+                    moveBackward = false;
+                    break;
+                case 'ArrowRight':
+                case 'KeyD':
+                    moveRight = false;
+                    break;
+                case 'Space':
+                    moveUp = false;
+                    break;
+                case 'ShiftLeft':
+                case 'ShiftRight':
+                    moveDown = false;
+                    break;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            
+            if (controls.isLocked === true) {
+                const delta = (time - prevTime) / 1000;
+
+                // Dampen velocity (friction)
+                velocity.x -= velocity.x * 5.0 * delta;
+                velocity.z -= velocity.z * 5.0 * delta;
+                velocity.y -= velocity.y * 5.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.y = Number(moveUp) - Number(moveDown);
+                direction.normalize(); // Consistent speed in all directions
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * SPEED * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * SPEED * delta;
+                if (moveUp || moveDown) velocity.y += direction.y * SPEED * delta;
+
+                // Apply movement
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+                controls.getObject().position.y += velocity.y * delta;
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>

@@ -6,6 +6,7 @@ from praisonaiagents import Agent
 from typing import Dict, List, Any, Optional
 import json
 import time
+import logging
 
 
 class BenchAgent:
@@ -76,6 +77,9 @@ class BenchAgent:
             
         except Exception as e:
             end_time = time.time()
+            model_name = self.llm.get("model", str(self.llm)) if isinstance(self.llm, dict) else self.llm
+            error_msg = f"Agent '{self.name}' failed with model '{model_name}': {str(e)}"
+            logging.error(f"❌ {error_msg}", exc_info=True)
             return {
                 "test_name": test_name or "unnamed_test",
                 "prompt": prompt,
@@ -84,7 +88,7 @@ class BenchAgent:
                 "agent_name": self.name,
                 "execution_time": end_time - start_time,
                 "status": "error",
-                "error": str(e),
+                "error": error_msg,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
     

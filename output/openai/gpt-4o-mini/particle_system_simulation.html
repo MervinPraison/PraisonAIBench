@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Particle System with Three.js</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, particles, particleSystem;
+        const particleCount = 1000;
+        const particleGeometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        const colorChangeSpeed = 0.02;
+
+        init();
+        animate();
+
+        function init() {
+            // Create a scene
+            scene = new THREE.Scene();
+
+            // Create a camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            // Create a renderer
+            renderer = new THREE.WebGLRenderer({ alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Create particles
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 10; // X
+                positions[i * 3 + 1] = (Math.random()) * 10; // Y
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 10; // Z
+
+                colors[i * 3] = Math.random(); // R
+                colors[i * 3 + 1] = Math.random(); // G
+                colors[i * 3 + 2] = Math.random(); // B
+
+                velocities[i * 3] = Math.random() * 0.02 - 0.01; // X velocity
+                velocities[i * 3 + 1] = Math.random() * 0.05; // Y velocity
+                velocities[i * 3 + 2] = Math.random() * 0.02 - 0.01; // Z velocity
+            }
+
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 0.1,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particleSystem);
+
+            window.addEventListener('mousemove', onMouseMove, false);
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function onMouseMove(event) {
+            // Update particle velocities based on mouse position
+            const xNormalized = (event.clientX / window.innerWidth) * 2 - 1;
+            const yNormalized = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            for (let i = 0; i < particleCount; i++) {
+                velocities[i * 3] += (xNormalized * 0.01) - velocities[i * 3]; // X
+                velocities[i * 3 + 1] += (yNormalized * 0.02) - velocities[i * 3 + 1]; // Y
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update particle positions and colors
+            const positions = particleGeometry.attributes.position.array;
+            const colors = particleGeometry.attributes.color.array;
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] += velocities[i * 3]; // X
+                positions[i * 3 + 1] += velocities[i * 3 + 1]; // Y
+                positions[i * 3 + 2] += velocities[i * 3 + 2]; // Z
+
+                // Reset particles when they go below the ground level
+                if (positions[i * 3 + 1] < 0) {
+                    positions[i * 3 + 1] = Math.random() * 10; // Y
+                    positions[i * 3] = (Math.random() - 0.5) * 10; // X
+                    positions[i * 3 + 2] = (Math.random() - 0.5) * 10; // Z
+                }
+
+                // Update colors
+                colors[i * 3] += colorChangeSpeed * (Math.random() - 0.5); // R
+                colors[i * 3 + 1] += colorChangeSpeed * (Math.random() - 0.5); // G
+                colors[i * 3 + 2] += colorChangeSpeed * (Math.random() - 0.5); // B
+            }
+
+            particleGeometry.attributes.position.needsUpdate = true;
+            particleGeometry.attributes.color.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            // Adjust camera and renderer size on window resize
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>

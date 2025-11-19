@@ -1,6 +1,7 @@
 # Output and Results
-output/*.json
 output/*.html
+output/screenshots/
+output/html/
 
 # Python
 __pycache__/
@@ -183,6 +184,7 @@ logs/
 # Test files
 test_output/
 test_results/
+test_output.txt
 
 # Backup files
 *.bak

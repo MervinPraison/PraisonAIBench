@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Analytics Dashboard</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #info { position: absolute; top: 10px; left: 10px; color: white; }
+        #toggleTheme { position: absolute; top: 50px; left: 10px; }
+        #exportCSV { position: absolute; top: 90px; left: 10px; }
+        .tooltip { position: absolute; background: rgba(0, 0, 0, 0.7); color: white; padding: 5px; display: none; }
+    </style>
+</head>
+<body>
+    <div id="info"></div>
+    <button id="toggleTheme">Toggle Theme</button>
+    <button id="exportCSV">Export CSV</button>
+    <div class="tooltip" id="tooltip"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        // Axes helpers
+        const axesHelper = new THREE.AxesHelper(5);
+        scene.add(axesHelper);
+
+        // Theme setup
+        let darkTheme = true;
+        const themeColors = {
+            light: { background: 0xffffff, color: 0x000000 },
+            dark: { background: 0x000000, color: 0xffffff }
+        };
+        scene.background = new THREE.Color(themeColors.dark.background);
+        
+        // Random data generation
+        const data = generateRandomData(100);
+        const scatterPoints = createScatterPlot(data);
+        const barGraph = createBarGraph(data);
+        
+        // Camera position
+        camera.position.z = 10;
+
+        // Tooltips
+        const tooltip = document.getElementById('tooltip');
+        
+        // Render loop
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Data visualization functions
+        function generateRandomData(num) {
+            const result = [];
+            for (let i = 0; i < num; i++) {
+                result.push({ x: Math.random() * 10, y: Math.random() * 10, z: Math.random() * 10 });
+            }
+            return result;
+        }
+
+        function createScatterPlot(data) {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(data.length * 3);
+            const colors = new Float32Array(data.length * 3);
+            for (let i = 0; i < data.length; i++) {
+                const index = i * 3;
+                positions[index] = data[i].x;
+                positions[index + 1] = data[i].y;
+                positions[index + 2] = data[i].z;
+
+                colors[index] = Math.random();
+                colors[index + 1] = Math.random();
+                colors[index + 2] = Math.random();
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            const material = new THREE.PointsMaterial({ size: 0.1, vertexColors: true });
+            const points = new THREE.Points(geometry, material);
+            scene.add(points);
+            return points;
+        }
+
+        function createBarGraph(data) {
+            const barWidth = 0.1;
+            for (const point of data) {
+                const geometry = new THREE.BoxGeometry(barWidth, point.z, barWidth);
+                const material = new THREE.MeshBasicMaterial({ color: Math.random() * 0xffffff });
+                const bar = new THREE.Mesh(geometry, material);
+                bar.position.set(point.x, point.z / 2, point.y);
+                scene.add(bar);
+            }
+        }
+
+        // Event Handlers
+        document.getElementById('toggleTheme').addEventListener('click', () => {
+            darkTheme = !darkTheme;
+            const currentTheme = darkTheme ? themeColors.dark : themeColors.light;
+            scene.background.set(currentTheme.background);
+            renderer.setClearColor(currentTheme.background, 1);
+        });
+
+        document.getElementById('exportCSV').addEventListener('click', () => {
+            const csvRows = [];
+            csvRows.push(['X', 'Y', 'Z']); // header
+            data.forEach(row => {
+                csvRows.push([row.x, row.y, row.z]);
+            });
+            const csvString = csvRows.map(e => e.join(",")).join("\n");
+            const blob = new Blob([csvString], { type: 'text/csv' });
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = 'data.csv';
+            link.click();
+        });
+
+        // Mouse hover interactions (tooltips)
+        window.addEventListener('mousemove', (event) => {
+            const mouse = new THREE.Vector2(
+                (event.clientX / window.innerWidth) * 2 - 1,
+                - (event.clientY / window.innerHeight) * 2 + 1
+            );
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children);
+            if (intersects.length > 0) {
+                tooltip.style.display = 'block';
+                tooltip.innerHTML = `X: ${intersects[0].point.x.toFixed(2)}, Y: ${intersects[0].point.y.toFixed(2)}, Z: ${intersects[0].point.z.toFixed(2)}`;
+                tooltip.style.left = `${event.clientX + 15}px`;
+                tooltip.style.top = `${event.clientY + 15}px`;
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>

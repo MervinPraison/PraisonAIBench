@@ -1,0 +1,13 @@
+[
+  {
+    "test_name": "hello_world_test",
+    "prompt": "Create a simple HTML page with Hello World",
+    "response": null,
+    "model": "gpt-4o-mini",
+    "agent_name": "BenchAgent",
+    "execution_time": 1.7881393432617188e-05,
+    "status": "error",
+    "error": "Agent 'BenchAgent' failed with model 'gpt-4o-mini': OPENAI_API_KEY environment variable is required for the default OpenAI service. If you are targeting a local server (e.g., LM Studio), ensure OPENAI_API_BASE is set (e.g., 'http://localhost:1234/v1') and you can use a placeholder API key by setting OPENAI_API_KEY='not-needed'",
+    "timestamp": "2025-11-19 16:20:09"
+  }
+]

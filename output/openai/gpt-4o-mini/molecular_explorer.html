@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Molecular Explorer</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #controls { position: absolute; top: 10px; left: 10px; z-index: 100; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="controls">
+        <button onclick="exportSnapshot()">Export Snapshot</button>
+        <button onclick="toggleMode()">Toggle Mode</button>
+        <button onclick="explodeMolecule()">Explode</button>
+    </div>
+    <script>
+        let scene, camera, renderer, molecule, mode = 'ballAndStick', distance = 0.1;
+        let atomsData = {
+            "water": {
+                atoms: [
+                    {element: 'O', position: [0, 0, 0]}, 
+                    {element: 'H', position: [0, 0.5, 0]},
+                    {element: 'H', position: [0.5, 0, 0]}
+                ],
+                bonds: [[0, 1], [0, 2]]
+            },
+            "caffeine": {
+                atoms: [
+                    {element: 'C', position: [0, 0, 0]},
+                    {element: 'N', position: [1, 0, 0]},
+                    {element: 'C', position: [1.5, 1, 0]},
+                    {element: 'C', position: [0.5, 1, 0]},
+                    {element: 'C', position: [0, 1.5, 0]},
+                    {element: 'O', position: [-1, 1.5, 0]}
+                ],
+                bonds: [[0, 1], [0, 3], [1, 2], [2, 4], [4, 5]]
+            },
+            "dna": {
+                atoms: [
+                    {element: 'C', position: [0, 0, 0]},
+                    {element: 'N', position: [0.4, 0.4, 0]},
+                    {element: 'C', position: [0.8, 0, 0]},
+                    {element: 'C', position: [1, 1, 0]},
+                ],
+                bonds: [[0, 1], [1, 2], [2, 3]]
+            }
+        };
+
+        init();
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            camera.position.z = 5;
+
+            createMolecule('water'); // Load a sample molecule
+
+            animate();
+        }
+
+        function createMolecule(moleculeName) {
+            if (molecule) {
+                scene.remove(molecule);
+            }
+            let atoms = atomsData[moleculeName].atoms;
+            let bonds = atomsData[moleculeName].bonds;
+            let geometry = new THREE.Geometry();
+            let atomColors = {
+                'C': 0x000000,
+                'H': 0xFFFFFF,
+                'O': 0xFF0000,
+                'N': 0x0000FF
+            };
+
+            let atomMeshes = [];
+            atoms.forEach((atom, index) => {
+                let sphereGeometry = new THREE.SphereGeometry(0.2, 32, 32);
+                let material = new THREE.MeshBasicMaterial({ color: atomColors[atom.element] });
+                let sphere = new THREE.Mesh(sphereGeometry, material);
+                sphere.position.set(...atom.position);
+                atomMeshes.push(sphere);
+                geometry.mergeMesh(sphere);
+            });
+
+            bonds.forEach(bond => {
+                let start = atoms[bond[0]].position;
+                let end = atoms[bond[1]].position;
+                let material = new THREE.LineBasicMaterial({ color: 0x888888 });
+                let points = [new THREE.Vector3(...start), new THREE.Vector3(...end)];
+                let geometry = new THREE.BufferGeometry().setFromPoints(points);
+                let line = new THREE.Line(geometry, material);
+                scene.add(line);
+            });
+
+            molecule = new THREE.Group();
+            atomMeshes.forEach(atom => molecule.add(atom));
+            scene.add(molecule);
+        }
+
+        function toggleMode() {
+            mode = (mode === 'ballAndStick') ? 'spaceFilling' : 'ballAndStick';
+            // Adjust visualization based on the mode
+        }
+
+        function explodeMolecule() {
+            molecule.children.forEach((atom, index) => {
+                atom.position.y += index * 0.1; // Simple explosion effect
+            });
+            setTimeout(() => { // Collapse back after explosion
+                molecule.children.forEach((atom, index) => {
+                    atom.position.y -= index * 0.1;
+                });
+            }, 1000);
+        }
+
+        function exportSnapshot() {
+            renderer.render(scene, camera);
+            let link = document.createElement('a');
+            link.download = 'molecular_snapshot.png';
+            link.href = renderer.domElement.toDataURL("image/png");
+            link.click();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

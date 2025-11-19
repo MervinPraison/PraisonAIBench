@@ -1,0 +1,12 @@
+[
+  {
+    "test_name": "unnamed_test",
+    "prompt": "Write a poem",
+    "response": "In the mellowness of twilight's gentle glow,  \nWhere whispers of the evening softly flow,  \nThere's a dance of shadows, fleeting, light,  \nIn the hush of the coming night.  \n\nLeaves murmur secrets to the passing breeze,  \nCrickets compose symphonies with ease,  \nStars like diamonds scattered wide,  \nPierce the fabric of the sky.  \n\nThe moonlight, a silvery veil,  \nCasts stories told in visions pale,  \nIt cradles dreams upon the land,  \nWrinkles time with its gentle hand.  \n\nRivers hum in quiet tune,  \nReflecting the watchful, wise old moon,  \nAnd somewhere in the distance bright,  \nA lone wolf serenades the night.  \n\nIn this tranquil symphony, unbroken,  \nNature writes her poetic token,  \nA world enshrined in its own grace,  \nA perfect pause, a timeless space.  \n\nSo close your eyes and breathe deep,  \nIn the lullaby the night doth keep,  \nFor even in the shadow's sweep,  \nThe earth in silence speaks to sleep.",
+    "model": "gpt-4o",
+    "agent_name": "BenchAgent",
+    "execution_time": 5.461033821105957,
+    "status": "success",
+    "timestamp": "2025-08-29 15:15:45"
+  }
+]

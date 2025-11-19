@@ -1,0 +1,12 @@
+[
+  {
+    "test_name": "unnamed_test",
+    "prompt": "What is 5 + 7?",
+    "response": "5 + 7 equals 12.",
+    "model": "gpt-4o",
+    "agent_name": "BenchAgent",
+    "execution_time": 0.669133186340332,
+    "status": "success",
+    "timestamp": "2025-08-29 15:15:21"
+  }
+]

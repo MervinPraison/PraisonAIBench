@@ -1,0 +1,13 @@
+[
+  {
+    "test_name": "rotating_cube_simulation",
+    "prompt": "Create a complete HTML file with Three.js that displays a rotating 3D cube. The cube should have different colored faces, rotate continuously, and include proper lighting. The HTML file should be self-contained with Three.js loaded from CDN. Include camera controls for user interaction. Save the output as 'rotating_cube.html'.",
+    "response": null,
+    "model": "gpt-4o",
+    "agent_name": "BenchAgent",
+    "execution_time": 1.4066696166992188e-05,
+    "status": "error",
+    "error": "OPENAI_API_KEY environment variable is required for the default OpenAI service. If you are targeting a local server (e.g., LM Studio), ensure OPENAI_API_BASE is set (e.g., 'http://localhost:1234/v1') and you can use a placeholder API key by setting OPENAI_API_KEY='not-needed'",
+    "timestamp": "2025-08-29 16:03:18"
+  }
+]
