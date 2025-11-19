@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Molecular Explorer</title>
+<style>
+  body { margin: 0; }
+  canvas { display: block; }
+  #controls {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background-color: rgba(255, 255, 255, 0.8);
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 100; /* Ensure controls are on top */
+  }
+  #molecule-select { margin-bottom: 5px; }
+  #output-container {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(255, 255, 255, 0.8);
+    padding: 10px;
+    border-radius: 5px;
+    z-index: 100; /* Ensure controls are on top */
+    max-width: 300px; /* Or any appropriate width */
+    word-wrap: break-word; /* Allows long words to be broken and wrapped onto the next line */
+  }
+
+</style>
+</head>
+<body>
+  <div id="controls">
+    <label for="molecule-select">Select Molecule:</label>
+    <select id="molecule-select">
+      <option value="water">Water</option>
+      <option value="caffeine">Caffeine</option>
+      <option value="dna">DNA Segment</option>
+    </select><br>
+
+    <label for="mode-select">Rendering Mode:</label>
+    <select id="mode-select">
+      <option value="ball-and-stick">Ball and Stick</option>
+      <option value="space-filling">Space Filling</option>
+    </select><br>
+
+    <button id="clip-button">Toggle Section Clipping</button><br>
+    <button id="explode-button">Explode Animation</button><br>
+    <button id="snapshot-button">Take Snapshot</button><br>
+
+    <label for="random-molecule-input">Enter Atom Data (CSV):</label>
+    <textarea id="random-molecule-input" rows="4" cols="30">H,0,0,0
+O,0,0,1</textarea><br>
+    <button id="load-random-button">Load Custom Molecule</button>
+
+  </div>
+  <div id="output-container">
+      <p id="output">Output Area</p>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+  <script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+    camera.position.z = 5;
+    controls.update();
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0x404040); // Soft white light
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(1, 1, 1).normalize();
+    scene.add(directionalLight);
+
+    // Molecule Data
+    const molecules = {
+      water: `H,0.9572,0,0
+O,0,0,0
+H,-0.9572,0,0`,
+      caffeine: `C,0.000,0.000,0.000
+N,0.000,1.379,0.000
+C,1.162,2.072,0.000
+H,1.162,3.162,0.000
+C,2.294,1.379,0.000
+N,2.294,0.000,0.000
+C,1.162,-0.690,0.000
+N,-1.162,-0.690,0.000
+C,-2.294,0.000,0.000
+C,-2.294,1.379,0.000
+O,-3.456,2.072,0.000
+C,-1.162,2.072,0.000
+O,-1.162,3.451,0.000
+H,3.162,2.072,0.000
+H,3.162,-0.690,0.000
+H,-3.162,-0.690,0.000
+H,-3.162,1.379,0.000
+H,-2.023,-1.103,-0.816
+H,-2.023,-1.103,0.816
+H,-2.023,1.938,-0.816
+H,-2.023,1.938,0.816`,
+      dna: `C,0.000,0.000,0.000
+N,0.000,1.379,0.000
+C,1.162,2.072,0.000
+H,1.162,3.162,0.000
+C,2.294,1.379,0.000
+N,2.294,0.000,0.000
+C,1.162,-0.690,0.000
+H,1.162,-1.780,0.000
+C,-1.162,-0.690,0.000
+H,-1.162,-1.780,0.000
+C,-2.294,0.000,0.000
+H,-3.384,0.000,0.000
+C,-2.294,1.379,0.000
+H,-3.384,1.379,0.000
+O,-1.162,2.072,0.000
+P,0.000,2.769,0.000
+O,1.162,3.451,0.000` // Simplified DNA segment
+    };
+
+    let currentMoleculeData = molecules.water; // Default molecule
+
+    // Rendering parameters
+    const atomRadius = 0.2;
+    const bondRadius = 0.1;
+    const bondDistanceThreshold = 1.5; // Distance for bond inference
+
+    let currentMode = 'ball-and-stick';
+    let isClippingEnabled = false;
+    let explodeAnimationActive = false;
+    let explodeFactor = 0; // Increase gradually during animation
+
+    let moleculeGroup = new THREE.Group(); // Group to hold the molecule's components
+    scene.add(moleculeGroup);
+
+    // Color by element
+    const elementColors = {
+      'H': 0xffffff, // White
+      'O': 0xff0000, // Red
+      'N': 0x0000ff, // Blue
+      'C': 0x808080, // Gray
+      'P': 0xFFA500  // Orange
+    };
+
+    function renderMolecule(data, mode = 'ball-and-stick') {
+      // Clear the existing molecule
+      while (moleculeGroup.children.length > 0) {
+          moleculeGroup.remove(moleculeGroup.children[0]);
+      }
+
+      const atoms = [];
+      const lines = data.split('\n');
+
+      // Parse atom data
+      for (const line of lines) {
+        if (line.trim() === '') continue; // Skip empty lines
+
+        const parts = line.split(',');
+        if (parts.length !== 4) {
+          console.warn("Invalid line in molecule data:", line);
+          continue;
+        }
+
+        const element = parts[0].trim();
+        const x = parseFloat(parts[1]);
+        const y = parseFloat(parts[2]);
+        const z = parseFloat(parts[3]);
+
+        atoms.push({ element: element, x: x, y: y, z: z });
+      }
+
+      // Create atom geometries
+      const atomGeometries = [];
+      for (const atom of atoms) {
+        const color = elementColors[atom.element] || 0xcccccc; // Default to light gray if element not found
+        const geometry = new THREE.SphereGeometry(atomRadius, 32, 32);
+        const material = new THREE.MeshLambertMaterial({ color: color });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(atom.x, atom.y, atom.z);
+        atomGeometries.push(mesh);
+        moleculeGroup.add(mesh);
+      }
+
+      // Infer and create bonds
+      for (let i = 0; i < atoms.length; i++) {
+        for (let j = i + 1; j < atoms.length; j++) {
+          const atom1 = atoms[i];
+          const atom2 = atoms[j];
+          const distance = Math.sqrt(
+            Math.pow(atom1.x - atom2.x, 2) +
+            Math.pow(atom1.y - atom2.y, 2) +
+            Math.pow(atom1.z - atom2.z, 2)
+          );
+
+          if (distance <= bondDistanceThreshold) {
+            const material = new THREE.MeshLambertMaterial({ color: 0x999999 });
+            const geometry = new THREE.CylinderGeometry(bondRadius, bondRadius, distance, 32);
+            const mesh = new THREE.Mesh(geometry, material);
+
+            // Position and rotate the bond
+            const p1 = new THREE.Vector3(atom1.x, atom1.y, atom1.z);
+            const p2 = new THREE.Vector3(atom2.x, atom2.y, atom2.z);
+            mesh.position.copy(p1).add(p2).multiplyScalar(0.5);
+            mesh.lookAt(p2);
+            mesh.rotateX(Math.PI / 2); // Correct rotation for cylinder orientation
+
+            moleculeGroup.add(mesh);
+          }
+        }
+      }
+
+      if (mode === 'space-filling') {
+          for (let i = 0; i < moleculeGroup.children.length; i++) {
+            if (moleculeGroup.children[i] instanceof THREE.Mesh && moleculeGroup.children[i].geometry instanceof THREE.CylinderGeometry){
+              moleculeGroup.remove(moleculeGroup.children[i]);
+              i--;
+            } else if (moleculeGroup.children[i] instanceof THREE.Mesh && moleculeGroup.children[i].geometry instanceof THREE.SphereGeometry) {
+               const atom = atoms[i];
+               let vdwRadius;
+                switch(atom.element){
+                    case 'H': vdwRadius = 1.2; break;
+                    case 'C': vdwRadius = 1.7; break;
+                    case 'N': vdwRadius = 1.55; break;
+                    case 'O': vdwRadius = 1.52; break;
+                    case 'P': vdwRadius = 1.8; break;
+                    default: vdwRadius = 0.2;
+                }
+                moleculeGroup.children[i].scale.set(vdwRadius/atomRadius, vdwRadius/atomRadius, vdwRadius/atomRadius);
+            }
+
+          }
+      } else {
+        for (let i = 0; i < moleculeGroup.children.length; i++){
+            if (moleculeGroup.children[i] instanceof THREE.Mesh && moleculeGroup.children[i].geometry instanceof THREE.SphereGeometry) {
+              moleculeGroup.children[i].scale.set(1,1,1);
+            }
+        }
+      }
+
+      // Center the molecule
+      const boundingBox = new THREE.Box3().setFromObject(moleculeGroup);
+      const center = boundingBox.getCenter(new THREE.Vector3());
+      moleculeGroup.position.set(-center.x, -center.y, -center.z);
+    }
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+
+      if (explodeAnimationActive) {
+        explodeFactor += 0.01;  // Adjust speed here
+        if (explodeFactor > 1) explodeFactor = 1; // Limit the explosion
+
+        // Loop through atoms and bonds, pushing them outwards
+        for (let i = 0; i < moleculeGroup.children.length; i++) {
+          const obj = moleculeGroup.children[i];
+
+          if (obj instanceof THREE.Mesh) { // Only process meshes
+            const originalPosition = new THREE.Vector3(0,0,0);
+
+            if (obj.geometry instanceof THREE.SphereGeometry) { //It's an atom! Find its original position.
+                originalPosition.copy(atoms[i].x, atoms[i].y, atoms[i].z);
+            } else if (obj.geometry instanceof THREE.CylinderGeometry) { //it's a bond, find original center
+                let atomIndex1;
+                let atomIndex2;
+                let count = 0;
+
+                for (let j = 0; j < atoms.length; j++){
+                    for (let k = j + 1; k < atoms.length; k++) {
+                        const atom1 = atoms[j];
+                        const atom2 = atoms[k];
+                        const distance = Math.sqrt(
+                            Math.pow(atom1.x - atom2.x, 2) +
+                            Math.pow(atom1.y - atom2.y, 2) +
+                            Math.pow(atom1.z - atom2.z, 2)
+                        );
+
+                        if (distance <= bondDistanceThreshold) {
+                            if(count == i - atoms.length){ //Bonds start after the atoms
+                                atomIndex1 = j;
+                                atomIndex2 = k;
+                                break;
+                            }
+                            count++;
+                        }
+                    }
+                }
+                if(atomIndex1 != undefined && atomIndex2 != undefined){
+                    originalPosition.x = (atoms[atomIndex1].x + atoms[atomIndex2].x) / 2;
+                    originalPosition.y = (atoms[atomIndex1].y + atoms[atomIndex2].y) / 2;
+                    originalPosition.z = (atoms[atomIndex1].z + atoms[atomIndex2].z) / 2;
+                }
+
+            } else {
+                continue; //Shouldn't happen...
+            }
+            const explosionVector = new THREE.Vector3(obj.position.x - moleculeGroup.position.x, obj.position.y - moleculeGroup.position.y, obj.position.z - moleculeGroup.position.z).normalize().multiplyScalar(explodeFactor);
+            obj.position.add(explosionVector);
+
+          }
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    // Event listeners
+    document.getElementById('molecule-select').addEventListener('change', (event) => {
+      currentMoleculeData = molecules[event.target.value];
+      renderMolecule(currentMoleculeData, currentMode);
+      document.getElementById('output').innerText = 'Loaded: ' + event.target.value;
+
+    });
+
+    document.getElementById('mode-select').addEventListener('change', (event) => {
+      currentMode = event.target.value;
+      renderMolecule(currentMoleculeData, currentMode);
+      document.getElementById('output').innerText = 'Rendering mode: ' + event.target.value;
+    });
+
+    document.getElementById('clip-button').addEventListener('click', () => {
+      isClippingEnabled = !isClippingEnabled;
+      // Implement section clipping logic here (e.g., using clipping planes)
+      // This is a placeholder - actual clipping implementation is more complex
+      renderer.localClippingEnabled = isClippingEnabled;
+      moleculeGroup.traverse(function (node) {
+          if (node.material) {
+              node.material.clippingPlanes = isClippingEnabled ? [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)] : []; // Example clipping plane
+              node.material.needsUpdate = true;
+          }
+      });
+      document.getElementById('output').innerText = 'Clipping: ' + isClippingEnabled;
+    });
+
+    document.getElementById('explode-button').addEventListener('click', () => {
+      explodeAnimationActive = !explodeAnimationActive;
+      explodeFactor = 0; // Reset explosion factor
+      document.getElementById('output').innerText = 'Explode Animation: ' + explodeAnimationActive;
+    });
+
+    document.getElementById('snapshot-button').addEventListener('click', () => {
+      // Implement snapshot functionality (e.g., using toDataURL)
+      const dataURL = renderer.domElement.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = dataURL;
+      link.download = 'molecule_snapshot.png';
+      link.click();
+      document.getElementById('output').innerText = 'Snapshot taken!';
+    });
+
+    document.getElementById('load-random-button').addEventListener('click', () => {
+      currentMoleculeData = document.getElementById('random-molecule-input').value;
+      renderMolecule(currentMoleculeData, currentMode);
+      document.getElementById('output').innerText = 'Custom molecule loaded!';
+    });
+
+
+    // Handle window resizing
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Initial render
+    renderMolecule(currentMoleculeData);
+    animate();
+
+  </script>
+</body>
+</html>

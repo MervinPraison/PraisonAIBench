@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Three.js Physics Playground</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <button id="resetButton">Reset</button><br><br>
+        Gravity: <input type="range" id="gravitySlider" min="-20" max="20" value="-9.82" step="0.1"><span id="gravityValue">-9.82</span><br><br>
+        <button id="slowMotionToggle">Slow Motion</button>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cannon-es@1.0.1/dist/cannon-es.js"></script>
+
+    <script>
+        // Initialize Three.js scene
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        camera.position.set(0, 5, 15);
+
+        // Initialize Cannon.js world
+        const world = new CANNON.World();
+        world.gravity.set(0, -9.82, 0); // Earth gravity
+        world.broadphase = new CANNON.NaiveBroadphase();
+        world.solver.iterations = 10;
+
+        // Materials
+        const groundMaterial = new CANNON.Material("groundMaterial");
+        const boxMaterial = new CANNON.Material("boxMaterial");
+
+        const groundGroundContactMaterial = new CANNON.ContactMaterial(groundMaterial, groundMaterial, {
+            friction: 0.4,
+            restitution: 0.1
+        });
+        const groundBoxContactMaterial = new CANNON.ContactMaterial(groundMaterial, boxMaterial, {
+            friction: 0.4,
+            restitution: 0.1
+        });
+        const boxBoxContactMaterial = new CANNON.ContactMaterial(boxMaterial, boxMaterial, {
+            friction: 0.4,
+            restitution: 0.1
+        });
+
+        world.addContactMaterial(groundGroundContactMaterial);
+        world.addContactMaterial(groundBoxContactMaterial);
+        world.addContactMaterial(boxBoxContactMaterial);
+
+
+
+        // Create ground
+        const groundBody = new CANNON.Body({
+            mass: 0, // Static body
+            shape: new CANNON.Plane(),
+            material: groundMaterial
+        });
+        groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2); // Rotate to be horizontal
+        world.addBody(groundBody);
+
+        const groundGeometry = new THREE.PlaneGeometry(50, 50);
+        const groundMaterialThree = new THREE.MeshStandardMaterial({ color: 0x888888 });
+        const groundMesh = new THREE.Mesh(groundGeometry, groundMaterialThree);
+        groundMesh.receiveShadow = true;
+        groundMesh.rotation.x = -Math.PI / 2;
+        scene.add(groundMesh);
+
+        // Stackable boxes
+        const boxWidth = 1;
+        const boxHeight = 1;
+        const boxDepth = 1;
+        const boxCount = 5;
+        const boxes = [];
+
+        for (let i = 0; i < boxCount; i++) {
+            const boxBody = new CANNON.Body({
+                mass: 1,
+                shape: new CANNON.Box(new CANNON.Vec3(boxWidth / 2, boxHeight / 2, boxDepth / 2)),
+                position: new CANNON.Vec3(0, boxHeight * (i + 0.5), 0),
+                material: boxMaterial
+            });
+            world.addBody(boxBody);
+
+            const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+            const boxMaterialThree = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+            const boxMesh = new THREE.Mesh(boxGeometry, boxMaterialThree);
+            boxMesh.castShadow = true;
+            boxMesh.receiveShadow = true;
+            scene.add(boxMesh);
+
+            boxes.push({ body: boxBody, mesh: boxMesh });
+        }
+
+        // Spheres
+        const sphereRadius = 0.75;
+        const sphereBody = new CANNON.Body({
+            mass: 5,
+            shape: new CANNON.Sphere(sphereRadius),
+            position: new CANNON.Vec3(2, 5, 2),
+            material: boxMaterial
+        });
+        world.addBody(sphereBody);
+
+        const sphereGeometry = new THREE.SphereGeometry(sphereRadius, 32, 32);
+        const sphereMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const sphereMesh = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphereMesh.castShadow = true;
+        sphereMesh.receiveShadow = true;
+        scene.add(sphereMesh);
+
+        // Hinge joint example
+        const hingeAnchorX = -2;
+        const hingeAnchorY = 3;
+        const hingeAnchorZ = 0;
+
+        const hingeBoxWidth = 0.5;
+        const hingeBoxHeight = 2;
+        const hingeBoxDepth = 0.5;
+
+        const hingeBody1 = new CANNON.Body({
+            mass: 1,
+            shape: new CANNON.Box(new CANNON.Vec3(hingeBoxWidth / 2, hingeBoxHeight / 2, hingeBoxDepth / 2)),
+            position: new CANNON.Vec3(hingeAnchorX, hingeAnchorY, hingeAnchorZ),
+            material: boxMaterial
+        });
+        world.addBody(hingeBody1);
+
+        const hingeGeometry1 = new THREE.BoxGeometry(hingeBoxWidth, hingeBoxHeight, hingeBoxDepth);
+        const hingeMaterial1 = new THREE.MeshStandardMaterial({ color: 0x0000ff });
+        const hingeMesh1 = new THREE.Mesh(hingeGeometry1, hingeMaterial1);
+        hingeMesh1.castShadow = true;
+        hingeMesh1.receiveShadow = true;
+        scene.add(hingeMesh1);
+
+
+        const hingeBody2 = new CANNON.Body({
+            mass: 1,
+            shape: new CANNON.Box(new CANNON.Vec3(hingeBoxWidth / 2, hingeBoxHeight / 2, hingeBoxDepth / 2)),
+            position: new CANNON.Vec3(hingeAnchorX, hingeAnchorY + hingeBoxHeight , hingeAnchorZ),
+            material: boxMaterial
+        });
+        world.addBody(hingeBody2);
+
+        const hingeGeometry2 = new THREE.BoxGeometry(hingeBoxWidth, hingeBoxHeight, hingeBoxDepth);
+        const hingeMaterial2 = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+        const hingeMesh2 = new THREE.Mesh(hingeGeometry2, hingeMaterial2);
+        hingeMesh2.castShadow = true;
+        hingeMesh2.receiveShadow = true;
+        scene.add(hingeMesh2);
+
+
+        const hingeJoint = new CANNON.HingeConstraint(hingeBody1, hingeBody2, {
+            pivotA: new CANNON.Vec3(0, hingeBoxHeight/2, 0),
+            pivotB: new CANNON.Vec3(0, -hingeBoxHeight/2, 0),
+            axisA: new CANNON.Vec3(1, 0, 0),
+            axisB: new CANNON.Vec3(1, 0, 0),
+        });
+        world.addConstraint(hingeJoint);
+
+
+
+        // Ragdoll (simplified)
+        const ragdollPos = new CANNON.Vec3(-2, 5, 0);
+        const ragdollHeight = 3;
+        const ragdollRadius = 0.5;
+
+        const headBody = new CANNON.Body({
+            mass: 1,
+            shape: new CANNON.Sphere(ragdollRadius),
+            position: ragdollPos.vadd(new CANNON.Vec3(0, ragdollHeight, 0)),
+            material: boxMaterial
+        });
+        world.addBody(headBody);
+
+        const headGeometry = new THREE.SphereGeometry(ragdollRadius, 32, 32);
+        const headMaterial = new THREE.MeshStandardMaterial({ color: 0xff8800 });
+        const headMesh = new THREE.Mesh(headGeometry, headMaterial);
+        headMesh.castShadow = true;
+        headMesh.receiveShadow = true;
+        scene.add(headMesh);
+
+
+        const torsoBody = new CANNON.Body({
+            mass: 3,
+            shape: new CANNON.Box(new CANNON.Vec3(ragdollRadius, ragdollHeight/2, ragdollRadius)),
+            position: ragdollPos.vadd(new CANNON.Vec3(0, ragdollHeight/2, 0)),
+            material: boxMaterial
+        });
+        world.addBody(torsoBody);
+
+        const torsoGeometry = new THREE.BoxGeometry(ragdollRadius*2, ragdollHeight, ragdollRadius*2);
+        const torsoMaterial = new THREE.MeshStandardMaterial({ color: 0xff8800 });
+        const torsoMesh = new THREE.Mesh(torsoGeometry, torsoMaterial);
+        torsoMesh.castShadow = true;
+        torsoMesh.receiveShadow = true;
+        scene.add(torsoMesh);
+
+
+        const neckJoint = new CANNON.DistanceConstraint(headBody, torsoBody, ragdollRadius*2);
+        world.addConstraint(neckJoint);
+
+
+        // Mouse Picking
+        let mouse = new THREE.Vector2();
+        let raycaster = new THREE.Raycaster();
+        let intersectedObject = null;
+        let mouseConstraint;
+        let mouseBody;
+
+        function createMouseConstraint(body) {
+            mouseBody = new CANNON.Body({ mass: 0 });
+            world.addBody(mouseBody);
+
+            mouseConstraint = new CANNON.PointToPointConstraint(body, new CANNON.Vec3(), mouseBody, new CANNON.Vec3());
+            world.addConstraint(mouseConstraint);
+        }
+
+        function removeMouseConstraint() {
+            world.removeConstraint(mouseConstraint);
+            world.removeBody(mouseBody);
+            mouseConstraint = null;
+            mouseBody = null;
+            intersectedObject = null;
+        }
+
+        function updateMouseConstraint() {
+            if (mouseBody) {
+                mouseBody.position.set(mouseWorldPosition.x, mouseWorldPosition.y, mouseWorldPosition.z);
+            }
+        }
+
+        let mouseWorldPosition = new THREE.Vector3();
+
+        function onMouseMove(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObjects(scene.children);
+
+            if (intersects.length > 0) {
+                const intersected = intersects[0].object;
+
+               //Calculate the world position where the ray intersects the plane
+               raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0)), mouseWorldPosition);
+            }
+        }
+
+
+        function onMouseDown(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObjects(scene.children);
+
+            if (intersects.length > 0) {
+                const intersected = intersects[0].object;
+
+                // Find the corresponding Cannon.js body
+                let body = null;
+                for (let i = 0; i < boxes.length; i++) {
+                    if (boxes[i].mesh === intersected) {
+                        body = boxes[i].body;
+                        break;
+                    }
+                }
+
+                if (sphereMesh === intersected) {
+                    body = sphereBody;
+                }
+
+                if(hingeMesh1 === intersected){
+                    body = hingeBody1
+                }
+                 if(hingeMesh2 === intersected){
+                    body = hingeBody2
+                }
+                if(headMesh === intersected){
+                    body = headBody
+                }
+                if(torsoMesh === intersected){
+                    body = torsoBody
+                }
+
+
+                if (body) {
+                    intersectedObject = intersected;
+                    createMouseConstraint(body);
+                }
+            }
+        }
+
+        function onMouseUp(event) {
+            if (mouseConstraint) {
+                removeMouseConstraint();
+            }
+        }
+
+        window.addEventListener('mousemove', onMouseMove, false);
+        window.addEventListener('mousedown', onMouseDown, false);
+        window.addEventListener('mouseup', onMouseUp, false);
+
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040); // Soft white light
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(5, 10, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        scene.add(directionalLight);
+
+
+        // Control Handlers
+        let isSlowMotion = false;
+        const resetButton = document.getElementById('resetButton');
+        const gravitySlider = document.getElementById('gravitySlider');
+        const gravityValue = document.getElementById('gravityValue');
+        const slowMotionToggle = document.getElementById('slowMotionToggle');
+
+        resetButton.addEventListener('click', () => {
+            // Reset the physics world and Three.js objects
+            while (world.bodies.length > 0) {
+                world.removeBody(world.bodies[0]);
+            }
+            while (scene.children.length > 0) {
+                scene.remove(scene.children[0]);
+            }
+
+            // Re-initialize the scene (call the setup functions again)
+            // Recreate ground
+            world.addBody(groundBody);
+            scene.add(groundMesh);
+
+            //Stackable Boxes
+             for (let i = 0; i < boxCount; i++) {
+                 const boxBody = new CANNON.Body({
+                     mass: 1,
+                     shape: new CANNON.Box(new CANNON.Vec3(boxWidth / 2, boxHeight / 2, boxDepth / 2)),
+                     position: new CANNON.Vec3(0, boxHeight * (i + 0.5), 0),
+                     material: boxMaterial
+                 });
+                 world.addBody(boxBody);
+
+                 const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+                 const boxMaterialThree = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+                 const boxMesh = new THREE.Mesh(boxGeometry, boxMaterialThree);
+                 boxMesh.castShadow = true;
+                 boxMesh.receiveShadow = true;
+                 scene.add(boxMesh);
+
+                 boxes.push({ body: boxBody, mesh: boxMesh });
+             }
+
+            //Spheres
+            world.addBody(sphereBody);
+            scene.add(sphereMesh);
+
+            //Hinge
+            world.addBody(hingeBody1);
+            scene.add(hingeMesh1);
+            world.addBody(hingeBody2);
+            scene.add(hingeMesh2);
+            world.addConstraint(hingeJoint);
+
+            //Ragdoll
+            world.addBody(headBody);
+            scene.add(headMesh);
+
+            world.addBody(torsoBody);
+            scene.add(torsoMesh);
+            world.addConstraint(neckJoint);
+
+            // Lighting
+             scene.add(ambientLight);
+             scene.add(directionalLight);
+
+
+            //Resetting Box Positions
+            boxes.length = 0;
+
+            for (let i = 0; i < boxCount; i++) {
+                const boxBody = new CANNON.Body({
+                    mass: 1,
+                    shape: new CANNON.Box(new CANNON.Vec3(boxWidth / 2, boxHeight / 2, boxDepth / 2)),
+                    position: new CANNON.Vec3(0, boxHeight * (i + 0.5), 0),
+                    material: boxMaterial
+                });
+                world.addBody(boxBody);
+
+                const boxGeometry = new THREE.BoxGeometry(boxWidth, boxHeight, boxDepth);
+                const boxMaterialThree = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+                const boxMesh = new THREE.Mesh(boxGeometry, boxMaterialThree);
+                boxMesh.castShadow = true;
+                boxMesh.receiveShadow = true;
+                scene.add(boxMesh);
+
+                boxes.push({ body: boxBody, mesh: boxMesh });
+            }
+
+
+            sphereBody.position.set(2,5,2);
+            sphereBody.velocity.set(0,0,0);
+
+            headBody.position.set(ragdollPos.x,ragdollPos.y+ragdollHeight,ragdollPos.z);
+            torsoBody.position.set(ragdollPos.x,ragdollPos.y+ragdollHeight/2,ragdollPos.z);
+
+            headBody.velocity.set(0,0,0);
+            torsoBody.velocity.set(0,0,0);
+        });
+
+        gravitySlider.addEventListener('input', () => {
+            const gravity = parseFloat(gravitySlider.value);
+            world.gravity.set(0, gravity, 0);
+            gravityValue.textContent = gravity.toFixed(2);
+        });
+
+        slowMotionToggle.addEventListener('click', () => {
+            isSlowMotion = !isSlowMotion;
+            slowMotionToggle.textContent = isSlowMotion ? 'Normal Motion' : 'Slow Motion';
+        });
+
+
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const timeStep = 1 / 60;
+            world.step(timeStep, isSlowMotion ? timeStep * 0.2 : timeStep);
+
+            // Update box positions
+            for (let i = 0; i < boxes.length; i++) {
+                boxes[i].mesh.position.copy(boxes[i].body.position);
+                boxes[i].mesh.quaternion.copy(boxes[i].body.quaternion);
+            }
+
+            // Update sphere position
+            sphereMesh.position.copy(sphereBody.position);
+            sphereMesh.quaternion.copy(sphereBody.quaternion);
+
+            // Update hinge position
+            hingeMesh1.position.copy(hingeBody1.position);
+            hingeMesh1.quaternion.copy(hingeBody1.quaternion);
+            hingeMesh2.position.copy(hingeBody2.position);
+            hingeMesh2.quaternion.copy(hingeBody2.quaternion);
+
+            // Update ragdoll
+            headMesh.position.copy(headBody.position);
+            headMesh.quaternion.copy(headBody.quaternion);
+
+            torsoMesh.position.copy(torsoBody.position);
+            torsoMesh.quaternion.copy(torsoBody.quaternion);
+
+            updateMouseConstraint();
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>

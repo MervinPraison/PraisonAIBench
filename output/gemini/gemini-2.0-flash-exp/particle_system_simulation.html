@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Three.js Particle System</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.136.0/build/three.min.js"></script>
+
+  <script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    camera.position.z = 5;
+
+    // Particle system setup
+    const particleCount = 1500;
+    const particles = new THREE.Geometry();
+    const particleMaterial = new THREE.PointsMaterial({
+      size: 0.05,
+      vertexColors: true, // Enable vertex colors
+      blending: THREE.AdditiveBlending,
+      transparent: true
+    });
+
+    // Particle data (position, velocity, color)
+    const particleData = [];
+
+    for (let i = 0; i < particleCount; i++) {
+      const x = 0;
+      const y = 0;
+      const z = 0;
+
+      const particle = new THREE.Vector3(x, y, z);
+      particles.vertices.push(particle);
+
+      const velocityX = (Math.random() - 0.5) * 0.1;
+      const velocityY = Math.random() * 0.2 + 0.1; // Upward velocity
+      const velocityZ = (Math.random() - 0.5) * 0.1;
+
+      const color = new THREE.Color();
+      color.setHSL(Math.random(), 1, 0.5); // Random hue, full saturation, medium lightness
+      particles.colors.push(color);
+
+
+      particleData.push({
+        velocity: new THREE.Vector3(velocityX, velocityY, velocityZ),
+        lifespan: Math.random() * 5 + 2,  // Lifespan between 2 and 7 seconds
+        age: 0,
+        initialColor: color.clone()  // Store the initial color
+      });
+
+    }
+
+    const particleSystem = new THREE.Points(particles, particleMaterial);
+    scene.add(particleSystem);
+
+
+
+    // Mouse interaction
+    let mouseX = 0;
+    let mouseY = 0;
+
+    document.addEventListener('mousemove', (event) => {
+      mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+      mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Update particle positions and velocities
+      for (let i = 0; i < particleCount; i++) {
+        const particle = particles.vertices[i];
+        const data = particleData[i];
+
+        particle.x += data.velocity.x;
+        particle.y += data.velocity.y - 0.001; // Gravity
+        particle.z += data.velocity.z;
+
+        data.velocity.x += (mouseX * 0.01 - data.velocity.x) * 0.01; // Mouse influence
+        data.velocity.z += (mouseY * 0.01 - data.velocity.z) * 0.01;
+
+        // Age the particle
+        data.age += 0.01;
+
+        // Color change based on lifespan
+        const ratio = data.age / data.lifespan;  // From 0 to 1 as particle ages
+        const currentColor = particles.colors[i];
+        currentColor.lerpColors(data.initialColor, new THREE.Color(0x000000), ratio);  // Fade to black
+
+
+        // Reset particle if lifespan is over
+        if (data.age > data.lifespan) {
+          particle.x = 0;
+          particle.y = 0;
+          particle.z = 0;
+          data.velocity.x = (Math.random() - 0.5) * 0.1;
+          data.velocity.y = Math.random() * 0.2 + 0.1;
+          data.velocity.z = (Math.random() - 0.5) * 0.1;
+          data.age = 0;
+          currentColor.copy(data.initialColor); // Reset the particle's color to initial color
+        }
+
+
+
+        // Bounce off the bottom
+        if (particle.y < -2) {
+          particle.y = -2;
+          data.velocity.y *= -0.5; // Reduce upward velocity after bounce
+        }
+      }
+
+      particles.verticesNeedUpdate = true;
+      particles.colorsNeedUpdate = true;
+
+
+      // Rotate the particle system slightly for visual interest
+      particleSystem.rotation.y += 0.002;
+
+      renderer.render(scene, camera);
+    }
+
+    // Handle window resizing
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    window.addEventListener('resize', onWindowResize, false);
+
+    animate(); // Start the animation loop
+
+  </script>
+</body>
+</html>

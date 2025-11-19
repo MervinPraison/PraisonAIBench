@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Terrain Landscape</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.134.0/examples/js/controls/FlyControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Fog
+        scene.fog = new THREE.Fog(0xcccccc, 0, 750);
+
+
+        // Camera controls
+        const controls = new THREE.FlyControls(camera, renderer.domElement);
+        controls.movementSpeed = 50;
+        controls.rollSpeed = Math.PI / 24;
+        controls.autoForward = false;
+        controls.dragToLook = true;
+
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(1, 1, 1);
+        scene.add(directionalLight);
+
+
+        // Terrain generation
+        const terrainWidth = 256;
+        const terrainHeight = 256;
+        const terrainDepth = 20; // Adjust for height
+
+        const geometry = new THREE.PlaneGeometry(terrainWidth, terrainHeight, terrainWidth - 1, terrainHeight - 1);
+        geometry.rotateX(-Math.PI / 2);
+
+        // Noise generation
+        const simplex = new SimplexNoise();
+
+        const vertices = geometry.attributes.position.array;
+        for (let i = 0; i < vertices.length; i += 3) {
+            const x = vertices[i];
+            const y = vertices[i + 1];
+            const detailScale = 0.05;
+            const heightScale = terrainDepth;
+
+            let noiseValue = simplex.noise2D(x * detailScale, y * detailScale);
+            noiseValue += 0.5 * simplex.noise2D(x * detailScale * 2, y * detailScale * 2); // Add some more detail
+            noiseValue += 0.25 * simplex.noise2D(x * detailScale * 4, y * detailScale * 4); // Even more detail
+
+            vertices[i + 2] = noiseValue * heightScale; // Apply height to Z coordinate
+
+        }
+
+        geometry.computeVertexNormals(); // Important for lighting
+
+        // Texture loading (using simple colors)
+
+        const grassColor = new THREE.Color(0x669933);  // Nice grass green
+        const rockColor = new THREE.Color(0x808080); // Gray for rocks
+        const snowColor = new THREE.Color(0xffffff); // White for snow
+
+        const colors = [];
+
+        for (let i = 0; i < geometry.attributes.position.count; i++) {
+            const z = geometry.attributes.position.getZ(i); // Get the vertex height
+
+            if (z < terrainDepth * 0.3) { // Lower height, grass
+                colors.push(grassColor.r, grassColor.g, grassColor.b);
+            } else if (z < terrainDepth * 0.6) { // Mid height, rock
+                colors.push(rockColor.r, rockColor.g, rockColor.b);
+            }
+            else { // Higher height, snow
+                colors.push(snowColor.r, snowColor.g, snowColor.b);
+            }
+
+        }
+
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+        const material = new THREE.MeshPhongMaterial({
+            vertexColors: true,
+            shininess: 0
+        });
+        const terrain = new THREE.Mesh(geometry, material);
+        scene.add(terrain);
+
+
+        // Initial camera position
+        camera.position.set(0, terrainDepth / 2, 0);
+
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(0.02); // Pass delta for smooth movement
+            renderer.render(scene, camera);
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

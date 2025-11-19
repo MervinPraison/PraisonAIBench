@@ -64,6 +64,23 @@ class BenchAgent:
             response = self.agent.start(prompt)
             end_time = time.time()
             
+            # Check if response is empty or None (indicates silent failure)
+            if not response or (isinstance(response, str) and len(response.strip()) == 0):
+                model_name = self.llm.get("model", str(self.llm)) if isinstance(self.llm, dict) else self.llm
+                error_msg = f"Agent returned empty response. This usually indicates an API authentication error or model unavailability. Please check your API keys for model '{model_name}'."
+                logging.error(f"❌ {error_msg}")
+                return {
+                    "test_name": test_name or "unnamed_test",
+                    "prompt": prompt,
+                    "response": None,
+                    "model": self.llm,
+                    "agent_name": self.name,
+                    "execution_time": end_time - start_time,
+                    "status": "error",
+                    "error": error_msg,
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+            
             return {
                 "test_name": test_name or "unnamed_test",
                 "prompt": prompt,

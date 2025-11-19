@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Space Shooter</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; font-family: sans-serif; }
+        #touchControls { position: absolute; bottom: 10px; left: 10px; }
+        .touchButton {
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        Health: <span id="health">100</span><br>
+        Score: <span id="score">0</span>
+    </div>
+
+    <div id="touchControls">
+        <button class="touchButton" id="moveLeft">Left</button>
+        <button class="touchButton" id="moveRight">Right</button>
+        <button class="touchButton" id="fire">Fire</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/postprocessing/BloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/shaders/CopyShader.js"></script>
+
+
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Postprocessing
+        const composer = new THREE.EffectComposer( renderer );
+        const renderPass = new THREE.RenderPass( scene, camera );
+        composer.addPass( renderPass );
+
+        const bloomPass = new THREE.BloomPass( 1, 25, 0.4, 256 ); // Adjust parameters
+        composer.addPass( bloomPass );
+
+        const copyShader = new THREE.ShaderPass( THREE.CopyShader );
+        copyShader.renderToScreen = true;
+        composer.addPass( copyShader );
+
+
+        // Starfield
+        const starGeometry = new THREE.BufferGeometry();
+        const starCount = 1000;
+        const starPositions = new Float32Array(starCount * 3);
+        for (let i = 0; i < starCount * 3; i++) {
+            starPositions[i] = (Math.random() - 0.5) * 500;
+        }
+        starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+        const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 2 });
+        const starfield = new THREE.Points(starGeometry, starMaterial);
+        scene.add(starfield);
+
+
+        // Player
+        const playerGeometry = new THREE.ConeGeometry(1, 3, 16);
+        const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.position.set(0, -5, -10);
+        scene.add(player);
+
+        // Player Movement
+        let playerSpeed = 0.1;
+        let playerXVelocity = 0;
+        let playerMaxX = 7;
+
+
+        // Enemy
+        const enemyGeometry = new THREE.BoxGeometry(2, 2, 2);
+        const enemyMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial); //The prototype
+        const enemyCount = 50;
+        const enemyInstanceMatrix = new THREE.InstancedBufferAttribute( new Float32Array( enemyCount * 16 ), 16 );
+        const enemyInstancedMesh = new THREE.InstancedMesh(enemyGeometry, enemyMaterial, enemyCount);
+        enemyInstancedMesh.instanceMatrix = enemyInstanceMatrix;
+        enemyInstancedMesh.instanceMatrix.setUsage( THREE.DynamicDrawUsage );
+        scene.add(enemyInstancedMesh);
+        const enemyPositions = [];
+
+        //Enemy movement and spawning
+        let waveNumber = 0;
+        let enemiesAlive = 0;
+        let enemySpeed = 0.02;
+
+        function spawnWave(){
+            waveNumber++;
+            enemiesAlive = waveNumber * 5; //Increase enemies each wave.
+            let matrix = new THREE.Matrix4();
+            enemyPositions.length = 0; //clear array
+            for(let i = 0; i < enemyCount; i++){
+                let x = (Math.random() - 0.5) * 20;
+                let y = 10 + (Math.random() * 5) ;
+                let z = -20 - (Math.random() * (waveNumber * 5)); //further back
+                enemyPositions.push({x: x, y:y, z:z, alive: true});
+                matrix.makeTranslation(x, y, z);
+                enemyInstanceMatrix.setMatrixAt(i, matrix);
+
+
+            }
+            enemyInstancedMesh.instanceMatrix.needsUpdate = true; //VERY IMPORTANT
+        }
+
+
+
+
+        // Lasers
+        const laserGeometry = new THREE.CylinderGeometry(0.1, 0.1, 2, 16);
+        const laserMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const lasers = [];
+
+
+        function fireLaser() {
+            const laser = new THREE.Mesh(laserGeometry, laserMaterial);
+            laser.position.copy(player.position);
+            laser.rotation.x = Math.PI / 2; //Point Up
+            laser.rotation.z = Math.random() * Math.PI; // Random rotation for fun
+            lasers.push(laser);
+            scene.add(laser);
+        }
+
+        // Hit Effects (GPU Particles)
+        const particleGeometry = new THREE.BufferGeometry();
+        const particleCount = 100;
+        const particlePositions = new Float32Array(particleCount * 3);
+        const particleVelocities = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount * 3; i+=3) {
+            particlePositions[i] = 0;
+            particlePositions[i+1] = 0;
+            particlePositions[i+2] = 0;
+            particleVelocities[i] = (Math.random() - 0.5) * 0.5;
+            particleVelocities[i+1] = Math.random() * 0.5;
+            particleVelocities[i+2] = (Math.random() - 0.5) * 0.5;
+        }
+
+        particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+        particleGeometry.setAttribute('velocity', new THREE.BufferAttribute(particleVelocities, 3)); // Added velocity attribute
+        const particleMaterial = new THREE.PointsMaterial({ color: 0xffa500, size: 0.2 });
+        const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+        particleSystem.visible = false; //Initially Hidden
+        scene.add(particleSystem);
+
+
+        //Game Logic
+        let health = 100;
+        let score = 0;
+
+        function updateUI() {
+            document.getElementById('health').innerText = health;
+            document.getElementById('score').innerText = score;
+        }
+
+        //Collision detection
+        function checkCollisions() {
+            //Laser vs. Enemy
+            for (let i = 0; i < lasers.length; i++) {
+                const laser = lasers[i];
+
+                for(let j = 0; j < enemyCount; j++){
+                    if(enemyPositions[j].alive){
+                        let enemyPos = new THREE.Vector3(enemyPositions[j].x, enemyPositions[j].y, enemyPositions[j].z);
+                        if(laser.position.distanceTo(enemyPos) < 2){
+                            //Collision detected
+                            scene.remove(laser);
+                            lasers.splice(i, 1);
+                            i--;
+
+                            //Activate Hit Effect
+                            particleSystem.position.copy(enemyPos);
+                            particleSystem.visible = true;
+
+                             //Reset Particle Positions
+                             const positions = particleSystem.geometry.attributes.position.array;
+                             const velocities = particleSystem.geometry.attributes.velocity.array;
+                             for (let k = 0; k < particleCount * 3; k+=3) {
+                                 positions[k] = 0;
+                                 positions[k+1] = 0;
+                                 positions[k+2] = 0;
+                                 velocities[k] = (Math.random() - 0.5) * 0.5;
+                                 velocities[k+1] = Math.random() * 0.5;
+                                 velocities[k+2] = (Math.random() - 0.5) * 0.5;
+                             }
+                             particleSystem.geometry.attributes.position.needsUpdate = true;
+                             particleSystem.geometry.attributes.velocity.needsUpdate = true;
+
+
+
+                            setTimeout(() => {
+                                particleSystem.visible = false;
+                            }, 500);
+
+
+
+                            enemyPositions[j].alive = false;
+                            enemiesAlive--;
+                            updateEnemyInstanceMatrix();
+                            score += 10;
+                            updateUI();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            //Player vs. Enemy
+
+            for(let j = 0; j < enemyCount; j++){
+                if(enemyPositions[j].alive){
+                    let enemyPos = new THREE.Vector3(enemyPositions[j].x, enemyPositions[j].y, enemyPositions[j].z);
+                    if(player.position.distanceTo(enemyPos) < 3){
+                         health -= 20; //Damage
+                         updateUI();
+                         enemyPositions[j].alive = false;
+                         enemiesAlive--;
+                         updateEnemyInstanceMatrix();
+                         console.log("Player Hit!");
+                         if(health <= 0){
+                            console.log("Game Over!");
+                            health = 100;
+                            score = 0;
+                            waveNumber = 0;
+                            updateUI();
+                            spawnWave();
+                            player.position.set(0, -5, -10);
+
+                         }
+
+                    }
+                }
+            }
+
+             if(enemiesAlive <= 0){
+                spawnWave();
+             }
+        }
+
+        function updateEnemyInstanceMatrix(){
+            let matrix = new THREE.Matrix4();
+             for(let i = 0; i < enemyCount; i++){
+                if(enemyPositions[i].alive){
+                     matrix.makeTranslation(enemyPositions[i].x, enemyPositions[i].y, enemyPositions[i].z);
+                     enemyInstanceMatrix.setMatrixAt(i, matrix);
+                } else {
+                     matrix.makeTranslation(1000, 1000, 1000); //Move far away if not alive
+                     enemyInstanceMatrix.setMatrixAt(i, matrix);
+                }
+             }
+             enemyInstancedMesh.instanceMatrix.needsUpdate = true;
+        }
+
+        // Key Handling
+        const keys = {};
+        document.addEventListener('keydown', (event) => {
+            keys[event.code] = true;
+        });
+        document.addEventListener('keyup', (event) => {
+            keys[event.code] = false;
+        });
+
+        // Touch Controls
+        const moveLeftButton = document.getElementById('moveLeft');
+        const moveRightButton = document.getElementById('moveRight');
+        const fireButton = document.getElementById('fire');
+
+        moveLeftButton.addEventListener('touchstart', (event) => {
+            keys['ArrowLeft'] = true;
+            event.preventDefault();
+        });
+        moveLeftButton.addEventListener('touchend', (event) => {
+            keys['ArrowLeft'] = false;
+            event.preventDefault();
+        });
+        moveRightButton.addEventListener('touchstart', (event) => {
+            keys['ArrowRight'] = true;
+            event.preventDefault();
+        });
+        moveRightButton.addEventListener('touchend', (event) => {
+            keys['ArrowRight'] = false;
+            event.preventDefault();
+        });
+
+        fireButton.addEventListener('touchstart', (event) => {
+            fireLaser();
+            event.preventDefault();
+        });
+
+        // Camera position
+        camera.position.z = 0;
+
+        // Initial Spawn
+        spawnWave();
+        updateUI();
+
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Player movement
+            if (keys['ArrowLeft']) {
+                playerXVelocity -= playerSpeed;
+            }
+            if (keys['ArrowRight']) {
+                playerXVelocity += playerSpeed;
+            }
+
+            //Dampen velocity
+            playerXVelocity *= 0.9;
+
+            player.position.x += playerXVelocity;
+
+            //Keep player in bounds
+            player.position.x = Math.max(-playerMaxX, Math.min(player.position.x, playerMaxX));
+
+
+            // Laser movement
+            for (let i = 0; i < lasers.length; i++) {
+                lasers[i].position.z -= 0.5;
+                if (lasers[i].position.z < -20) {
+                    scene.remove(lasers[i]);
+                    lasers.splice(i, 1);
+                    i--;
+                }
+            }
+
+            //Enemy movement
+            for(let i = 0; i < enemyCount; i++){
+                if(enemyPositions[i].alive){
+                  enemyPositions[i].z += enemySpeed;
+                  if(enemyPositions[i].z > 0){
+                    enemyPositions[i].z = -20 - (Math.random() * (waveNumber * 5)); //Reset position further back
+                    enemyPositions[i].x = (Math.random() - 0.5) * 20;
+                  }
+                }
+            }
+            updateEnemyInstanceMatrix();
+
+
+            // Starfield movement
+            starfield.position.z += 0.1;
+            if (starfield.position.z > 100) {
+                starfield.position.z = 0;
+            }
+
+            //Particle System Update
+            if(particleSystem.visible){
+                const positions = particleSystem.geometry.attributes.position.array;
+                const velocities = particleSystem.geometry.attributes.velocity.array;
+
+                for(let i = 0; i < particleCount * 3; i+=3){
+                    positions[i] += velocities[i];
+                    positions[i+1] += velocities[i+1];
+                    positions[i+2] += velocities[i+2];
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+            }
+
+
+            checkCollisions();
+
+
+            //renderer.render(scene, camera);
+            composer.render();
+        }
+
+
+        // Event listeners
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        document.addEventListener('mousedown', fireLaser);
+
+
+        animate();
+    </script>
+</body>
+</html>

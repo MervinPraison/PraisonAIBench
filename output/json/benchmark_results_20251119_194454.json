@@ -1,0 +1,40 @@
+[
+  {
+    "test_name": "test_gemini_3_preview",
+    "prompt": "Create a simple HTML page with a red square. Just output the HTML code.",
+    "response": "```html\n<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>Red Square</title>\n    <style>\n        .red-square {\n            width: 100px;\n            height: 100px;\n            background-color: red;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"red-square\"></div>\n</body>\n</html>\n```",
+    "model": "gemini/gemini-3-pro-preview",
+    "agent_name": "BenchAgent",
+    "execution_time": 6.002182960510254,
+    "status": "success",
+    "timestamp": "2025-11-19 19:44:53",
+    "evaluation": {
+      "test_name": "test_gemini_3_preview",
+      "functional": {
+        "score": 100,
+        "passed": true,
+        "renders": true,
+        "errors": [],
+        "warnings": [],
+        "screenshot": "output/screenshots/test_gemini_3_preview.png",
+        "render_time_ms": 521.34,
+        "feedback": [
+          {
+            "level": "success",
+            "message": "\u2705 Renders successfully in 521.34ms"
+          },
+          {
+            "level": "success",
+            "message": "\u2705 No console errors"
+          }
+        ]
+      },
+      "quality": {
+        "quality_score": 0,
+        "feedback": "Evaluation failed"
+      },
+      "overall_score": 70,
+      "passed": true
+    }
+  }
+]

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Terrain Flight</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/dist/simplex-noise.js"></script>
+
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(50, 100, 50);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        scene.add(directionalLight);
+
+        // Terrain Generation
+        const terrainWidth = 256;
+        const terrainHeight = 256;
+        const terrainDepth = 50;
+        const terrainSegments = 255;
+
+        const geometry = new THREE.PlaneGeometry(terrainWidth, terrainHeight, terrainSegments, terrainSegments);
+
+        const simplex = new SimplexNoise();
+
+        const vertices = geometry.attributes.position.array;
+
+        for (let i = 0; i <= terrainSegments; i++) {
+            for (let j = 0; j <= terrainSegments; j++) {
+                const x = i / terrainSegments;
+                const y = j / terrainSegments;
+
+                const vertexIndex = (i * (terrainSegments + 1) + j) * 3;
+
+                let noiseValue = simplex.noise2D(x * 10, y * 10) * terrainDepth * 0.5;
+                noiseValue += simplex.noise2D(x * 20, y * 20) * terrainDepth * 0.25;
+                noiseValue += simplex.noise2D(x * 40, y * 40) * terrainDepth * 0.125;
+                noiseValue += simplex.noise2D(x * 80, y * 80) * terrainDepth * 0.0625;
+
+                vertices[vertexIndex + 2] = noiseValue;  // Z is up
+
+                // River carving (simplified)
+                if (y > 0.4 && y < 0.6 && x > 0.2 && x < 0.8) {
+                    vertices[vertexIndex + 2] -= Math.max(0, 15 - Math.abs((x - 0.5) * 200)); // Carve a dip
+                }
+            }
+        }
+
+        geometry.computeVertexNormals(); // Recalculate normals for lighting
+        geometry.attributes.position.needsUpdate = true;
+
+
+        const textureLoader = new THREE.TextureLoader();
+        const grassTexture = textureLoader.load('https://threejs.org/examples/textures/terrain/grasslight-big.jpg');
+        grassTexture.wrapS = THREE.RepeatWrapping;
+        grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.repeat.set(4, 4);
+
+        const material = new THREE.MeshStandardMaterial({ map: grassTexture, side: THREE.DoubleSide });
+        const terrain = new THREE.Mesh(geometry, material);
+        terrain.rotation.x = -Math.PI / 2;
+        terrain.receiveShadow = true;
+        scene.add(terrain);
+
+        // Tree Instancing
+
+        const treeGeometry = new THREE.ConeGeometry(0.5, 2, 8);
+        const treeMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22 }); // Forest Green
+        const dummy = new THREE.Object3D();
+        const treeCount = 1000;
+        const instancedMesh = new THREE.InstancedMesh(treeGeometry, treeMaterial, treeCount);
+        instancedMesh.castShadow = true;
+        instancedMesh.receiveShadow = false;
+        scene.add(instancedMesh);
+
+        for (let i = 0; i < treeCount; i++) {
+            const x = (Math.random() - 0.5) * terrainWidth;
+            const y = (Math.random() - 0.5) * terrainHeight;
+
+            // Sample terrain height
+            const raycaster = new THREE.Raycaster(new THREE.Vector3(x, 100, y), new THREE.Vector3(0, -1, 0));
+            const intersects = raycaster.intersectObject(terrain);
+
+            if (intersects.length > 0) {
+                const treeHeight = intersects[0].point.y + 1;
+                dummy.position.set(x, treeHeight, y);
+                dummy.scale.set(0.5 + Math.random() * 0.5, 0.5 + Math.random(), 0.5 + Math.random() * 0.5)
+                dummy.rotation.y = Math.random() * Math.PI * 2;
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(i, dummy.matrix);
+            }
+        }
+        instancedMesh.instanceMatrix.needsUpdate = true;
+
+
+        // Plane/Drone Controller
+        const planeGeometry = new THREE.BoxGeometry(2, 0.5, 3);
+        const planeMaterial = new THREE.MeshStandardMaterial({ color: 0x808080 });
+        const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+        plane.castShadow = true;
+        plane.position.set(0, 20, 0);
+        scene.add(plane);
+
+        camera.position.set(0, 25, 20);
+        camera.lookAt(0, 0, 0);
+
+
+        let pitch = 0;
+        let yaw = 0;
+        let roll = 0;
+        let speed = 0.5;
+        const rotationSpeed = 0.02;
+        const boostMultiplier = 3.0;
+
+        const keyState = {}; // Track which keys are pressed
+
+        document.addEventListener('keydown', (event) => {
+            keyState[event.code] = true;
+        });
+
+        document.addEventListener('keyup', (event) => {
+            keyState[event.code] = false;
+        });
+
+
+        function updatePlanePosition() {
+            if (keyState['KeyW']) { // Pitch up
+                pitch += rotationSpeed;
+            }
+            if (keyState['KeyS']) { // Pitch down
+                pitch -= rotationSpeed;
+            }
+            if (keyState['KeyA']) { // Yaw left
+                yaw += rotationSpeed;
+            }
+            if (keyState['KeyD']) { // Yaw right
+                yaw -= rotationSpeed;
+            }
+            if (keyState['KeyQ']) { // Roll left
+                roll += rotationSpeed;
+            }
+            if (keyState['KeyE']) { // Roll right
+                roll -= rotationSpeed;
+            }
+
+            pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitch)); // Clamp pitch
+            roll = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, roll)); // Clamp roll
+
+
+            const boost = keyState['ShiftLeft'] ? boostMultiplier : 1;
+
+            const direction = new THREE.Vector3(0, 0, -1);
+            direction.applyEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+            direction.normalize();
+
+            const movement = direction.multiplyScalar(speed * boost);
+            plane.position.add(movement);
+
+            // Collision Detection & Avoidance
+            const raycaster = new THREE.Raycaster(plane.position, new THREE.Vector3(0, -1, 0));
+            const intersects = raycaster.intersectObject(terrain);
+
+            if (intersects.length > 0) {
+                const terrainHeight = intersects[0].point.y + 2; // Adjust height for plane size
+                if (plane.position.y < terrainHeight) {
+                    plane.position.y = terrainHeight; // Prevent clipping through terrain
+                    //Optionally add a small upwards force if you want to "bounce" up
+                }
+            }
+
+
+            plane.rotation.set(pitch, yaw, roll, 'YXZ'); // Apply rotations to plane
+        }
+
+
+        // LOD (Simplified - distance based)
+        function updateLOD() {
+            const distance = camera.position.distanceTo(terrain.position);
+            if (distance > 500) {
+                terrain.material.wireframe = true;
+            } else {
+                terrain.material.wireframe = false;
+            }
+        }
+
+       // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updatePlanePosition();
+
+            //Update camera position to follow the plane
+            camera.position.copy(plane.position).add(new THREE.Vector3(0, 10, 20));
+            camera.lookAt(plane.position);
+
+            updateLOD();
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

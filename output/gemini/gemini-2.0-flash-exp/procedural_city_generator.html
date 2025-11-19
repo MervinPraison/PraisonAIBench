@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Procedural City</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #seedInput { position: absolute; top: 10px; left: 10px; z-index: 10; }
+        #miniMap { position: absolute; top: 10px; right: 10px; width: 200px; height: 200px; background-color: rgba(0, 0, 0, 0.5); border: 1px solid white; z-index: 10; }
+    </style>
+</head>
+<body>
+    <input type="number" id="seedInput" value="12345" placeholder="Seed">
+    <canvas id="miniMap"></canvas>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/FlyControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/RGBELoader.js"></script>
+
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // Fly controls
+        const controls = new THREE.FlyControls(camera, renderer.domElement);
+        controls.movementSpeed = 5;
+        controls.rollSpeed = Math.PI / 24;
+        controls.autoForward = false;
+        controls.dragToLook = true;
+
+        // Lighting
+        let directionalLight;
+        let ambientLight;
+
+        // Day/Night cycle variables
+        let dayTime = true;
+        let timeOfDay = 0.5; // 0.0 - 1.0
+        const dayDuration = 120; // seconds
+
+        // City parameters
+        const gridSize = 50;
+        const blockSize = 10;
+        const roadWidth = 2;
+        const buildingHeightScale = 10;
+
+        // Seed
+        let seed = parseInt(document.getElementById('seedInput').value);
+
+        // Mini-map setup
+        const miniMapCanvas = document.getElementById('miniMap');
+        const miniMapContext = miniMapCanvas.getContext('2d');
+        const miniMapScale = miniMapCanvas.width / (gridSize * blockSize);
+
+
+        // Random number generator
+        function seededRandom(min, max) {
+            const x = Math.sin(seed++) * 10000;
+            return min + (x - Math.floor(x)) * (max - min);
+        }
+
+        // Function to generate a color based on a seed
+        function seededColor() {
+            const r = Math.floor(seededRandom(50, 255));
+            const g = Math.floor(seededRandom(50, 255));
+            const b = Math.floor(seededRandom(50, 255));
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function generateCity() {
+          // Clear existing city
+          while(scene.children.length > 0){
+              scene.remove(scene.children[0]);
+          }
+
+            // Load HDRI
+            new THREE.RGBELoader()
+                .setPath( 'https://threejs.org/examples/textures/equirectangular/' )
+                .load( 'venice_sunset_1k.hdr', function ( texture ) {
+
+                    texture.mapping = THREE.EquirectangularReflectionMapping;
+
+                    scene.background = texture;
+                    scene.environment = texture;
+
+                    // Update lighting based on day/night cycle here as it needs loaded HDRI
+
+                    directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+                    directionalLight.position.set(1, 1, 1).normalize();
+                    directionalLight.castShadow = true;
+                    directionalLight.shadow.mapSize.width = 2048;
+                    directionalLight.shadow.mapSize.height = 2048;
+                    directionalLight.shadow.camera.near = 0.5;
+                    directionalLight.shadow.camera.far = 500;
+                    directionalLight.shadow.camera.left = -50;
+                    directionalLight.shadow.camera.right = 50;
+                    directionalLight.shadow.camera.top = 50;
+                    directionalLight.shadow.camera.bottom = -50;
+
+                    scene.add(directionalLight);
+
+                    ambientLight = new THREE.AmbientLight(0x404040);
+                    scene.add(ambientLight);
+
+
+                } );
+
+
+
+            // Ground
+            const groundGeometry = new THREE.PlaneGeometry(gridSize * blockSize, gridSize * blockSize);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.9 });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+
+
+            // City grid and buildings
+            for (let x = 0; x < gridSize; x++) {
+                for (let z = 0; z < gridSize; z++) {
+                    // Roads
+                    if (x % 5 === 0 || z % 5 === 0) {
+                        const roadGeometry = new THREE.BoxGeometry(blockSize, 0.1, blockSize);
+                        const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x404040, roughness: 0.9 });
+                        const road = new THREE.Mesh(roadGeometry, roadMaterial);
+                        road.position.x = x * blockSize - (gridSize * blockSize) / 2 + blockSize / 2;
+                        road.position.z = z * blockSize - (gridSize * blockSize) / 2 + blockSize / 2;
+                        road.receiveShadow = true;
+                        scene.add(road);
+
+                        //Traffic lights
+                        if((x % 10 === 0 && z % 10 ===0) && (x > 0 && z > 0)){
+                            const trafficLightGroup = createTrafficLights(road.position.x, road.position.z);
+                            scene.add(trafficLightGroup);
+                        }
+
+                    } else {
+                        // Buildings
+                        const buildingHeight = seededRandom(1, 8) * buildingHeightScale;
+                        const buildingGeometry = new THREE.BoxGeometry(blockSize - roadWidth, buildingHeight, blockSize - roadWidth);
+                        const buildingMaterial = new THREE.MeshStandardMaterial({ color: seededColor(), roughness: 0.7, metalness: 0.2 });
+                        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+                        building.position.x = x * blockSize - (gridSize * blockSize) / 2 + blockSize / 2;
+                        building.position.y = buildingHeight / 2;
+                        building.position.z = z * blockSize - (gridSize * blockSize) / 2 + blockSize / 2;
+                        building.castShadow = true;
+                        building.receiveShadow = true;
+                        scene.add(building);
+                    }
+                }
+            }
+
+            // Initial camera position
+            camera.position.set(0, 50, 0);
+            camera.lookAt(0, 0, 0);
+
+
+        }
+
+        function createTrafficLights(x, z) {
+            const group = new THREE.Group();
+            group.position.set(x, 1, z);
+            const lightHeight = 2;
+            const lightRadius = 0.3;
+
+            const poleGeometry = new THREE.BoxGeometry(0.2, lightHeight * 3, 0.2);
+            const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 });
+            const pole = new THREE.Mesh(poleGeometry, poleMaterial);
+            pole.position.y = lightHeight * 1.5;
+            group.add(pole);
+
+            const redLightGeometry = new THREE.SphereGeometry(lightRadius, 16, 16);
+            const redLightMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            const redLight = new THREE.Mesh(redLightGeometry, redLightMaterial);
+            redLight.position.y = lightHeight * 2.5;
+            group.add(redLight);
+
+            const yellowLightGeometry = new THREE.SphereGeometry(lightRadius, 16, 16);
+            const yellowLightMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const yellowLight = new THREE.Mesh(yellowLightGeometry, yellowLightMaterial);
+            yellowLight.position.y = lightHeight * 1.5;
+            group.add(yellowLight);
+
+            const greenLightGeometry = new THREE.SphereGeometry(lightRadius, 16, 16);
+            const greenLightMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const greenLight = new THREE.Mesh(greenLightGeometry, greenLightMaterial);
+            greenLight.position.y = lightHeight * 0.5;
+            group.add(greenLight);
+
+            // Store lights in group for animation purposes.
+            group.redLight = redLight;
+            group.yellowLight = yellowLight;
+            group.greenLight = greenLight;
+
+            group.currentLight = "red";
+            group.timer = 0;
+
+            return group;
+        }
+
+
+        //Initial city generation
+        generateCity();
+
+
+        // Event listener for seed input
+        document.getElementById('seedInput').addEventListener('change', function() {
+            seed = parseInt(this.value);
+            generateCity();
+        });
+
+
+        function updateMiniMap() {
+            miniMapContext.clearRect(0, 0, miniMapCanvas.width, miniMapCanvas.height);
+
+            for (const object of scene.children) {
+                if (object instanceof THREE.Mesh) {
+                    let color = 'white'; // Default road color
+                    if (object.geometry instanceof THREE.BoxGeometry && object.material.color.r > 0.5) {
+                        color = 'red'; //Example check if it is "building" by checking its color..Improve this!
+                    }
+                    const x = object.position.x * miniMapScale + miniMapCanvas.width / 2;
+                    const z = object.position.z * miniMapScale + miniMapCanvas.height / 2;
+
+                    miniMapContext.fillStyle = color;
+                    miniMapContext.fillRect(x - 1, z - 1, 2, 2);
+                }
+            }
+
+            // Draw camera position
+            miniMapContext.fillStyle = 'blue';
+            miniMapContext.fillRect(camera.position.x * miniMapScale + miniMapCanvas.width / 2 - 2,
+                                camera.position.z * miniMapScale + miniMapCanvas.height / 2 - 2, 4, 4);
+        }
+
+
+        function updateTrafficLights(delta) {
+            scene.children.forEach(child => {
+                if (child instanceof THREE.Group && child.redLight) {
+                    child.timer += delta;
+
+                    if (child.currentLight === "red") {
+                        child.redLight.material.color.set(0xff0000);
+                        child.yellowLight.material.color.set(0x000000);
+                        child.greenLight.material.color.set(0x000000);
+                        if (child.timer > 10) {
+                            child.currentLight = "green";
+                            child.timer = 0;
+                        }
+                    } else if (child.currentLight === "green") {
+                        child.redLight.material.color.set(0x000000);
+                        child.yellowLight.material.color.set(0x000000);
+                        child.greenLight.material.color.set(0x00ff00);
+                        if (child.timer > 10) {
+                            child.currentLight = "yellow";
+                            child.timer = 0;
+                        }
+                    } else if (child.currentLight === "yellow") {
+                        child.redLight.material.color.set(0x000000);
+                        child.yellowLight.material.color.set(0xffff00);
+                        child.greenLight.material.color.set(0x000000);
+                        if (child.timer > 3) {
+                            child.currentLight = "red";
+                            child.timer = 0;
+                        }
+                    }
+                }
+            });
+        }
+
+
+        function updateDayNightCycle(delta) {
+            timeOfDay += delta / dayDuration;
+            timeOfDay %= 1;
+
+            const sunIntensity = Math.sin(timeOfDay * Math.PI); // 0 to 1 to 0
+            const ambientIntensity = 0.2 + sunIntensity * 0.5; // 0.2 to 0.7 to 0.2
+
+            if(directionalLight){
+                 directionalLight.intensity = sunIntensity;
+                 ambientLight.intensity = ambientIntensity;
+
+                 // Example: Change sky color
+                 const skyColor = new THREE.Color().setHSL(timeOfDay, 0.6, 0.6);
+                 scene.background = skyColor; //Simple sky color!
+
+            }
+
+
+
+        }
+
+
+        // Animation loop
+        function animate(time) {
+            const delta = clock.getDelta();
+
+            controls.update(delta);
+
+            updateDayNightCycle(delta);
+            updateTrafficLights(delta);
+
+            updateMiniMap();
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        const clock = new THREE.Clock();
+        animate();
+
+        // Handle window resizing
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>

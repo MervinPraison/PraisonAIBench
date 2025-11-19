@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>3D Product Configurator</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #configPanel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+        #configPanel label { display: block; margin-bottom: 5px; }
+        #configPanel input[type="color"], #configPanel select { margin-bottom: 10px; }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="configPanel">
+        <h2>Configuration</h2>
+
+        <label for="bodyColor">Body Color:</label>
+        <input type="color" id="bodyColor" value="#FF0000"><br>
+
+        <label for="wheelColor">Wheel Color:</label>
+        <input type="color" id="wheelColor" value="#000000"><br>
+
+        <label for="rimMaterial">Rim Material:</label>
+        <select id="rimMaterial">
+            <option value="metal">Metal</option>
+            <option value="plastic">Plastic</option>
+        </select><br>
+
+        <label for="showSpoiler">Show Spoiler:</label>
+        <input type="checkbox" id="showSpoiler" checked><br>
+
+        <button id="exportConfig">Export Config (JSON)</button>
+    </div>
+
+    <div id="controls">
+        <button id="camera1">Camera 1</button>
+        <button id="camera2">Camera 2</button>
+        <button id="screenshot">Screenshot (PNG)</button>
+    </div>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;  // Enable soft shadows
+        document.body.appendChild(renderer.domElement);
+
+        // Orbit Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 5;
+        controls.maxDistance = 20;
+        controls.target.set(0, 1, 0); // Center the orbit controls
+        controls.update();
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0x404040); // Soft white light
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true; // Enable shadow casting
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 500;
+        scene.add(directionalLight);
+
+        const spotLight = new THREE.SpotLight(0xffffff, 0.5);
+        spotLight.position.set(-5, 5, -5);
+        spotLight.castShadow = true;
+        spotLight.shadow.mapSize.width = 1024;
+        spotLight.shadow.mapSize.height = 1024;
+        spotLight.shadow.camera.near = 0.5;
+        spotLight.shadow.camera.far = 500;
+        scene.add(spotLight);
+
+
+        // Environment Map (Simple) - Replace with a proper HDR if needed
+        const textureLoader = new THREE.TextureLoader();
+        const envMapTexture = textureLoader.load('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', () => {
+             const cubeTextureLoader = new THREE.CubeTextureLoader();
+              const envMap = cubeTextureLoader.load( [
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', // px
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', // nx
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', // py
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', // ny
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', // pz
+                'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='  // nz
+              ] );
+              scene.environment = envMap;
+        });
+
+        // Materials
+        const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000, envMap: scene.environment, roughness: 0.5, metalness: 0.5 });
+        const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 0.2, metalness: 0.8 });
+        const metalRimMaterial = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.1, metalness: 0.9, envMap: scene.environment }); // Example metal material
+        const plasticRimMaterial = new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.5, metalness: 0.1 }); // Example plastic material
+
+        let currentRimMaterial = metalRimMaterial;
+
+
+        // Geometry - Simple Car Example
+        const carGroup = new THREE.Group();
+        scene.add(carGroup);
+
+        // Car Body
+        const bodyGeometry = new THREE.BoxGeometry(3, 1, 1.5);
+        const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        bodyMesh.position.y = 0.5;
+        bodyMesh.castShadow = true;
+        bodyMesh.receiveShadow = true;
+        carGroup.add(bodyMesh);
+
+        // Wheels
+        const wheelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.5, 32);
+        const wheelMesh1 = new THREE.Mesh(wheelGeometry, wheelMaterial);
+        wheelMesh1.rotation.z = Math.PI / 2;
+        wheelMesh1.position.set(1.2, 0.3, 0.8);
+        wheelMesh1.castShadow = true;
+        wheelMesh1.receiveShadow = true;
+        carGroup.add(wheelMesh1);
+
+        const wheelMesh2 = wheelMesh1.clone();
+        wheelMesh2.position.x = 1.2;
+        wheelMesh2.position.z = -0.8;
+        carGroup.add(wheelMesh2);
+
+        const wheelMesh3 = wheelMesh1.clone();
+        wheelMesh3.position.x = -1.2;
+        wheelMesh3.position.z = 0.8;
+        carGroup.add(wheelMesh3);
+
+        const wheelMesh4 = wheelMesh1.clone();
+        wheelMesh4.position.x = -1.2;
+        wheelMesh4.position.z = -0.8;
+        carGroup.add(wheelMesh4);
+
+        //Rims
+        const rimGeometry = new THREE.TorusGeometry( 0.25, 0.1, 16, 100 );
+
+        const rimMesh1 = new THREE.Mesh( rimGeometry, currentRimMaterial );
+        rimMesh1.rotation.x = Math.PI / 2;
+        rimMesh1.position.set(1.2, 0.3, 0.8);
+        rimMesh1.castShadow = true;
+        rimMesh1.receiveShadow = true;
+        carGroup.add(rimMesh1);
+
+        const rimMesh2 = rimMesh1.clone();
+        rimMesh2.position.x = 1.2;
+        rimMesh2.position.z = -0.8;
+        carGroup.add(rimMesh2);
+
+        const rimMesh3 = rimMesh1.clone();
+        rimMesh3.position.x = -1.2;
+        rimMesh3.position.z = 0.8;
+        carGroup.add(rimMesh3);
+
+        const rimMesh4 = rimMesh1.clone();
+        rimMesh4.position.x = -1.2;
+        rimMesh4.position.z = -0.8;
+        carGroup.add(rimMesh4);
+
+
+        // Spoiler (optional)
+        const spoilerGeometry = new THREE.BoxGeometry(0.8, 0.1, 0.2);
+        const spoilerMesh = new THREE.Mesh(spoilerGeometry, bodyMaterial);
+        spoilerMesh.position.set(0, 1.1, 0);
+        spoilerMesh.castShadow = true;
+        spoilerMesh.receiveShadow = true;
+        carGroup.add(spoilerMesh);
+        spoilerMesh.visible = true;
+
+
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(20, 20);
+        const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.8, metalness: 0.2 });
+        const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.receiveShadow = true;
+        scene.add(groundMesh);
+
+        // Initial camera position
+        camera.position.set(5, 3, 5);
+        controls.update();
+
+
+        // Camera Bookmarks
+        const cameraPositions = [
+            new THREE.Vector3(5, 3, 5),
+            new THREE.Vector3(-5, 4, -5)
+        ];
+
+        // Config Panel Event Listeners
+        document.getElementById('bodyColor').addEventListener('input', (e) => {
+            bodyMaterial.color.set(e.target.value);
+        });
+
+        document.getElementById('wheelColor').addEventListener('input', (e) => {
+            wheelMaterial.color.set(e.target.value);
+        });
+
+        document.getElementById('rimMaterial').addEventListener('change', (e) => {
+             if (e.target.value === 'metal') {
+                currentRimMaterial = metalRimMaterial;
+
+            } else {
+                currentRimMaterial = plasticRimMaterial;
+            }
+
+            rimMesh1.material = currentRimMaterial;
+            rimMesh2.material = currentRimMaterial;
+            rimMesh3.material = currentRimMaterial;
+            rimMesh4.material = currentRimMaterial;
+
+
+        });
+
+
+        document.getElementById('showSpoiler').addEventListener('change', (e) => {
+            spoilerMesh.visible = e.target.checked;
+        });
+
+        document.getElementById('exportConfig').addEventListener('click', () => {
+            const config = {
+                bodyColor: bodyMaterial.color.getHex(),
+                wheelColor: wheelMaterial.color.getHex(),
+                rimMaterial: document.getElementById('rimMaterial').value,
+                showSpoiler: spoilerMesh.visible
+            };
+            const json = JSON.stringify(config);
+            const blob = new Blob([json], {type: "application/json"});
+            const url  = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.download    = "config.json";
+            a.href        = url;
+            a.textContent = "Download JSON";
+            a.click(); // Trigger the download
+        });
+
+        // Camera Control Buttons
+        document.getElementById('camera1').addEventListener('click', () => {
+            camera.position.copy(cameraPositions[0]);
+            controls.update();
+        });
+
+        document.getElementById('camera2').addEventListener('click', () => {
+            camera.position.copy(cameraPositions[1]);
+            controls.update();
+        });
+
+        document.getElementById('screenshot').addEventListener('click', () => {
+            const dataURL = renderer.domElement.toDataURL("image/png");
+            const a = document.createElement('a');
+            a.href = dataURL;
+            a.download = "screenshot.png";
+            a.click();
+        });
+
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // Required if controls.enableDamping or controls.autoRotate are set to true
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }, false);
+
+    </script>
+</body>
+</html>

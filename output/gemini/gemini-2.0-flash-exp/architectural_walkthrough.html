@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Architectural Walkthrough</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #minimap {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            width: 200px;
+            height: 200px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid white;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="mainCanvas"></canvas>
+    <canvas id="minimap"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/examples/js/controls/FirstPersonControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.157.0/examples/js/libs/lil-gui.module.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('mainCanvas') });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+
+        document.body.appendChild( renderer.domElement );
+
+        // Camera position
+        camera.position.set(0, 1.6, 5); // Adjust for standing height
+
+        // Controls
+        const controls = new THREE.FirstPersonControls(camera, renderer.domElement);
+        controls.movementSpeed = 5;
+        controls.lookSpeed = 0.1;
+        controls.lookVertical = true;
+        controls.constrainVertical = true;
+        controls.verticalMin = 1.0;
+        controls.verticalMax = 2.0; // Prevent looking through the floor/ceiling
+
+
+        // Ambient Light
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Slightly reduced intensity
+        scene.add(ambientLight);
+
+        // Directional Light (simulating sun)
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight.position.set(5, 5, 5);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 2048;
+        directionalLight.shadow.mapSize.height = 2048;
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 50;
+        directionalLight.shadow.camera.left = -10;
+        directionalLight.shadow.camera.right = 10;
+        directionalLight.shadow.camera.top = 10;
+        directionalLight.shadow.camera.bottom = -10;
+        scene.add(directionalLight);
+
+
+        // IBL Lighting (optional, requires loading environment map)
+        const pmremGenerator = new THREE.PMREMGenerator( renderer );
+        pmremGenerator.compileEquirectangularShader();
+
+        const envMapPath = 'https://threejs.org/examples/textures/equirectangular/royal_esplanade.hdr'; // Replace with your HDR env map
+        new THREE.HDRCubeTextureLoader()
+            .setPath( 'https://threejs.org/examples/textures/cube/pisa/' )
+            .load( [ 'px.png', 'nx.png', 'py.png', 'ny.png', 'pz.png', 'nz.png' ], function ( texture ) {
+
+                const envMap = pmremGenerator.fromCubemap( texture ).texture;
+
+                scene.environment = envMap;
+
+                texture.dispose();
+                pmremGenerator.dispose();
+
+                // Now create your scene objects here, since the environment map is loaded
+                generateHouse();
+            } );
+
+
+
+        // Collision detection
+        const raycaster = new THREE.Raycaster();
+        const clock = new THREE.Clock();
+        const playerHeight = 1.6; // Eye level
+        let canJump = false; // Flag to check if player is on the ground
+
+
+        // House Generation (Procedural)
+        let rooms = [];
+        let collidableMeshList = [];
+        let furniture = [];
+
+
+        function generateHouse() {
+            const roomSizeX = 10;
+            const roomSizeZ = 10;
+            const roomHeight = 3;
+
+            // Room creation (example: 2 rooms)
+            createRoom(0, 0, roomSizeX, roomSizeZ, roomHeight, 0xaaaaaa);
+            createRoom(roomSizeX, 0, roomSizeX, roomSizeZ, roomHeight, 0xbbbbbb);
+            createRoom(0, roomSizeZ, roomSizeX, roomSizeZ, roomHeight, 0xcccccc);
+            createRoom(roomSizeX, roomSizeZ, roomSizeX, roomSizeZ, roomHeight, 0xdddddd);
+
+            //Create furniture
+            createFurniture(2, 1.2, 2, 1, 0.8, 1.2, 0x8B4513); // Example desk in room 1
+            createFurniture(12, 1.2, 12, 1, 0.8, 1.2, 0x8B4513); // Example desk in room 1
+            createFurniture(2, 1.2, 12, 1, 0.8, 1.2, 0x8B4513); // Example desk in room 1
+            createFurniture(12, 1.2, 2, 1, 0.8, 1.2, 0x8B4513); // Example desk in room 1
+
+
+            // Light Probes (example, one per room)
+            rooms.forEach(room => {
+                const lightProbe = new THREE.LightProbe();
+                lightProbe.position.set(room.position.x + room.geometry.parameters.width / 2, roomHeight / 2, room.position.z + room.geometry.parameters.depth / 2);
+                scene.add(lightProbe);
+                THREE.LightProbeGenerator.update( lightProbe, renderer, scene );
+            });
+
+
+            //Interactive Hotspots (toggle furniture material/visibility)
+            const hotspotGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+            const hotspotMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+            const hotspot1 = new THREE.Mesh(hotspotGeometry, hotspotMaterial);
+            hotspot1.position.set(2, 1, 5);
+            scene.add(hotspot1);
+
+            hotspot1.userData.interact = function() {
+              furniture.forEach(mesh => {
+                    mesh.visible = !mesh.visible;
+                });
+            };
+
+
+            //Add events for interactive hotspots
+            document.addEventListener('mousedown', onDocumentMouseDown, false);
+
+            function onDocumentMouseDown(event) {
+                event.preventDefault();
+
+                const mouse = new THREE.Vector2();
+                mouse.x = (event.clientX / renderer.domElement.clientWidth) * 2 - 1;
+                mouse.y = -(event.clientY / renderer.domElement.clientHeight) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                if (intersects.length > 0) {
+                    const intersectedObject = intersects[0].object;
+                    if (intersectedObject.userData.interact) {
+                        intersectedObject.userData.interact();
+                    }
+                }
+            }
+
+
+        }
+
+
+        function createRoom(x, z, width, depth, height, color) {
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            const material = new THREE.MeshStandardMaterial({ color: color, side: THREE.BackSide}); //Cull the inside of the room
+            const room = new THREE.Mesh(geometry, material);
+            room.position.set(x + width / 2, height / 2, z + depth / 2);
+            room.receiveShadow = true;
+            scene.add(room);
+
+            //Create Collision Boxes for the room walls to create a walkthrough experience.
+            //Create front wall
+            const wallGeometry1 = new THREE.BoxGeometry(width, height, 0.1);
+            const wallMaterial1 = new THREE.MeshBasicMaterial({transparent: true, opacity: 0, depthWrite: false}); // Invisible material for collision
+            const wall1 = new THREE.Mesh(wallGeometry1, wallMaterial1);
+            wall1.position.set(x + width / 2, height / 2, z);
+            scene.add(wall1);
+            collidableMeshList.push(wall1);
+
+            //Create back wall
+            const wallGeometry2 = new THREE.BoxGeometry(width, height, 0.1);
+            const wallMaterial2 = new THREE.MeshBasicMaterial({transparent: true, opacity: 0, depthWrite: false}); // Invisible material for collision
+            const wall2 = new THREE.Mesh(wallGeometry2, wallMaterial2);
+            wall2.position.set(x + width / 2, height / 2, z + depth);
+            scene.add(wall2);
+            collidableMeshList.push(wall2);
+
+            //Create left wall
+            const wallGeometry3 = new THREE.BoxGeometry(0.1, height, depth);
+            const wallMaterial3 = new THREE.MeshBasicMaterial({transparent: true, opacity: 0, depthWrite: false}); // Invisible material for collision
+            const wall3 = new THREE.Mesh(wallGeometry3, wallMaterial3);
+            wall3.position.set(x, height / 2, z + depth / 2);
+            scene.add(wall3);
+            collidableMeshList.push(wall3);
+
+            //Create right wall
+            const wallGeometry4 = new THREE.BoxGeometry(0.1, height, depth);
+            const wallMaterial4 = new THREE.MeshBasicMaterial({transparent: true, opacity: 0, depthWrite: false}); // Invisible material for collision
+            const wall4 = new THREE.Mesh(wallGeometry4, wallMaterial4);
+            wall4.position.set(x + width, height / 2, z + depth / 2);
+            scene.add(wall4);
+            collidableMeshList.push(wall4);
+
+
+            rooms.push(room);
+        }
+
+        function createFurniture(x, y, z, width, height, depth, color) {
+            const geometry = new THREE.BoxGeometry(width, height, depth);
+            const material = new THREE.MeshStandardMaterial({ color: color });
+            const piece = new THREE.Mesh(geometry, material);
+            piece.position.set(x, y, z);
+            piece.castShadow = true;
+            piece.receiveShadow = true;
+            scene.add(piece);
+
+            collidableMeshList.push(piece);
+            furniture.push(piece);
+        }
+
+
+        // Room-based Culling (Basic example, improve for complex layouts)
+        function cullRooms() {
+            rooms.forEach(room => {
+                const distance = camera.position.distanceTo(room.position);
+                room.visible = distance < 20; // Adjust distance threshold
+            });
+        }
+
+
+        // Minimap
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapContext = minimapCanvas.getContext('2d');
+        const minimapCamera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 100); // Set appropriate orthographic bounds
+        minimapCamera.position.set(10, 20, 10);  // Position above the house
+        minimapCamera.lookAt(10, 0, 10); // Point down at the house
+        const minimapScene = new THREE.Scene();
+        const minimapRenderer = new THREE.WebGLRenderer({ canvas: minimapCanvas, alpha: true }); // Make background transparent
+
+        minimapRenderer.setSize(200, 200);
+        minimapRenderer.setClearColor(0x000000, 0); // Clear to transparent
+
+        const minimapGroup = new THREE.Group();
+        rooms.forEach(room => {
+            const roomGeometry = room.geometry.clone();
+            const roomMaterial = new THREE.MeshBasicMaterial({ color: room.material.color, side: THREE.DoubleSide }); // Ensure visible from both sides on minimap
+            const roomMesh = new THREE.Mesh(roomGeometry, roomMaterial);
+            roomMesh.position.copy(room.position);
+            roomMesh.position.y = 0.01; // Raise slightly to prevent z-fighting
+            minimapGroup.add(roomMesh);
+        });
+
+        const playerMarkerGeometry = new THREE.CircleGeometry(0.2, 16);
+        const playerMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+        const playerMarker = new THREE.Mesh(playerMarkerGeometry, playerMarkerMaterial);
+        minimapGroup.add(playerMarker);
+        minimapScene.add(minimapGroup);
+        minimapGroup.scale.set(0.2, 0.2, 0.2);
+        minimapGroup.position.set(-2, -0.2, -2);
+
+
+
+
+        // Animation Loop
+        function animate() {
+            const delta = clock.getDelta();
+
+            controls.update(delta);
+
+            // Collision detection
+            raycaster.ray.origin.copy(camera.position);
+            raycaster.ray.origin.y -= 0.5; // Offset slightly to check ground below
+
+            const intersects = raycaster.intersectObjects(collidableMeshList);
+            if (intersects.length > 0) {
+                canJump = true;
+            } else {
+                canJump = false;
+            }
+
+            // Vertical collision / gravity (very basic)
+            if (!canJump) {
+                camera.position.y -= 0.1;
+            } else {
+                camera.position.y = Math.max(camera.position.y, playerHeight); // Prevent sinking below floor
+            }
+
+            //Horizontal Collision
+
+            let prevPos = new THREE.Vector3();
+            prevPos.copy(camera.position);
+
+            let prevCamPos = new THREE.Vector3();
+            prevCamPos.copy(camera.position);
+
+            collidableMeshList.forEach(wall => {
+              let collisionBox = new THREE.Box3().setFromObject(wall);
+              let camBox = new THREE.Box3().setFromObject(camera);
+
+              camBox.setFromCenterAndSize( camera.position, new THREE.Vector3( 1, 1, 1 ) );
+
+
+              if (camBox.intersectsBox( collisionBox )) {
+                camera.position.copy(prevCamPos);
+
+              }
+            });
+
+
+            // Room Culling
+            cullRooms();
+
+            // Update Minimap Player Marker
+            playerMarker.position.x = camera.position.x;
+            playerMarker.position.z = camera.position.z;
+            playerMarker.rotation.y = -camera.rotation.y; // Keep marker aligned with player direction
+
+            // Render minimap
+            minimapRenderer.render(minimapScene, minimapCamera);
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+
+        animate(); // Start the animation loop
+    </script>
+</body>
+</html>
