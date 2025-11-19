@@ -5,75 +5,83 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Molecular Explorer</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #1a1a1a;
-            color: white;
-        }
-        #canvas-container {
-            width: 100%;
-            height: 100vh;
-            display: block;
-        }
-        #ui-panel {
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a1a; color: white; }
+        canvas { display: block; }
+        
+        /* UI Overlay Styling */
+        #ui-container {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 300px;
-            background: rgba(30, 30, 30, 0.9);
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            top: 10px;
+            right: 10px;
+            width: 280px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
             backdrop-filter: blur(5px);
             border: 1px solid #444;
-            max-height: 90vh;
+            max-height: 95vh;
             overflow-y: auto;
         }
-        h1 { font-size: 1.2rem; margin-top: 0; color: #4db8ff; }
-        .control-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-size: 0.9rem; color: #ccc; }
+
+        h2 { margin-top: 0; font-size: 1.2rem; text-align: center; color: #4db8ff; }
+        
+        .control-group { margin-bottom: 15px; border-bottom: 1px solid #444; padding-bottom: 10px; }
+        .control-group:last-child { border-bottom: none; }
+        
+        label { display: block; font-size: 0.85rem; margin-bottom: 5px; color: #ccc; }
+        
         select, button {
             width: 100%;
             padding: 8px;
+            margin-bottom: 5px;
             background: #333;
             color: white;
             border: 1px solid #555;
             border-radius: 4px;
             cursor: pointer;
-            margin-bottom: 5px;
         }
         select:hover, button:hover { background: #444; }
-        button.primary { background: #0066cc; border: none; }
-        button.primary:hover { background: #0052a3; }
-        input[type="range"] { width: 100%; cursor: pointer; }
-        .radio-group { display: flex; gap: 10px; }
-        .radio-item { display: flex; align-items: center; cursor: pointer; }
-        .radio-item input { margin-right: 5px; }
         
-        /* Loading overlay */
+        button.primary { background: #4db8ff; color: #000; font-weight: bold; border: none; }
+        button.primary:hover { background: #7bcaff; }
+
+        input[type="range"] {
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .radio-group { display: flex; gap: 10px; }
+        .radio-item { flex: 1; display: flex; align-items: center; font-size: 0.8rem; }
+        .radio-item input { margin-right: 5px; }
+
+        #legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            font-size: 0.75rem;
+            background: rgba(255,255,255,0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+
+        /* Loading Indicator */
         #loader {
             position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #1a1a1a;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            transition: opacity 0.5s;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5rem;
+            pointer-events: none;
+            display: none;
         }
-        .spinner {
-            width: 40px; height: 40px;
-            border: 4px solid #333;
-            border-top: 4px solid #4db8ff;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
-    
-    <!-- Load Three.js and OrbitControls from CDN -->
+
+    <!-- Import Maps for Three.js -->
     <script type="importmap">
         {
             "imports": {
@@ -85,52 +93,55 @@
 </head>
 <body>
 
-    <div id="loader"><div class="spinner"></div></div>
+    <div id="loader">Loading...</div>
 
-    <div id="canvas-container"></div>
-
-    <div id="ui-panel">
-        <h1>Molecular Explorer</h1>
+    <div id="ui-container">
+        <h2>Molecular Explorer</h2>
         
         <div class="control-group">
-            <label>Molecule</label>
+            <label for="molecule-select">Select Molecule</label>
             <select id="molecule-select">
                 <option value="water">Water (H2O)</option>
                 <option value="caffeine" selected>Caffeine</option>
                 <option value="ethanol">Ethanol</option>
-                <option value="dna">DNA Segment (Generated)</option>
-                <option value="random">Random Random Cluster</option>
+                <option value="glucose">Glucose</option>
+                <option value="dna">DNA Segment (Procedural)</option>
+                <option value="random">Random Structure</option>
             </select>
         </div>
 
         <div class="control-group">
-            <label>Visualization Mode</label>
+            <label>Render Mode</label>
             <div class="radio-group">
-                <label class="radio-item">
-                    <input type="radio" name="mode" value="ball" checked> Ball & Stick
-                </label>
-                <label class="radio-item">
-                    <input type="radio" name="mode" value="cpk"> Space Fill
-                </label>
+                <div class="radio-item">
+                    <input type="radio" id="mode-bs" name="mode" value="ballstick" checked>
+                    <label for="mode-bs">Ball & Stick</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="mode-sf" name="mode" value="spacefill">
+                    <label for="mode-sf">Space Filling</label>
+                </div>
             </div>
         </div>
 
         <div class="control-group">
-            <label>Explode View (Expansion)</label>
+            <label for="explode-slider">Explode View</label>
             <input type="range" id="explode-slider" min="0" max="2" step="0.01" value="0">
         </div>
 
         <div class="control-group">
-            <label>Section Clipping (Y-Axis)</label>
-            <input type="range" id="clip-slider" min="-20" max="20" step="0.1" value="20">
+            <label for="clip-slider">Section Clipping (X-Axis)</label>
+            <input type="range" id="clip-slider" min="-10" max="10" step="0.1" value="10">
+            <div style="font-size: 0.7rem; color: #888; margin-top:2px;">Drag left to slice molecule</div>
         </div>
 
         <div class="control-group">
-            <button id="btn-snapshot" class="primary">📸 Take Snapshot</button>
+            <button id="snapshot-btn" class="primary">📸 Take Snapshot</button>
         </div>
-        
-        <div style="font-size: 0.8rem; color: #666; margin-top: 10px;">
-            Left Click: Rotate | Right Click: Pan | Scroll: Zoom
+
+        <div class="control-group">
+            <label>Element Legend</label>
+            <div id="legend"></div>
         </div>
     </div>
 
@@ -140,144 +151,170 @@
 
         // --- Configuration & Data ---
 
-        // CPK Coloring and Atomic Radii (Angstroms approx)
-        const ELEMENT_DATA = {
-            'H': { color: 0xFFFFFF, radius: 0.37, vdw: 1.2 },
-            'C': { color: 0x909090, radius: 0.77, vdw: 1.7 },
-            'N': { color: 0x3050F8, radius: 0.75, vdw: 1.55 },
-            'O': { color: 0xFF0D0D, radius: 0.73, vdw: 1.52 },
-            'P': { color: 0xFF8000, radius: 1.10, vdw: 1.8 },
-            'S': { color: 0xFFFF30, radius: 1.02, vdw: 1.8 },
-            'Cl': { color: 0x1FF01F, radius: 0.99, vdw: 1.75 },
-            'Unknown': { color: 0xFF00FF, radius: 0.70, vdw: 1.5 }
+        // CPK Coloring Standard (Approximate)
+        const ATOM_defs = {
+            'H': { color: 0xFFFFFF, radius: 0.3, name: 'Hydrogen' },
+            'C': { color: 0x333333, radius: 0.7, name: 'Carbon' },
+            'N': { color: 0x3050F8, radius: 0.7, name: 'Nitrogen' },
+            'O': { color: 0xFF0D0D, radius: 0.6, name: 'Oxygen' },
+            'P': { color: 0xFF8000, radius: 0.9, name: 'Phosphorus' },
+            'S': { color: 0xFFFF30, radius: 0.9, name: 'Sulfur' },
+            'X': { color: 0xFF00FF, radius: 0.5, name: 'Unknown' } // Default
         };
 
-        const BOND_THRESHOLD = 1.2; // Factor of sum of covalent radii
-        
-        // Static Molecule Data (Simplified coordinates)
+        // Sample Data (xyz coordinates in Angstroms approx)
         const MOLECULES = {
-            water: [
+            'water': [
                 { elem: 'O', x: 0, y: 0, z: 0 },
-                { elem: 'H', x: 0.95, y: 0, z: 0 },
-                { elem: 'H', x: -0.24, y: 0.92, z: 0 }
+                { elem: 'H', x: 0.96, y: 0, z: 0 },
+                { elem: 'H', x: -0.24, y: 0.93, z: 0 }
             ],
-            ethanol: [
-                { elem: 'C', x: -0.08, y: 0.02, z: 0.01 },
-                { elem: 'C', x: -1.50, y: -0.46, z: -0.26 },
-                { elem: 'O', x: 0.65, y: -0.75, z: -0.88 },
-                { elem: 'H', x: 0.24, y: 1.06, z: -0.19 },
-                { elem: 'H', x: 0.03, y: -0.15, z: 1.07 },
-                { elem: 'H', x: -2.20, y: 0.36, z: -0.06 },
-                { elem: 'H', x: -1.61, y: -1.36, z: 0.35 },
-                { elem: 'H', x: -1.66, y: -0.71, z: -1.31 },
-                { elem: 'H', x: 1.56, y: -0.52, z: -0.78 }
+            'ethanol': [
+                { elem: 'C', x: -1.2, y: -0.4, z: 0 },
+                { elem: 'C', x: 0, y: 0.5, z: 0 },
+                { elem: 'O', x: 1.2, y: -0.2, z: 0 },
+                { elem: 'H', x: -1.2, y: -1.1, z: 0.9 }, // approx positions
+                { elem: 'H', x: -1.2, y: -1.1, z: -0.9 },
+                { elem: 'H', x: -2.1, y: 0.2, z: 0 },
+                { elem: 'H', x: 0, y: 1.2, z: 0.9 },
+                { elem: 'H', x: 0, y: 1.2, z: -0.9 },
+                { elem: 'H', x: 1.2, y: -1.1, z: 0 }
             ],
-            caffeine: [
-                // Approximate coordinates for Caffeine
-                { elem: 'N', x: -1.06, y: -0.87, z: -0.25 },
-                { elem: 'C', x: -1.16, y: 0.45, z: -0.02 },
-                { elem: 'N', x: 0.06, y: 0.96, z: -0.03 },
-                { elem: 'C', x: 0.93, y: -0.06, z: -0.28 },
-                { elem: 'C', x: 0.39, y: -1.33, z: -0.54 },
-                { elem: 'O', x: -2.24, y: 1.01, z: 0.17 },
-                { elem: 'O', x: 0.80, y: -2.44, z: -0.76 },
-                { elem: 'C', x: 2.29, y: 0.08, z: -0.23 },
-                { elem: 'N', x: 2.48, y: 1.35, z: 0.08 },
-                { elem: 'C', x: 1.15, y: 1.86, z: 0.19 },
-                { elem: 'N', x: 3.40, y: -0.71, z: -0.38 },
-                { elem: 'C', x: -2.18, y: -1.83, z: -0.28 },
-                { elem: 'C', x: 0.27, y: 3.30, z: 0.51 },
-                { elem: 'C', x: 4.77, y: -0.33, z: -0.30 },
-                { elem: 'H', x: 3.18, y: 1.15, z: 0.19 } // Simplified H
+            'caffeine': [
+                // Approximate topology for Caffeine (C8H10N4O2)
+                { elem: 'N', x: -1.2, y: 1.8, z: 0 }, // N1
+                { elem: 'C', x: 0, y: 2.5, z: 0 },    // C2
+                { elem: 'N', x: 1.2, y: 1.8, z: 0 },  // N3
+                { elem: 'C', x: 1.1, y: 0.4, z: 0 },  // C4
+                { elem: 'C', x: -1.1, y: 0.4, z: 0 }, // C5
+                { elem: 'C', x: -2.4, y: 2.4, z: 0 }, // Methyl on N1
+                { elem: 'O', x: 0, y: 3.7, z: 0 },    // O on C2
+                { elem: 'C', x: 2.5, y: 2.4, z: 0 },  // Methyl on N3
+                { elem: 'N', x: -0.7, y: -0.8, z: 0 },// N9
+                { elem: 'C', x: 0.6, y: -0.8, z: 0 }, // C8
+                { elem: 'N', x: 1.6, y: -1.8, z: 0 }, // N7
+                { elem: 'O', x: 0.9, y: -3.0, z: 0 }, // O
+                // Add some H implicitly or explicitly? Let's add explicit C methyls to make it look fuller
+                { elem: 'C', x: -1.4, y: -2.0, z: 0 }, // Methyl on N9
+            ],
+            'glucose': [
+                // Simplified Ring Structure
+                { elem: 'C', x: 1, y: 0, z: 0 },
+                { elem: 'C', x: 0.5, y: 0.86, z: 0 },
+                { elem: 'C', x: -0.5, y: 0.86, z: 0 },
+                { elem: 'O', x: -1, y: 0, z: 0 }, // Ether oxygen
+                { elem: 'C', x: -0.5, y: -0.86, z: 0 },
+                { elem: 'C', x: 0.5, y: -0.86, z: 0 },
+                // Hydroxyls and Hydrogens (approx)
+                { elem: 'O', x: 2, y: 0, z: 0 },
+                { elem: 'O', x: 1, y: 2, z: 0 },
+                { elem: 'O', x: -1, y: 2, z: 0 },
+                { elem: 'C', x: -1.5, y: -1.5, z: 0 }, // CH2OH tail
+                { elem: 'O', x: -2.5, y: -1.5, z: 0 },
+                { elem: 'O', x: 1, y: -2, z: 0 },
             ]
         };
 
-        // --- Scene Setup ---
-        const container = document.getElementById('canvas-container');
+        // --- State Management ---
+        const state = {
+            molecule: 'caffeine',
+            mode: 'ballstick', // 'ballstick' or 'spacefill'
+            explode: 0,
+            clipConstant: 10,
+            atoms: [], // Array of {mesh, data, originalPos}
+            bonds: []  // Array of {mesh, from, to, originalPos, originalRot, len}
+        };
+
+        // --- Three.js Init ---
+        const canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        const renderer = new THREE.WebGLRenderer({ 
+            canvas, 
+            antialias: true, 
+            alpha: true,
+            preserveDrawingBuffer: true // Required for snapshot
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.localClippingEnabled = true; // Enable clipping
+
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a);
         
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // Camera
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
         camera.position.set(0, 0, 15);
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        // Enable clipping
-        renderer.localClippingEnabled = true;
-        container.appendChild(renderer.domElement);
-
+        // Controls
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
 
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
         scene.add(ambientLight);
-
-        const dirLight = new THREE.DirectionalLight(0xffffff, 2);
-        dirLight.position.set(5, 10, 7);
-        dirLight.castShadow = true;
-        dirLight.shadow.mapSize.width = 1024;
-        dirLight.shadow.mapSize.height = 1024;
-        scene.add(dirLight);
         
-        const fillLight = new THREE.DirectionalLight(0xaaaaff, 0.5);
-        fillLight.position.set(-5, 0, -5);
-        scene.add(fillLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(10, 10, 10);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        const pointLight = new THREE.PointLight(0xffffff, 0.5);
+        camera.add(pointLight); // Light attached to camera
+        scene.add(camera);
 
         // Clipping Plane
-        const clippingPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 20);
-        
-        // State
-        let currentAtoms = [];
-        let currentBonds = [];
-        let atomMeshes = [];
-        let bondMeshes = [];
-        let moleculeGroup = new THREE.Group();
-        scene.add(moleculeGroup);
-        
+        const clippingPlane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 10);
+
+        // Groups
+        const molecularGroup = new THREE.Group();
+        scene.add(molecularGroup);
+
         // --- Logic Functions ---
 
-        function getElement(symbol) {
-            return ELEMENT_DATA[symbol] || ELEMENT_DATA['Unknown'];
+        function getAtomDef(elem) {
+            return ATOM_defs[elem] || ATOM_defs['X'];
         }
 
-        function generateDNA(basePairs = 6) {
+        // Procedural DNA Generator (Simplified Double Helix)
+        function generateDNA(basePairs = 10) {
             const atoms = [];
-            const twist = 36; // degrees per step
-            const rise = 3.4; // angstroms per step
-            const radius = 10;
+            const rise = 1.0; // Distance between base pairs
+            const radius = 4.0;
+            const twist = 0.6; // Radians per step
 
-            // Simplified backbone + base logic
             for (let i = 0; i < basePairs; i++) {
-                const angle = (i * twist) * (Math.PI / 180);
+                const angle = i * twist;
                 const y = i * rise - (basePairs * rise / 2);
 
-                // Strand 1 (Sugar-Phosphate)
-                atoms.push({ elem: 'P', x: Math.cos(angle) * radius, y: y, z: Math.sin(angle) * radius });
-                atoms.push({ elem: 'O', x: Math.cos(angle) * radius * 0.8, y: y, z: Math.sin(angle) * radius * 0.8 });
-                // Base 1
-                atoms.push({ elem: 'N', x: Math.cos(angle) * radius * 0.5, y: y, z: Math.sin(angle) * radius * 0.5 });
-                atoms.push({ elem: 'C', x: Math.cos(angle) * radius * 0.3, y: y, z: Math.sin(angle) * radius * 0.3 });
+                // Strand A (Phosphate backbone approx)
+                const ax = Math.cos(angle) * radius;
+                const az = Math.sin(angle) * radius;
+                atoms.push({ elem: 'P', x: ax, y: y, z: az });
+                atoms.push({ elem: 'O', x: ax, y: y + 0.3, z: az });
 
-                // Strand 2 (Anti-parallel)
-                const angle2 = angle + Math.PI; // 180 degrees offset
-                atoms.push({ elem: 'P', x: Math.cos(angle2) * radius, y: y, z: Math.sin(angle2) * radius });
-                atoms.push({ elem: 'O', x: Math.cos(angle2) * radius * 0.8, y: y, z: Math.sin(angle2) * radius * 0.8 });
-                // Base 2
-                atoms.push({ elem: 'N', x: Math.cos(angle2) * radius * 0.5, y: y, z: Math.sin(angle2) * radius * 0.5 });
-                atoms.push({ elem: 'C', x: Math.cos(angle2) * radius * 0.3, y: y, z: Math.sin(angle2) * radius * 0.3 });
-                
-                // Hydrogen bond connectors (fake logic for visuals)
-                atoms.push({ elem: 'H', x: 0, y: y, z: 0 });
+                // Strand B (Opposite)
+                const bx = Math.cos(angle + Math.PI) * radius;
+                const bz = Math.sin(angle + Math.PI) * radius;
+                atoms.push({ elem: 'P', x: bx, y: y, z: bz });
+                atoms.push({ elem: 'O', x: bx, y: y + 0.3, z: bz });
+
+                // Base Pair Connection (Simplified as C-N-N-C bridge)
+                // Interpolate between strand A and B
+                for(let j=1; j<=4; j++) {
+                    const t = j / 5;
+                    const lerpX = ax + (bx - ax) * t;
+                    const lerpZ = az + (bz - az) * t;
+                    // Randomize types for visual variety
+                    const type = (j === 1 || j === 4) ? 'N' : 'C';
+                    atoms.push({ elem: type, x: lerpX, y: y, z: lerpZ });
+                }
             }
             return atoms;
         }
 
-        function generateRandomCluster(count = 20) {
+        function generateRandomMolecule(count = 20) {
             const atoms = [];
-            const elements = ['C', 'H', 'O', 'N'];
+            const elements = ['C', 'C', 'C', 'O', 'O', 'N', 'H', 'H', 'H'];
             for(let i=0; i<count; i++) {
                 atoms.push({
                     elem: elements[Math.floor(Math.random() * elements.length)],
@@ -289,198 +326,173 @@
             return atoms;
         }
 
-        function calculateBonds(atoms) {
-            const bonds = [];
-            for (let i = 0; i < atoms.length; i++) {
-                for (let j = i + 1; j < atoms.length; j++) {
-                    const a1 = atoms[i];
-                    const a2 = atoms[j];
-                    const d = Math.sqrt(
-                        Math.pow(a1.x - a2.x, 2) + 
-                        Math.pow(a1.y - a2.y, 2) + 
-                        Math.pow(a1.z - a2.z, 2)
-                    );
-                    
-                    const r1 = getElement(a1.elem).radius;
-                    const r2 = getElement(a2.elem).radius;
-                    
-                    // Bond if distance is less than sum of radii * threshold
-                    if (d < (r1 + r2) * BOND_THRESHOLD && d > 0.1) {
-                        bonds.push({ source: i, target: j, dist: d });
-                    }
-                }
+        // Core function to build the 3D scene
+        function buildScene() {
+            // 1. Cleanup
+            while(molecularGroup.children.length > 0){ 
+                const obj = molecularGroup.children[0];
+                if(obj.geometry) obj.geometry.dispose();
+                if(obj.material) obj.material.dispose();
+                molecularGroup.remove(obj); 
             }
-            return bonds;
-        }
+            state.atoms = [];
+            state.bonds = [];
 
-        function clearScene() {
-            // Remove old meshes
-            while(moleculeGroup.children.length > 0){ 
-                const child = moleculeGroup.children[0];
-                if(child.geometry) child.geometry.dispose();
-                if(child.material) child.material.dispose();
-                moleculeGroup.remove(child); 
-            }
-            atomMeshes = [];
-            bondMeshes = [];
-        }
+            // 2. Get Data
+            let atomData = [];
+            if (state.molecule === 'dna') atomData = generateDNA(15);
+            else if (state.molecule === 'random') atomData = generateRandomMolecule(30);
+            else atomData = MOLECULES[state.molecule];
 
-        function createGeometry() {
-            clearScene();
-
-            const isSpaceFill = document.querySelector('input[name="mode"]:checked').value === 'cpk';
-            
-            // Calculate Center of Mass for Explode Effect
+            // Center the molecule data
             const center = new THREE.Vector3();
-            currentAtoms.forEach(a => center.add(new THREE.Vector3(a.x, a.y, a.z)));
-            center.divideScalar(currentAtoms.length);
+            atomData.forEach(a => center.add(new THREE.Vector3(a.x, a.y, a.z)));
+            center.divideScalar(atomData.length);
+            atomData = atomData.map(a => ({...a, x: a.x - center.x, y: a.y - center.y, z: a.z - center.z}));
 
-            // 1. Create Atoms
+            // 3. Create Atoms
             const sphereGeo = new THREE.SphereGeometry(1, 32, 32);
             
-            currentAtoms.forEach((atom, index) => {
-                const data = getElement(atom.elem);
+            atomData.forEach((data, idx) => {
+                const def = getAtomDef(data.elem);
                 
-                // Scale: If Space Fill, use VDW radius. If Ball & Stick, use ~30% covalent.
-                const scale = isSpaceFill ? data.vdw : data.radius * 0.4;
-                
-                const material = new THREE.MeshPhysicalMaterial({
-                    color: data.color,
+                // Scale based on mode
+                // BallStick: 0.4 * relative radius
+                // SpaceFill: 1.2 * relative radius (van der waals approx)
+                const scaleMult = state.mode === 'ballstick' ? 0.4 : 1.2;
+                const r = def.radius * scaleMult;
+
+                const mat = new THREE.MeshStandardMaterial({
+                    color: def.color,
                     roughness: 0.3,
                     metalness: 0.1,
-                    clearcoat: 0.3,
                     clippingPlanes: [ clippingPlane ],
                     clipShadows: true
                 });
 
-                const mesh = new THREE.Mesh(sphereGeo, material);
-                mesh.position.set(atom.x, atom.y, atom.z);
-                mesh.scale.set(scale, scale, scale);
+                const mesh = new THREE.Mesh(sphereGeo, mat);
+                mesh.position.set(data.x, data.y, data.z);
+                mesh.scale.set(r, r, r);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
-                
-                // Store original position relative to center for animation
-                mesh.userData = {
-                    originalPos: mesh.position.clone(),
-                    centerRef: center
-                };
+                mesh.userData = { isAtom: true, idx: idx };
 
-                moleculeGroup.add(mesh);
-                atomMeshes.push(mesh);
+                molecularGroup.add(mesh);
+                
+                state.atoms.push({
+                    mesh: mesh,
+                    data: data,
+                    def: def,
+                    originalPos: new THREE.Vector3(data.x, data.y, data.z)
+                });
             });
 
-            // 2. Create Bonds (Only if not space filling)
-            if (!isSpaceFill) {
-                const bondGeo = new THREE.CylinderGeometry(0.1, 0.1, 1, 16);
+            // 4. Infer Bonds (Only for Ball & Stick)
+            if (state.mode === 'ballstick') {
                 const bondMat = new THREE.MeshStandardMaterial({ 
-                    color: 0x888888,
-                    clippingPlanes: [ clippingPlane ]
+                    color: 0x888888, 
+                    roughness: 0.5,
+                    clippingPlanes: [ clippingPlane ] 
                 });
+                const bondGeo = new THREE.CylinderGeometry(0.1, 0.1, 1, 12);
+                bondGeo.rotateX(Math.PI / 2); // Rotate to point along Z initially
 
-                currentBonds.forEach(bond => {
-                    const start = new THREE.Vector3(currentAtoms[bond.source].x, currentAtoms[bond.source].y, currentAtoms[bond.source].z);
-                    const end = new THREE.Vector3(currentAtoms[bond.target].x, currentAtoms[bond.target].y, currentAtoms[bond.target].z);
-                    
-                    const distance = start.distanceTo(end);
-                    const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
-                    
-                    const mesh = new THREE.Mesh(bondGeo, bondMat);
-                    
-                    // Orientation logic
-                    const direction = new THREE.Vector3().subVectors(end, start).normalize();
-                    const quaternion = new THREE.Quaternion();
-                    quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
-                    
-                    mesh.position.copy(mid);
-                    mesh.setRotationFromQuaternion(quaternion);
-                    mesh.scale.set(1, distance, 1); // Stretch cylinder to bond length
-                    
-                    mesh.userData = {
-                        originalPos: mesh.position.clone(),
-                        centerRef: center
-                    };
+                for (let i = 0; i < atomData.length; i++) {
+                    for (let j = i + 1; j < atomData.length; j++) {
+                        const a1 = atomData[i];
+                        const a2 = atomData[j];
+                        const v1 = new THREE.Vector3(a1.x, a1.y, a1.z);
+                        const v2 = new THREE.Vector3(a2.x, a2.y, a2.z);
+                        const dist = v1.distanceTo(v2);
 
-                    moleculeGroup.add(mesh);
-                    bondMeshes.push(mesh);
-                });
+                        // Simple distance heuristic
+                        // Max bond length approx 1.9 Angstroms (usually 1.0 - 1.6)
+                        // Be generous for DNA procedural generation gaps
+                        const maxBond = 1.9; 
+                        if (dist < maxBond) {
+                            const bondMesh = new THREE.Mesh(bondGeo, bondMat);
+                            
+                            // Align bond
+                            const center = v1.clone().add(v2).multiplyScalar(0.5);
+                            bondMesh.position.copy(center);
+                            bondMesh.lookAt(v2);
+                            bondMesh.scale.set(1, 1, dist); // Scale Z to length
+
+                            molecularGroup.add(bondMesh);
+                            
+                            state.bonds.push({
+                                mesh: bondMesh,
+                                originalPos: center.clone(),
+                                originalScaleZ: dist,
+                                dir: v2.clone().sub(v1).normalize()
+                            });
+                        }
+                    }
+                }
             }
-            
-            // Center camera target
-            controls.target.copy(center);
+
+            updateLegend();
         }
 
-        function updateExplode() {
-            const factor = parseFloat(document.getElementById('explode-slider').value);
+        // Update the UI Legend
+        function updateLegend() {
+            const legendEl = document.getElementById('legend');
+            legendEl.innerHTML = '';
             
-            [...atomMeshes, ...bondMeshes].forEach(mesh => {
-                const original = mesh.userData.originalPos;
-                const center = mesh.userData.centerRef;
+            // Find unique elements in current scene
+            const uniqueElems = new Set(state.atoms.map(a => a.data.elem));
+            
+            uniqueElems.forEach(elem => {
+                const def = getAtomDef(elem);
+                const item = document.createElement('div');
+                item.className = 'legend-item';
                 
-                // vector from center to atom
-                const dir = new THREE.Vector3().subVectors(original, center);
+                const hexColor = '#' + new THREE.Color(def.color).getHexString();
                 
-                // new position = original + dir * factor
-                mesh.position.copy(original).add(dir.multiplyScalar(factor));
+                item.innerHTML = `<div class="dot" style="background:${hexColor}"></div>${def.name} (${elem})`;
+                legendEl.appendChild(item);
             });
         }
 
-        function updateClipping() {
-            const val = parseFloat(document.getElementById('clip-slider').value);
-            clippingPlane.constant = val;
-        }
-
-        function loadMolecule(type) {
-            let atoms = [];
+        // Animation Loop for Explode Effect
+        function animate() {
+            requestAnimationFrame(animate);
             
-            if (type === 'dna') {
-                atoms = generateDNA(10);
-            } else if (type === 'random') {
-                atoms = generateRandomCluster(25);
-            } else if (MOLECULES[type]) {
-                atoms = JSON.parse(JSON.stringify(MOLECULES[type])); // Deep copy
-            }
-
-            // Center molecule data (normalize coordinates)
-            const center = {x:0, y:0, z:0};
-            atoms.forEach(a => { center.x+=a.x; center.y+=a.y; center.z+=a.z; });
-            center.x /= atoms.length; center.y /= atoms.length; center.z /= atoms.length;
-            atoms.forEach(a => { a.x-=center.x; a.y-=center.y; a.z-=center.z; });
-
-            currentAtoms = atoms;
-            currentBonds = calculateBonds(atoms);
+            // Handle Explode Logic
+            const exp = state.explode;
             
-            createGeometry();
-        }
+            // Move Atoms
+            state.atoms.forEach(atomObj => {
+                // vector from center (0,0,0)
+                const dir = atomObj.originalPos.clone().normalize();
+                // New position = original + (direction * explodeFactor * scale)
+                const newPos = atomObj.originalPos.clone().add(dir.multiplyScalar(exp * 2));
+                atomObj.mesh.position.copy(newPos);
+            });
 
-        function takeSnapshot() {
-            // Render once explicitly to ensure buffer is fresh
+            // Handle Bonds
+            state.bonds.forEach(bondObj => {
+                if(state.mode === 'ballstick') {
+                    // If exploding, bonds should probably break or scale. 
+                    // For a simple "explode view", we usually just push everything apart.
+                    // Let's move the bond center outwards.
+                    const dir = bondObj.originalPos.clone().normalize();
+                    const newPos = bondObj.originalPos.clone().add(dir.multiplyScalar(exp * 2));
+                    bondObj.mesh.position.copy(newPos);
+                    
+                    // Optional: Scale bond to 0 when fully exploded to simulate breakage
+                    // Or keep it to show structural relationship. Let's keep it.
+                }
+            });
+
+            // Update Clipping Plane
+            clippingPlane.constant = state.clipConstant;
+
+            controls.update();
             renderer.render(scene, camera);
-            const dataURL = renderer.domElement.toDataURL('image/png');
-            
-            const link = document.createElement('a');
-            link.download = 'molecule_snapshot.png';
-            link.href = dataURL;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
         }
 
         // --- Event Listeners ---
-
-        document.getElementById('molecule-select').addEventListener('change', (e) => {
-            loadMolecule(e.target.value);
-        });
-
-        document.querySelectorAll('input[name="mode"]').forEach(r => {
-            r.addEventListener('change', () => {
-                createGeometry();
-                updateExplode(); // Re-apply explode if set
-            });
-        });
-
-        document.getElementById('explode-slider').addEventListener('input', updateExplode);
-        document.getElementById('clip-slider').addEventListener('input', updateClipping);
-        document.getElementById('btn-snapshot').addEventListener('click', takeSnapshot);
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -488,22 +500,46 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- Init ---
-
-        // Remove loader
-        window.addEventListener('load', () => {
-            document.getElementById('loader').style.opacity = 0;
-            setTimeout(() => { document.getElementById('loader').style.display = 'none'; }, 500);
+        document.getElementById('molecule-select').addEventListener('change', (e) => {
+            state.molecule = e.target.value;
+            buildScene();
         });
 
-        loadMolecule('caffeine');
-        
-        // --- Animation Loop ---
-        function animate() {
-            requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        }
+        // Mode Radio Buttons
+        document.querySelectorAll('input[name="mode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                state.mode = e.target.value;
+                buildScene();
+            });
+        });
+
+        document.getElementById('explode-slider').addEventListener('input', (e) => {
+            state.explode = parseFloat(e.target.value);
+        });
+
+        document.getElementById('clip-slider').addEventListener('input', (e) => {
+            state.clipConstant = parseFloat(e.target.value);
+        });
+
+        document.getElementById('snapshot-btn').addEventListener('click', () => {
+            try {
+                const strMime = "image/png";
+                const imgData = renderer.domElement.toDataURL(strMime);
+                
+                const link = document.createElement('a');
+                link.download = `molecule_snapshot_${Date.now()}.png`;
+                link.href = imgData;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch (e) {
+                console.error("Snapshot failed", e);
+                alert("Could not save image. Browser security settings might restrict canvas export for local files.");
+            }
+        });
+
+        // --- Initialization ---
+        buildScene();
         animate();
 
     </script>

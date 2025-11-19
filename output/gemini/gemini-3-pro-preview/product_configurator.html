@@ -3,20 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Product Configurator - Modern Chair</title>
+    <title>3D Product Configurator</title>
     <style>
-        :root {
-            --bg-color: #1a1a1a;
-            --panel-bg: rgba(255, 255, 255, 0.95);
-            --accent: #007bff;
-            --text: #333;
-        }
-
         body {
             margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             overflow: hidden;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
+            background-color: #f0f0f0;
+            color: #333;
         }
 
         #canvas-container {
@@ -25,87 +20,94 @@
             display: block;
         }
 
-        /* UI Panel Styling */
-        #ui-panel {
+        /* Sidebar UI */
+        #sidebar {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 300px;
-            max-height: 90vh;
-            background: var(--panel-bg);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            overflow-y: auto;
+            top: 0;
+            right: 0;
+            width: 320px;
+            height: 100vh;
+            background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(10px);
+            padding: 20px;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.05);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            box-sizing: border-box;
             transition: transform 0.3s ease;
         }
 
-        h2 { margin-top: 0; font-size: 1.2rem; color: var(--text); border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-        h3 { font-size: 0.9rem; color: #666; margin-top: 15px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        h2 { margin-top: 0; font-size: 1.2rem; color: #111; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        h3 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; color: #666; }
 
+        /* Controls */
         .control-group { margin-bottom: 15px; }
         
-        label { display: block; font-size: 0.9rem; margin-bottom: 5px; color: var(--text); }
-        
-        /* Inputs */
-        input[type="color"] {
-            width: 100%;
-            height: 40px;
-            border: none;
-            border-radius: 6px;
+        /* Color Swatches */
+        .swatch-container { display: flex; flex-wrap: wrap; gap: 8px; }
+        .swatch {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
             cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
+        .swatch:hover { transform: scale(1.1); }
+        .swatch.active { border-color: #333; transform: scale(1.1); }
 
-        select, button {
+        /* Buttons */
+        .btn {
             width: 100%;
             padding: 10px;
-            border-radius: 6px;
-            border: 1px solid #ccc;
+            border: 1px solid #ddd;
             background: white;
-            font-size: 0.9rem;
+            border-radius: 6px;
             cursor: pointer;
+            font-size: 0.9rem;
             transition: all 0.2s;
+            margin-bottom: 5px;
+            text-align: center;
+        }
+        .btn:hover { background: #f5f5f5; border-color: #bbb; }
+        .btn.active { background: #333; color: white; border-color: #333; }
+
+        .btn-row { display: flex; gap: 5px; }
+
+        /* Export Section */
+        .export-actions {
+            margin-top: auto;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
         }
 
-        button {
-            background: var(--accent);
+        .btn-primary {
+            background: #007bff;
             color: white;
             border: none;
-            margin-top: 5px;
             font-weight: 600;
         }
-
-        button:hover { background: #0056b3; }
-        button.secondary { background: #6c757d; }
-        button.secondary:hover { background: #545b62; }
-
-        .toggle-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .camera-controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 5px;
-        }
+        .btn-primary:hover { background: #0056b3; }
 
         /* Loading Overlay */
         #loader {
             position: absolute;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--bg-color);
+            background: white;
             display: flex;
             justify-content: center;
             align-items: center;
-            color: white;
-            z-index: 1000;
+            z-index: 999;
+            font-size: 1.5rem;
+            font-weight: bold;
             transition: opacity 0.5s;
         }
     </style>
-    <!-- Import Maps for Clean Three.js Imports -->
+    
+    <!-- Import Maps Polyfill for modules -->
     <script type="importmap">
         {
             "imports": {
@@ -117,58 +119,62 @@
 </head>
 <body>
 
-    <div id="loader">Loading 3D Engine...</div>
+    <div id="loader">Loading Configurator...</div>
 
     <div id="canvas-container"></div>
 
-    <div id="ui-panel">
-        <h2>Configurator</h2>
+    <div id="sidebar">
+        <h2>Chair Configurator</h2>
 
-        <!-- Configuration Section -->
+        <!-- Configuration: Parts -->
         <div class="control-group">
-            <h3>Upholstery</h3>
-            <label>Color</label>
-            <input type="color" id="seatColor" value="#e74c3c">
-            
-            <label style="margin-top:10px">Material Type</label>
-            <select id="materialType">
-                <option value="fabric">Fabric (Matte)</option>
-                <option value="leather">Leather (Shiny)</option>
-                <option value="velvet">Velvet (Soft)</option>
-            </select>
+            <h3>Visibility</h3>
+            <button class="btn active" id="toggle-armrests" onclick="togglePart('armrests')">Toggle Armrests</button>
+            <button class="btn active" id="toggle-headrest" onclick="togglePart('headrest')">Toggle Headrest</button>
+        </div>
 
-            <div class="toggle-row" style="margin-top:10px">
-                <label for="textureToggle">Pattern Texture</label>
-                <input type="checkbox" id="textureToggle">
+        <!-- Configuration: Materials -->
+        <div class="control-group">
+            <h3>Upholstery Material</h3>
+            <div class="btn-row">
+                <button class="btn active" onclick="setMaterialType('fabric', this)">Fabric</button>
+                <button class="btn" onclick="setMaterialType('leather', this)">Leather</button>
+                <button class="btn" onclick="setMaterialType('velvet', this)">Velvet</button>
             </div>
         </div>
 
+        <!-- Configuration: Colors -->
         <div class="control-group">
-            <h3>Structure</h3>
-            <label>Leg Color</label>
-            <input type="color" id="legColor" value="#2c3e50">
-            
-            <div class="toggle-row" style="margin-top:10px">
-                <label for="armrestToggle">Show Armrests</label>
-                <input type="checkbox" id="armrestToggle" checked>
+            <h3>Upholstery Color</h3>
+            <div class="swatch-container" id="color-swatches">
+                <!-- Injected via JS -->
             </div>
         </div>
 
-        <!-- Camera Section -->
+        <!-- Configuration: Frame -->
+        <div class="control-group">
+            <h3>Frame Finish</h3>
+            <div class="btn-row">
+                <button class="btn" onclick="setFrameMaterial('chrome', this)">Chrome</button>
+                <button class="btn active" onclick="setFrameMaterial('wood', this)">Dark Wood</button>
+                <button class="btn" onclick="setFrameMaterial('black', this)">Matte Black</button>
+            </div>
+        </div>
+
+        <!-- Camera Views -->
         <div class="control-group">
             <h3>Camera Views</h3>
-            <div class="camera-controls">
-                <button class="secondary" onclick="moveCamera('front')">Front</button>
-                <button class="secondary" onclick="moveCamera('iso')">Iso</button>
-                <button class="secondary" onclick="moveCamera('top')">Top</button>
+            <div class="btn-row">
+                <button class="btn" onclick="moveCamera('front')">Front</button>
+                <button class="btn" onclick="moveCamera('side')">Side</button>
+                <button class="btn" onclick="moveCamera('top')">Iso</button>
             </div>
         </div>
 
-        <!-- Export Section -->
-        <div class="control-group">
-            <h3>Actions</h3>
-            <button onclick="exportConfig()">Export JSON</button>
-            <button onclick="takeSnapshot()">Save Snapshot (PNG)</button>
+        <!-- Export -->
+        <div class="export-actions">
+            <button class="btn btn-primary" onclick="downloadSnapshot()">Download Snapshot (PNG)</button>
+            <button class="btn" onclick="exportConfig()">Export Config (JSON)</button>
         </div>
     </div>
 
@@ -176,22 +182,31 @@
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
         // --- Global Variables ---
-        let camera, scene, renderer, controls;
-        let chairGroup, seatMesh, backMesh, armRestL, armRestR, legMeshes = [];
-        let proceduralTexture;
+        let scene, camera, renderer, controls;
+        let chairGroup, seatMesh, backMesh, armrestLeft, armrestRight, headrestMesh;
+        let legFL, legFR, legBL, legBR;
+        let shadowPlane;
         
-        // State Object
+        // Procedural Textures
+        let fabricTexture, leatherTexture, velvetNormal;
+        
+        // Configuration State
         const config = {
-            seatColor: '#e74c3c',
-            legColor: '#2c3e50',
-            materialType: 'fabric',
-            hasTexture: false,
-            showArmrests: true
+            upholsteryColor: '#3A6B35', // Default Green
+            materialType: 'fabric', // fabric, leather, velvet
+            frameType: 'wood', // chrome, wood, black
+            showArmrests: true,
+            showHeadrest: true,
+            cameraPos: 'iso'
         };
 
+        const colors = [
+            '#3A6B35', '#B53629', '#2C3E50', '#D4AC0D', '#7F8C8D', '#FDFEFE', '#17202A'
+        ];
+
+        // --- Initialization ---
         init();
         animate();
 
@@ -200,16 +215,15 @@
 
             // 1. Scene Setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xeeeeee);
-            // Fog to blend floor into background
-            scene.fog = new THREE.Fog(0xeeeeee, 10, 50);
+            scene.background = new THREE.Color(0xf0f0f0);
+            scene.fog = new THREE.Fog(0xf0f0f0, 10, 50);
 
             // 2. Camera
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
             camera.position.set(3, 3, 4);
 
             // 3. Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); // preserveDrawingBuffer needed for snapshot
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
@@ -218,10 +232,19 @@
             renderer.toneMappingExposure = 1;
             container.appendChild(renderer.domElement);
 
-            // 4. Environment & Lighting
+            // 4. Environment (Reflections)
             const pmremGenerator = new THREE.PMREMGenerator(renderer);
             scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
+            // 5. Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 2;
+            controls.maxDistance = 10;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent going under floor
+
+            // 6. Lighting
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
             scene.add(ambientLight);
 
@@ -233,265 +256,360 @@
             dirLight.shadow.bias = -0.0001;
             scene.add(dirLight);
 
-            // 5. Controls
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.minDistance = 2;
-            controls.maxDistance = 10;
-            controls.target.set(0, 0.5, 0);
+            // 7. Helpers (Floor Shadow)
+            const planeGeometry = new THREE.PlaneGeometry(100, 100);
+            const planeMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
+            shadowPlane = new THREE.Mesh(planeGeometry, planeMaterial);
+            shadowPlane.rotation.x = -Math.PI / 2;
+            shadowPlane.receiveShadow = true;
+            shadowPlane.position.y = 0;
+            scene.add(shadowPlane);
 
-            // 6. Floor
-            const floorGeo = new THREE.PlaneGeometry(50, 50);
-            const floorMat = new THREE.MeshStandardMaterial({ 
-                color: 0xeeeeee, 
-                roughness: 1, 
-                metalness: 0 
-            });
-            const floor = new THREE.Mesh(floorGeo, floorMat);
-            floor.rotation.x = -Math.PI / 2;
-            floor.receiveShadow = true;
-            scene.add(floor);
+            // Generate Procedural Textures
+            generateTextures();
 
-            // 7. Generate Assets
-            proceduralTexture = createProceduralTexture();
+            // 8. Build Product
             buildChair();
 
-            // 8. UI Event Listeners
-            setupUI();
+            // 9. Init UI
+            initUI();
 
             // Remove Loader
             document.getElementById('loader').style.opacity = 0;
-            setTimeout(() => document.getElementById('loader').remove(), 500);
-            
+            setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
+
             window.addEventListener('resize', onWindowResize);
         }
 
-        // --- Procedural Texture Generator (Canvas API) ---
-        function createProceduralTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 512;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
+        // --- Procedural Geometry ---
 
-            // Background
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, 512, 512);
+        function generateTextures() {
+            // Helper to draw on canvas
+            const createCanvas = (width, height, drawFn) => {
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                drawFn(ctx, width, height);
+                return new THREE.CanvasTexture(canvas);
+            };
 
-            // Pattern (Crosshatch)
-            ctx.strokeStyle = '#cccccc';
-            ctx.lineWidth = 2;
-            
-            for(let i=0; i<=512; i+=20) {
-                // Diagonals
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(0, i);
-                ctx.stroke();
-                
-                ctx.beginPath();
-                ctx.moveTo(i, 512);
-                ctx.lineTo(512, i);
-                ctx.stroke();
-            }
+            // Fabric Pattern
+            fabricTexture = createCanvas(512, 512, (ctx, w, h) => {
+                ctx.fillStyle = '#808080';
+                ctx.fillRect(0,0,w,h);
+                ctx.fillStyle = '#909090';
+                for(let i=0; i<10000; i++) {
+                    ctx.fillRect(Math.random()*w, Math.random()*h, 2, 2);
+                }
+            });
+            fabricTexture.wrapS = fabricTexture.wrapT = THREE.RepeatWrapping;
+            fabricTexture.repeat.set(2, 2);
 
-            const tex = new THREE.CanvasTexture(canvas);
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.repeat.set(2, 2);
-            return tex;
+            // Leather Pattern (Noise)
+            leatherTexture = createCanvas(512, 512, (ctx, w, h) => {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0,0,w,h);
+                for(let y=0; y<h; y+=2) {
+                    for(let x=0; x<w; x+=2) {
+                        const v = 200 + Math.random() * 55;
+                        ctx.fillStyle = `rgb(${v},${v},${v})`;
+                        ctx.fillRect(x,y,2,2);
+                    }
+                }
+            });
         }
 
-        // --- 3D Model Builder ---
         function buildChair() {
             chairGroup = new THREE.Group();
             scene.add(chairGroup);
 
-            // Materials
-            const seatMaterial = new THREE.MeshStandardMaterial({ 
-                color: config.seatColor,
-                roughness: 0.8,
-                metalness: 0.1
-            });
-
-            const legMaterial = new THREE.MeshStandardMaterial({ 
-                color: config.legColor,
-                roughness: 0.2,
-                metalness: 0.5
-            });
-
-            // 1. Seat (Rounded Box)
-            const seatGeo = new RoundedBoxGeometry(1.2, 0.2, 1.2, 4, 0.05);
-            seatMesh = new THREE.Mesh(seatGeo, seatMaterial);
-            seatMesh.position.y = 0.5; // Height of legs
+            // Base Geometries
+            // Using BoxGeometry with segmentations for visual interest
+            
+            // SEAT
+            const seatGeo = new THREE.BoxGeometry(1, 0.15, 1, 10, 1, 10);
+            // Deform slightly for cushion look (simple vertex manipulation)
+            // Note: In a real app, load a GLTF. Here we stick to procedural.
+            const seatMat = getUpholsteryMaterial();
+            seatMesh = new THREE.Mesh(seatGeo, seatMat);
+            seatMesh.position.y = 0.5; // Leg height
             seatMesh.castShadow = true;
             seatMesh.receiveShadow = true;
             chairGroup.add(seatMesh);
 
-            // 2. Backrest
-            const backGeo = new RoundedBoxGeometry(1.2, 0.8, 0.2, 4, 0.05);
-            backMesh = new THREE.Mesh(backGeo, seatMaterial.clone()); // Clone to share properties but allow independent updates if needed
-            backMesh.position.set(0, 1.0, -0.5);
+            // BACKREST
+            const backGeo = new THREE.BoxGeometry(1, 1.2, 0.15);
+            backMesh = new THREE.Mesh(backGeo, seatMat);
+            backMesh.position.set(0, 1.1, -0.425);
             backMesh.castShadow = true;
             backMesh.receiveShadow = true;
+            // Slight rotation for comfort
+            backMesh.rotation.x = -0.1;
             chairGroup.add(backMesh);
 
-            // 3. Armrests (Toggleable)
-            const armGeo = new RoundedBoxGeometry(0.15, 0.4, 1.0, 4, 0.02);
-            
-            armRestL = new THREE.Mesh(armGeo, seatMaterial.clone());
-            armRestL.position.set(-0.525, 0.8, 0);
-            armRestL.castShadow = true;
-            chairGroup.add(armRestL);
+            // HEADREST
+            const headGeo = new THREE.BoxGeometry(0.8, 0.3, 0.15);
+            headrestMesh = new THREE.Mesh(headGeo, seatMat);
+            headrestMesh.position.set(0, 1.8, -0.5);
+            headrestMesh.rotation.x = -0.1;
+            headrestMesh.castShadow = true;
+            chairGroup.add(headrestMesh);
 
-            armRestR = new THREE.Mesh(armGeo, seatMaterial.clone());
-            armRestR.position.set(0.525, 0.8, 0);
-            armRestR.castShadow = true;
-            chairGroup.add(armRestR);
+            // LEGS
+            const legGeo = new THREE.CylinderGeometry(0.04, 0.02, 0.5, 16);
+            const frameMat = getFrameMaterial();
 
-            // 4. Legs (Cylinders)
-            const legGeo = new THREE.CylinderGeometry(0.04, 0.03, 0.5, 16);
-            const positions = [
-                { x: -0.5, z: -0.5 }, { x: 0.5, z: -0.5 },
-                { x: -0.5, z: 0.5 },  { x: 0.5, z: 0.5 }
-            ];
-
-            positions.forEach(pos => {
-                const leg = new THREE.Mesh(legGeo, legMaterial);
-                leg.position.set(pos.x, 0.25, pos.z);
+            const createLeg = (x, z) => {
+                const leg = new THREE.Mesh(legGeo, frameMat);
+                leg.position.set(x, 0.25, z);
                 leg.castShadow = true;
                 leg.receiveShadow = true;
                 chairGroup.add(leg);
-                legMeshes.push(leg);
-            });
-        }
+                return leg;
+            };
 
-        // --- Logic & State Management ---
-
-        function updateMaterials() {
-            // Define Material Properties based on type
-            const matProps = {};
+            legFL = createLeg(0.4, 0.4);
+            legFR = createLeg(-0.4, 0.4);
+            legBL = createLeg(0.4, -0.4);
+            legBR = createLeg(-0.4, -0.4);
             
-            if (config.materialType === 'fabric') {
-                matProps.roughness = 0.9;
-                matProps.metalness = 0.0;
-                matProps.envMapIntensity = 0.5;
-            } else if (config.materialType === 'leather') {
-                matProps.roughness = 0.3;
-                matProps.metalness = 0.1;
-                matProps.envMapIntensity = 1.5;
-            } else if (config.materialType === 'velvet') {
-                matProps.roughness = 1.0;
-                matProps.metalness = 0.1;
-                matProps.envMapIntensity = 0.8;
-                // Start with a sheen logic if using Physical material, but Standard is fine for this demo
+            // ARMRESTS
+            const armGeo = new THREE.BoxGeometry(0.1, 0.05, 0.8);
+            const armSupportGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.4);
+            
+            const createArmrest = (x) => {
+                const group = new THREE.Group();
+                
+                // Support
+                const sup = new THREE.Mesh(armSupportGeo, frameMat); // Metal/Wood support
+                sup.position.y = 0.2;
+                sup.castShadow = true;
+                
+                // Pad
+                const pad = new THREE.Mesh(armGeo, frameMat); // Use Frame material or Upholstery? Let's use frame
+                pad.position.y = 0.4;
+                pad.castShadow = true;
+
+                group.add(sup);
+                group.add(pad);
+                group.position.set(x, 0.5, 0.1);
+                return { group, sup, pad };
+            };
+
+            const left = createArmrest(0.55);
+            armrestLeft = left.group;
+            // Keep references to change material later
+            armrestLeft.userData = { sup: left.sup, pad: left.pad };
+
+            const right = createArmrest(-0.55);
+            armrestRight = right.group;
+            armrestRight.userData = { sup: right.sup, pad: right.pad };
+
+            chairGroup.add(armrestLeft);
+            chairGroup.add(armrestRight);
+
+            // Apply initial Config
+            applyConfig();
+        }
+
+        // --- Material Logic ---
+
+        function getUpholsteryMaterial() {
+            // Base material definition
+            const mat = new THREE.MeshStandardMaterial({
+                color: config.upholsteryColor,
+                roughness: 0.8,
+                metalness: 0.0,
+                side: THREE.DoubleSide
+            });
+            updateMaterialProperties(mat, config.materialType);
+            return mat;
+        }
+
+        function updateMaterialProperties(material, type) {
+            // Reset
+            material.map = null;
+            material.normalMap = null;
+            
+            if (type === 'fabric') {
+                material.map = fabricTexture;
+                material.roughness = 0.9;
+                material.metalness = 0.1;
+                material.sheen = 0;
+            } else if (type === 'leather') {
+                material.map = leatherTexture; // Use noise as color variation
+                material.roughness = 0.4;
+                material.metalness = 0.1;
+                material.normalScale = new THREE.Vector2(0.5, 0.5);
+            } else if (type === 'velvet') {
+                material.roughness = 0.7;
+                material.metalness = 0.1;
+                // Approximate velvet with sheen if supported (newer Three.js) or tweaking standard props
+                // Just color and soft roughness for this basic demo
             }
+            material.needsUpdate = true;
+        }
 
-            // Determine Map
-            const map = config.hasTexture ? proceduralTexture : null;
-
-            // Apply to all upholstered parts
-            const parts = [seatMesh, backMesh, armRestL, armRestR];
-            parts.forEach(part => {
-                part.material.color.set(config.seatColor);
-                part.material.roughness = matProps.roughness;
-                part.material.metalness = matProps.metalness;
-                part.material.envMapIntensity = matProps.envMapIntensity;
-                part.material.map = map;
-                part.material.needsUpdate = true;
+        function getFrameMaterial() {
+            return new THREE.MeshStandardMaterial({
+                color: 0x3d251e, // Default wood
+                roughness: 0.8,
+                metalness: 0.1
             });
         }
 
-        function updateStructure() {
-            // Update Leg Colors
-            legMeshes.forEach(leg => {
-                leg.material.color.set(config.legColor);
-            });
-
-            // Toggle Armrests
-            armRestL.visible = config.showArmrests;
-            armRestR.visible = config.showArmrests;
+        function updateFrameMaterial(material, type) {
+            if (type === 'chrome') {
+                material.color.setHex(0xeeeeee);
+                material.roughness = 0.1;
+                material.metalness = 1.0;
+            } else if (type === 'wood') {
+                material.color.setHex(0x3d251e);
+                material.roughness = 0.8;
+                material.metalness = 0.0;
+            } else if (type === 'black') {
+                material.color.setHex(0x111111);
+                material.roughness = 0.9;
+                material.metalness = 0.1;
+            }
         }
 
-        function setupUI() {
-            // Seat Color
-            document.getElementById('seatColor').addEventListener('input', (e) => {
-                config.seatColor = e.target.value;
-                updateMaterials();
+        // --- Configuration Logic ---
+
+        function applyConfig() {
+            // 1. Colors & Material Type
+            const meshes = [seatMesh, backMesh, headrestMesh];
+            
+            meshes.forEach(mesh => {
+                if(mesh) {
+                    mesh.material.color.set(config.upholsteryColor);
+                    updateMaterialProperties(mesh.material, config.materialType);
+                }
             });
 
-            // Leg Color
-            document.getElementById('legColor').addEventListener('input', (e) => {
-                config.legColor = e.target.value;
-                updateStructure();
+            // 2. Frame Material
+            const frameMeshes = [legFL, legFR, legBL, legBR];
+            // Add armrest parts
+            frameMeshes.push(armrestLeft.userData.sup, armrestLeft.userData.pad);
+            frameMeshes.push(armrestRight.userData.sup, armrestRight.userData.pad);
+
+            frameMeshes.forEach(mesh => {
+                updateFrameMaterial(mesh.material, config.frameType);
             });
 
-            // Material Type
-            document.getElementById('materialType').addEventListener('change', (e) => {
-                config.materialType = e.target.value;
-                updateMaterials();
-            });
+            // 3. Toggles
+            armrestLeft.visible = config.showArmrests;
+            armrestRight.visible = config.showArmrests;
+            headrestMesh.visible = config.showHeadrest;
+        }
 
-            // Texture Toggle
-            document.getElementById('textureToggle').addEventListener('change', (e) => {
-                config.hasTexture = e.target.checked;
-                updateMaterials();
-            });
+        // --- UI & Interactions ---
 
-            // Armrest Toggle
-            document.getElementById('armrestToggle').addEventListener('change', (e) => {
-                config.showArmrests = e.target.checked;
-                updateStructure();
+        function initUI() {
+            // Generate Color Swatches
+            const container = document.getElementById('color-swatches');
+            colors.forEach(col => {
+                const div = document.createElement('div');
+                div.className = 'swatch';
+                div.style.backgroundColor = col;
+                if (col === config.upholsteryColor) div.classList.add('active');
+                
+                div.addEventListener('click', () => {
+                    document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+                    div.classList.add('active');
+                    config.upholsteryColor = col;
+                    applyConfig();
+                });
+                container.appendChild(div);
             });
         }
 
-        // --- Helpers: Camera, Export ---
+        // Make functions available globally for HTML onclick events
+        window.togglePart = (part) => {
+            if(part === 'armrests') {
+                config.showArmrests = !config.showArmrests;
+                const btn = document.getElementById('toggle-armrests');
+                config.showArmrests ? btn.classList.add('active') : btn.classList.remove('active');
+            }
+            if(part === 'headrest') {
+                config.showHeadrest = !config.showHeadrest;
+                const btn = document.getElementById('toggle-headrest');
+                config.showHeadrest ? btn.classList.add('active') : btn.classList.remove('active');
+            }
+            applyConfig();
+        };
 
+        window.setMaterialType = (type, btn) => {
+            config.materialType = type;
+            // Update UI classes
+            const siblings = btn.parentElement.children;
+            for(let i=0; i<siblings.length; i++) siblings[i].classList.remove('active');
+            btn.classList.add('active');
+            applyConfig();
+        };
+
+        window.setFrameMaterial = (type, btn) => {
+            config.frameType = type;
+            // Update UI classes
+            const siblings = btn.parentElement.children;
+            for(let i=0; i<siblings.length; i++) siblings[i].classList.remove('active');
+            btn.classList.add('active');
+            applyConfig();
+        };
+
+        // Camera Animation
+        let targetCameraPos = null;
         window.moveCamera = (view) => {
-            const duration = 1000; // ms
+            const pos = new THREE.Vector3();
+            if(view === 'front') pos.set(0, 1.5, 4.5);
+            if(view === 'side') pos.set(4.5, 1.5, 0);
+            if(view === 'top') pos.set(3, 3, 4); // Iso-ish
+            
+            // Simple animation logic
             const startPos = camera.position.clone();
-            let targetPos;
+            const startTime = Date.now();
+            const duration = 1000;
 
-            if (view === 'front') targetPos = new THREE.Vector3(0, 1, 3.5);
-            if (view === 'iso') targetPos = new THREE.Vector3(3, 3, 4);
-            if (view === 'top') targetPos = new THREE.Vector3(0, 4, 0.1); // Slight offset to avoid gimbal lock
-
-            // Simple Animation Loop for smooth transition
-            const startTime = performance.now();
-
-            function animateCam(time) {
-                const elapsed = time - startTime;
-                const progress = Math.min(elapsed / duration, 1);
+            const animateCam = () => {
+                const now = Date.now();
+                const progress = Math.min((now - startTime) / duration, 1);
                 
                 // Ease out cubic
                 const ease = 1 - Math.pow(1 - progress, 3);
 
-                camera.position.lerpVectors(startPos, targetPos, ease);
+                camera.position.lerpVectors(startPos, pos, ease);
                 controls.update();
 
                 if (progress < 1) {
                     requestAnimationFrame(animateCam);
                 }
-            }
-            requestAnimationFrame(animateCam);
+            };
+            animateCam();
         };
+
+        // --- Export Functions ---
 
         window.exportConfig = () => {
-            const jsonString = JSON.stringify(config, null, 2);
-            const blob = new Blob([jsonString], { type: 'application/json' });
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = 'chair_config.json';
-            link.click();
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "chair_config.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
         };
 
-        window.takeSnapshot = () => {
-            // Render one frame explicitly to ensure buffer is ready
+        window.downloadSnapshot = () => {
+            // Render once specifically for the screenshot to ensure clean buffer
             renderer.render(scene, camera);
-            const dataURL = renderer.domElement.toDataURL('image/png');
+            const dataURL = renderer.domElement.toDataURL("image/png");
             const link = document.createElement('a');
+            link.download = 'chair_design.png';
             link.href = dataURL;
-            link.download = 'my_chair.png';
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
         };
 
         function onWindowResize() {
@@ -505,6 +623,7 @@
             controls.update();
             renderer.render(scene, camera);
         }
+
     </script>
 </body>
 </html>

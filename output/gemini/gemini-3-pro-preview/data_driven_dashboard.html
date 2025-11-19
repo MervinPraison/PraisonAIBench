@@ -3,445 +3,561 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Analytics Dashboard</title>
+    <title>3D Data Analytics Dashboard</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #ffffff;
+            --panel-bg: rgba(255, 255, 255, 0.1);
+            --btn-bg: #333;
+            --btn-hover: #555;
+            --accent: #00d2ff;
+        }
+
+        body.light-mode {
+            --bg-color: #f0f2f5;
+            --text-color: #333333;
+            --panel-bg: rgba(0, 0, 0, 0.05);
+            --btn-bg: #e0e0e0;
+            --btn-hover: #cccccc;
+            --accent: #007bff;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+        }
+
         /* UI Overlay */
         #ui-layer {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            z-index: 10;
-            color: white;
-            pointer-events: none; /* Let clicks pass through to canvas where no buttons exist */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .header {
+            pointer-events: auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         h1 {
-            margin: 0 0 10px 0;
+            margin: 0;
             font-size: 1.5rem;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
 
-        .panel {
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(5px);
-            padding: 15px;
-            border-radius: 8px;
+        .controls {
             pointer-events: auto;
             display: flex;
-            flex-direction: column;
             gap: 10px;
-            border: 1px solid rgba(255,255,255,0.1);
-            width: 200px;
+            background: var(--panel-bg);
+            padding: 10px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
         }
 
         button {
+            background: var(--btn-bg);
+            color: var(--text-color);
+            border: 1px solid rgba(128,128,128,0.3);
             padding: 8px 12px;
-            border: none;
             border-radius: 4px;
             cursor: pointer;
-            background: #3a86ff;
-            color: white;
-            font-weight: 600;
-            transition: background 0.2s;
+            font-size: 0.9rem;
+            transition: all 0.2s;
         }
 
-        button:hover { background: #2667cc; }
-        
-        .btn-secondary { background: #6c757d; }
-        .btn-secondary:hover { background: #5a6268; }
-        
-        .btn-success { background: #2a9d8f; }
-        .btn-success:hover { background: #21867a; }
+        button:hover {
+            background: var(--btn-hover);
+            border-color: var(--accent);
+        }
 
-        .row { display: flex; gap: 5px; }
+        .camera-views {
+            pointer-events: auto;
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+            background: var(--panel-bg);
+            padding: 10px;
+            border-radius: 30px;
+            backdrop-filter: blur(5px);
+        }
 
         /* Tooltip */
         #tooltip {
             position: absolute;
             background: rgba(0, 0, 0, 0.8);
             color: #fff;
-            padding: 8px 12px;
+            padding: 10px;
             border-radius: 4px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             pointer-events: none;
-            display: none;
-            z-index: 20;
-            border: 1px solid rgba(255,255,255,0.2);
+            opacity: 0;
+            transition: opacity 0.2s;
+            transform: translate(-50%, -120%);
             white-space: pre-line;
+            z-index: 10;
+            border: 1px solid var(--accent);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
 
-        /* Loading */
-        #loading {
+        .stats-panel {
+            pointer-events: auto;
             position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 1.2rem;
+            top: 80px;
+            left: 20px;
+            background: var(--panel-bg);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(5px);
+            border-left: 3px solid var(--accent);
+        }
+        
+        .stat-item {
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        .stat-value {
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        /* Loading overlay */
+        #loader {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            transition: opacity 0.5s;
         }
     </style>
     
-    <!-- Import Maps for Three.js and Addons -->
+    <!-- Import Map for Three.js -->
     <script type="importmap">
         {
             "imports": {
                 "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "@tweenjs/tween.js": "https://unpkg.com/@tweenjs/tween.js@23.1.1/dist/tween.esm.js"
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
         }
     </script>
 </head>
 <body>
 
+    <div id="loader"><h2>Generating Analytics...</h2></div>
+
+    <div id="tooltip"></div>
+
+    <div id="canvas-container"></div>
+
     <div id="ui-layer">
-        <h1>3D Data Analytics</h1>
-        <div class="panel">
-            <div class="row">
-                <button id="btn-theme" class="btn-secondary" style="flex:1">Toggle Theme</button>
-                <button id="btn-export" class="btn-success" style="flex:1">Export CSV</button>
+        <div class="header">
+            <h1>Analytics Dashboard 3D</h1>
+            <div class="controls">
+                <button id="theme-btn">Toggle Theme</button>
+                <button id="export-btn">Export CSV</button>
+                <button id="regen-btn">New Data</button>
             </div>
-            <hr style="width:100%; border:0; border-top:1px solid rgba(255,255,255,0.2); margin: 5px 0;">
-            <label>Camera Views</label>
-            <div class="row">
-                <button onclick="moveCamera('iso')" style="flex:1">Iso</button>
-                <button onclick="moveCamera('top')" style="flex:1">Top</button>
-                <button onclick="moveCamera('side')" style="flex:1">Side</button>
-            </div>
-            <div class="row">
-                <button onclick="regenerateData()" class="btn-secondary" style="width:100%">New Dataset</button>
-            </div>
+        </div>
+
+        <div class="stats-panel">
+            <div class="stat-item">Dataset Size: <span class="stat-value" id="count-stat">0</span></div>
+            <div class="stat-item">Max Value: <span class="stat-value" id="max-stat">0</span></div>
+            <div class="stat-item">Avg Value: <span class="stat-value" id="avg-stat">0</span></div>
+        </div>
+
+        <div class="camera-views">
+            <button onclick="moveCamera('iso')">Isometric</button>
+            <button onclick="moveCamera('top')">Top View</button>
+            <button onclick="moveCamera('side')">Side View</button>
+            <button onclick="moveCamera('detail')">Close Up</button>
         </div>
     </div>
 
-    <div id="tooltip"></div>
-    <div id="loading">Loading 3D Engine...</div>
-
+    <!-- Main Script -->
     <script type="module">
         import * as THREE from 'three';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-        import TWEEN from '@tweenjs/tween.js';
+        // TWEEN is not in standard three addons, loading from cdn directly for this example
+        import TWEEN from 'https://unpkg.com/@tweenjs/tween.js@23.1.1/dist/tween.esm.js';
 
-        // --- Configuration ---
+        // Configuration
         const CONFIG = {
-            gridSize: 40,
-            divisions: 40,
-            barCount: 30,
-            scatterCount: 50,
-            colors: {
-                dark: { bg: 0x1a1a2e, grid: 0x888888, text: '#ffffff', fog: 0x1a1a2e },
-                light: { bg: 0xf0f2f5, grid: 0xcccccc, text: '#000000', fog: 0xf0f2f5 }
-            }
+            gridSize: 100,
+            gridDivisions: 20,
+            barCount: 40,
+            scatterCount: 30,
+            animSpeed: 0.005
         };
 
-        let isDarkMode = true;
+        let scene, camera, renderer, controls, raycaster, pointer;
+        let gridHelper, axesHelper;
         let generatedData = [];
+        let sceneObjects = []; // To store meshes for raycasting
+        let scatterParticles = []; // For animation
         
-        // --- Three.js Globals ---
-        let scene, camera, renderer, controls;
-        let raycaster, pointer;
-        let gridHelper, axisHelper;
-        let mainGroup; // Holds charts
-        let intersectedObject = null;
+        // State
+        let isDarkMode = true;
+        let hoveredObj = null;
 
-        // --- Initialization ---
+        // Colors
+        const COLORS = {
+            dark: { bg: 0x1a1a1a, grid: 0x444444, axis: 0x666666 },
+            light: { bg: 0xf0f2f5, grid: 0xcccccc, axis: 0xaaaaaa },
+            palette: [0x00d2ff, 0x3a7bd5, 0xff007f, 0x7f00ff, 0x00b09b]
+        };
+
+        init();
+        animate();
+
         function init() {
-            const container = document.createElement('div');
-            document.body.appendChild(container);
-
-            // Scene
+            // 1. Scene Setup
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(CONFIG.colors.dark.bg);
-            scene.fog = new THREE.Fog(CONFIG.colors.dark.fog, 20, 100);
+            scene.background = new THREE.Color(COLORS.dark.bg);
+            scene.fog = new THREE.Fog(COLORS.dark.bg, 50, 150);
 
-            // Camera
-            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 1000);
-            camera.position.set(30, 25, 30);
-
-            // Renderer
+            // 2. Camera
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(60, 50, 60);
+            
+            // 3. Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.shadowMap.enabled = true;
-            container.appendChild(renderer.domElement);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // Controls
+            // 4. Controls
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
             controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent going below grid
 
-            // Lights
+            // 5. Lights
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-            dirLight.position.set(20, 40, 20);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(50, 80, 30);
             dirLight.castShadow = true;
-            dirLight.shadow.camera.left = -30;
-            dirLight.shadow.camera.right = 30;
-            dirLight.shadow.camera.top = 30;
-            dirLight.shadow.camera.bottom = -30;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
             scene.add(dirLight);
 
-            // Helpers
-            gridHelper = new THREE.GridHelper(CONFIG.gridSize, CONFIG.divisions, CONFIG.colors.dark.grid, 0x2a2a40);
-            scene.add(gridHelper);
+            // 6. Helpers
+            setupHelpers();
 
-            axisHelper = new THREE.AxesHelper(5);
-            axisHelper.position.set(-CONFIG.gridSize/2, 0, CONFIG.gridSize/2); // Bottom Left
-            scene.add(axisHelper);
-
-            // Main Group for Data
-            mainGroup = new THREE.Group();
-            scene.add(mainGroup);
-
-            // Raycaster
+            // 7. Interaction
             raycaster = new THREE.Raycaster();
             pointer = new THREE.Vector2();
-
-            // Event Listeners
             window.addEventListener('resize', onWindowResize);
             window.addEventListener('mousemove', onPointerMove);
-            
-            // Setup UI Buttons
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('btn-theme').addEventListener('click', toggleTheme);
-            document.getElementById('btn-export').addEventListener('click', exportCSV);
-            window.moveCamera = moveCamera; // Expose to HTML
-            window.regenerateData = generateAndVisualize; // Expose to HTML
 
-            // Initial Data
-            generateAndVisualize();
+            // 8. Initial Data Generation
+            generateSceneData();
+
+            // 9. UI Setup
+            document.getElementById('theme-btn').addEventListener('click', toggleTheme);
+            document.getElementById('export-btn').addEventListener('click', exportToCSV);
+            document.getElementById('regen-btn').addEventListener('click', generateSceneData);
             
-            // Loop
-            animate();
+            // Remove loader
+            setTimeout(() => {
+                document.getElementById('loader').style.opacity = 0;
+                setTimeout(() => document.getElementById('loader').remove(), 500);
+            }, 800);
         }
 
-        // --- Data Logic ---
-        function generateData() {
-            const data = [];
-            const categories = ['Sales', 'Marketing', 'Dev', 'HR', 'Support'];
-            
-            // Generate Bar Data (High Value items)
-            for (let i = 0; i < CONFIG.barCount; i++) {
-                const x = Math.floor(Math.random() * CONFIG.gridSize) - CONFIG.gridSize/2;
-                const z = Math.floor(Math.random() * CONFIG.gridSize) - CONFIG.gridSize/2;
-                const val = Math.random() * 10 + 2; // Height 2 to 12
-                
-                data.push({
-                    id: i,
-                    type: 'Bar',
-                    x: x,
-                    y: val / 2, // Center of box
-                    z: z,
-                    height: val,
-                    value: Math.floor(val * 100),
-                    category: categories[Math.floor(Math.random() * categories.length)]
-                });
-            }
+        function setupHelpers() {
+            if(gridHelper) scene.remove(gridHelper);
+            if(axesHelper) scene.remove(axesHelper);
 
-            // Generate Scatter Data (Points in space)
-            for (let i = 0; i < CONFIG.scatterCount; i++) {
-                data.push({
-                    id: CONFIG.barCount + i,
-                    type: 'Scatter',
-                    x: (Math.random() * CONFIG.gridSize) - CONFIG.gridSize/2,
-                    y: Math.random() * 15 + 1,
-                    z: (Math.random() * CONFIG.gridSize) - CONFIG.gridSize/2,
-                    value: Math.floor(Math.random() * 500),
-                    category: 'Anomaly'
-                });
-            }
-            
-            generatedData = data;
-            return data;
+            const color = isDarkMode ? COLORS.dark.grid : COLORS.light.grid;
+            gridHelper = new THREE.GridHelper(CONFIG.gridSize, CONFIG.gridDivisions, color, color);
+            scene.add(gridHelper);
+
+            axesHelper = new THREE.AxesHelper(10);
+            scene.add(axesHelper);
         }
 
-        // --- Visualization Logic ---
-        function generateAndVisualize() {
-            // Clear previous
-            while(mainGroup.children.length > 0){ 
-                const obj = mainGroup.children[0];
+        // --- Data & Object Generation ---
+
+        function generateSceneData() {
+            // Clear existing objects
+            sceneObjects.forEach(obj => {
+                scene.remove(obj);
                 if(obj.geometry) obj.geometry.dispose();
                 if(obj.material) obj.material.dispose();
-                mainGroup.remove(obj); 
-            }
-
-            const data = generateData();
-
-            // 1. Bars
-            const barGeo = new THREE.BoxGeometry(0.8, 1, 0.8);
-            data.filter(d => d.type === 'Bar').forEach(d => {
-                const color = new THREE.Color().setHSL(d.height / 15, 0.8, 0.5);
-                const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.3, metalness: 0.1 });
-                const mesh = new THREE.Mesh(barGeo, mat);
-                
-                mesh.position.set(d.x, d.height / 2, d.z);
-                mesh.scale.y = d.height;
-                mesh.castShadow = true;
-                mesh.receiveShadow = true;
-                
-                // Attach data for raycasting
-                mesh.userData = { ...d };
-                mainGroup.add(mesh);
             });
+            sceneObjects = [];
+            scatterParticles = [];
+            generatedData = [];
 
-            // 2. Scatter Points
-            const sphereGeo = new THREE.SphereGeometry(0.4, 16, 16);
-            const scatterMat = new THREE.MeshStandardMaterial({ color: 0xff0066, emissive: 0x330011 });
-            
-            data.filter(d => d.type === 'Scatter').forEach(d => {
-                const mesh = new THREE.Mesh(sphereGeo, scatterMat);
-                mesh.position.set(d.x, d.y, d.z);
-                mesh.castShadow = true;
-                mesh.userData = { ...d };
-                mainGroup.add(mesh);
-            });
-
-            // 3. Ribbon (Trend Line) - sort a subset of bars by X
-            const ribbonPoints = data.filter(d => d.type === 'Bar')
-                .sort((a, b) => a.x - b.x)
-                .slice(0, 10) // Take 10 points
-                .map(d => new THREE.Vector3(d.x, d.height + 2, d.z));
-
-            if(ribbonPoints.length > 1) {
-                const curve = new THREE.CatmullRomCurve3(ribbonPoints);
-                const tubeGeo = new THREE.TubeGeometry(curve, 64, 0.2, 8, false);
-                const tubeMat = new THREE.MeshStandardMaterial({ 
-                    color: 0x00ffff, 
-                    transparent: true, 
-                    opacity: 0.8,
-                    side: THREE.DoubleSide
+            // 1. Generate Bars (Discrete Data)
+            for (let i = 0; i < CONFIG.barCount; i++) {
+                const value = Math.random() * 20 + 2;
+                const x = (Math.random() - 0.5) * 80;
+                const z = (Math.random() - 0.5) * 80;
+                
+                generatedData.push({
+                    id: `bar_${i}`, type: 'Bar', x: x.toFixed(2), y: 0, z: z.toFixed(2), value: value.toFixed(2)
                 });
-                const tube = new THREE.Mesh(tubeGeo, tubeMat);
-                tube.userData = { type: 'Trend Ribbon', value: 'Aggregated', category: 'Analytics' };
-                mainGroup.add(tube);
+
+                const geometry = new THREE.BoxGeometry(3, value, 3);
+                geometry.translate(0, value / 2, 0); // Pivot at bottom
+                
+                const material = new THREE.MeshStandardMaterial({ 
+                    color: COLORS.palette[Math.floor(Math.random() * COLORS.palette.length)],
+                    roughness: 0.3,
+                    metalness: 0.2
+                });
+                
+                const cube = new THREE.Mesh(geometry, material);
+                cube.position.set(x, 0, z);
+                cube.castShadow = true;
+                cube.receiveShadow = true;
+                
+                // Entrance Animation (Scale Up)
+                cube.scale.y = 0.01;
+                new TWEEN.Tween(cube.scale)
+                    .to({ y: 1 }, 1000)
+                    .easing(TWEEN.Easing.Elastic.Out)
+                    .delay(Math.random() * 500)
+                    .start();
+
+                cube.userData = { ...generatedData[generatedData.length - 1] };
+                scene.add(cube);
+                sceneObjects.push(cube);
             }
+
+            // 2. Generate Scatter Points (Correlation Data)
+            for (let i = 0; i < CONFIG.scatterCount; i++) {
+                const x = (Math.random() - 0.5) * 80;
+                const y = Math.random() * 30 + 5;
+                const z = (Math.random() - 0.5) * 80;
+                const size = Math.random() * 1.5 + 0.5;
+
+                generatedData.push({
+                    id: `dot_${i}`, type: 'Scatter', x: x.toFixed(2), y: y.toFixed(2), z: z.toFixed(2), value: size.toFixed(2)
+                });
+
+                const geometry = new THREE.SphereGeometry(size, 16, 16);
+                const material = new THREE.MeshStandardMaterial({
+                    color: 0xffffff,
+                    emissive: COLORS.palette[i % COLORS.palette.length],
+                    emissiveIntensity: 0.5
+                });
+
+                const sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(x, y, z);
+                
+                // Save initial Y for floating animation
+                sphere.userData = { 
+                    ...generatedData[generatedData.length - 1],
+                    initialY: y,
+                    animOffset: Math.random() * Math.PI * 2
+                };
+                
+                scene.add(sphere);
+                sceneObjects.push(sphere);
+                scatterParticles.push(sphere);
+            }
+
+            // 3. Generate Ribbon (Trend Line)
+            createRibbon();
+
+            updateStats();
         }
 
-        // --- Interaction: Tooltip ---
+        function createRibbon() {
+            // Create a path based on a sine wave through the grid
+            const curvePoints = [];
+            for (let i = -40; i <= 40; i += 10) {
+                const x = i;
+                const z = Math.sin(i * 0.1) * 20;
+                const y = 15 + Math.cos(i * 0.2) * 10;
+                curvePoints.push(new THREE.Vector3(x, y, z));
+                
+                generatedData.push({
+                    id: `ribbon_pt_${i}`, type: 'Ribbon Point', x: x, y: y, z: z, value: y
+                });
+            }
+
+            const curve = new THREE.CatmullRomCurve3(curvePoints);
+            const geometry = new THREE.TubeGeometry(curve, 64, 1, 8, false);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0xff007f, 
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            const tube = new THREE.Mesh(geometry, material);
+            tube.castShadow = true;
+            
+            // Add simple animation data
+            tube.userData = { type: 'Trend Ribbon', value: 'Avg Trend' };
+            
+            scene.add(tube);
+            sceneObjects.push(tube);
+        }
+
+        function updateStats() {
+            const count = generatedData.length;
+            const values = generatedData.map(d => parseFloat(d.value));
+            const max = Math.max(...values).toFixed(2);
+            const avg = (values.reduce((a, b) => a + b, 0) / count).toFixed(2);
+
+            document.getElementById('count-stat').textContent = count;
+            document.getElementById('max-stat').textContent = max;
+            document.getElementById('avg-stat').textContent = avg;
+        }
+
+        // --- Interaction & UI Logic ---
+
         function onPointerMove(event) {
             pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
             pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-            // Update Raycaster
+            // Update Tooltip
             raycaster.setFromCamera(pointer, camera);
-            const intersects = raycaster.intersectObjects(mainGroup.children);
+            const intersects = raycaster.intersectObjects(sceneObjects);
+
             const tooltip = document.getElementById('tooltip');
 
             if (intersects.length > 0) {
-                if (intersectedObject != intersects[0].object) {
-                    // Reset previous
-                    if (intersectedObject && intersectedObject.material.emissive) {
-                        intersectedObject.material.emissive.setHex(intersectedObject.currentHex);
-                    }
-
-                    intersectedObject = intersects[0].object;
-                    
-                    // Highlight
-                    if(intersectedObject.material.emissive) {
-                        intersectedObject.currentHex = intersectedObject.material.emissive.getHex();
-                        intersectedObject.material.emissive.setHex(0x555555);
-                    }
-
-                    // Show Tooltip
-                    const d = intersectedObject.userData;
-                    tooltip.style.display = 'block';
-                    tooltip.innerHTML = `
-                        <strong>${d.category}</strong> (${d.type})<br/>
-                        Value: ${d.value}<br/>
-                        Pos: [${d.x?.toFixed(1)}, ${d.z?.toFixed(1)}]
-                    `;
-                }
+                const object = intersects[0].object;
                 
-                // Move tooltip with mouse
-                tooltip.style.left = event.clientX + 15 + 'px';
-                tooltip.style.top = event.clientY + 15 + 'px';
-
-            } else {
-                if (intersectedObject) {
-                    if(intersectedObject.material.emissive) {
-                        intersectedObject.material.emissive.setHex(intersectedObject.currentHex);
+                // Highlight logic
+                if (hoveredObj !== object) {
+                    if (hoveredObj && hoveredObj.material.emissive) hoveredObj.material.emissive.setHex(hoveredObj.currentEmissive);
+                    
+                    hoveredObj = object;
+                    if(hoveredObj.material.emissive) {
+                        hoveredObj.currentEmissive = hoveredObj.material.emissive.getHex();
+                        hoveredObj.material.emissive.setHex(0xffffff);
                     }
-                    intersectedObject = null;
                 }
-                tooltip.style.display = 'none';
-            }
-        }
 
-        // --- Logic: Camera Animation ---
-        function moveCamera(view) {
-            const duration = 1000; // ms
-            let targetPos = { x: 0, y: 0, z: 0 };
-            
-            switch(view) {
-                case 'top': targetPos = { x: 0, y: 50, z: 0 }; break;
-                case 'side': targetPos = { x: 40, y: 5, z: 0 }; break;
-                case 'iso': targetPos = { x: 30, y: 25, z: 30 }; break;
-            }
+                // Tooltip Content
+                const data = object.userData;
+                tooltip.innerHTML = `<strong>${data.type || 'Object'}</strong><br>Val: ${data.value || 'N/A'}`;
+                
+                // Tooltip Position
+                const x = event.clientX;
+                const y = event.clientY;
+                tooltip.style.left = `${x}px`;
+                tooltip.style.top = `${y}px`;
+                tooltip.style.opacity = 1;
+                document.body.style.cursor = 'pointer';
 
-            new TWEEN.Tween(camera.position)
-                .to(targetPos, duration)
-                .easing(TWEEN.Easing.Quadratic.Out)
-                .start();
-            
-            new TWEEN.Tween(controls.target)
-                .to({ x: 0, y: 0, z: 0 }, duration)
-                .easing(TWEEN.Easing.Quadratic.Out)
-                .start();
-        }
-
-        // --- Logic: Theme Toggle ---
-        function toggleTheme() {
-            isDarkMode = !isDarkMode;
-            const theme = isDarkMode ? CONFIG.colors.dark : CONFIG.colors.light;
-            const uiPanel = document.querySelector('.panel');
-            const heading = document.querySelector('h1');
-
-            scene.background.setHex(theme.bg);
-            scene.fog.color.setHex(theme.fog);
-            
-            // Grid color update
-            scene.remove(gridHelper);
-            gridHelper = new THREE.GridHelper(CONFIG.gridSize, CONFIG.divisions, theme.grid, theme.grid);
-            scene.add(gridHelper);
-
-            // UI Colors
-            if(!isDarkMode) {
-                uiPanel.style.background = "rgba(255, 255, 255, 0.8)";
-                uiPanel.style.color = "#000";
-                heading.style.color = "#000";
-                heading.style.textShadow = "none";
             } else {
-                uiPanel.style.background = "rgba(0, 0, 0, 0.6)";
-                uiPanel.style.color = "#fff";
-                heading.style.color = "#fff";
-                heading.style.textShadow = "0 2px 4px rgba(0,0,0,0.5)";
+                if (hoveredObj) {
+                    if(hoveredObj.material.emissive) hoveredObj.material.emissive.setHex(hoveredObj.currentEmissive);
+                    hoveredObj = null;
+                }
+                tooltip.style.opacity = 0;
+                document.body.style.cursor = 'default';
             }
         }
 
-        // --- Logic: CSV Export ---
-        function exportCSV() {
-            if(!generatedData.length) return;
-
-            const headers = ['Type', 'Category', 'Value', 'X', 'Y', 'Z'];
-            const rows = generatedData.map(d => 
-                `${d.type},${d.category},${d.value},${d.x.toFixed(2)},${d.y?.toFixed(2) || 0},${d.z.toFixed(2)}`
-            );
-
-            const csvContent = [headers.join(','), ...rows].join('\n');
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
+        // Export Logic
+        function exportToCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "ID,Type,X,Y,Z,Value\n";
             
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', '3d_analytics_data.csv');
-            link.style.visibility = 'hidden';
+            generatedData.forEach(row => {
+                csvContent += `${row.id},${row.type},${row.x},${row.y},${row.z},${row.value}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "analytics_data_3d.csv");
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         }
+
+        // Theme Logic
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('light-mode');
+            
+            const theme = isDarkMode ? COLORS.dark : COLORS.light;
+            
+            scene.background.setHex(theme.bg);
+            scene.fog.color.setHex(theme.bg);
+            
+            // Update Grid
+            setupHelpers();
+        }
+
+        // Camera Animation (Exposed to window for HTML buttons)
+        window.moveCamera = function(view) {
+            let pos = { x: 0, y: 0, z: 0 };
+            let target = { x: 0, y: 0, z: 0 };
+
+            switch(view) {
+                case 'top':
+                    pos = { x: 0, y: 90, z: 0 };
+                    target = { x: 0, y: 0, z: 0 };
+                    break;
+                case 'side':
+                    pos = { x: 80, y: 10, z: 0 };
+                    target = { x: 0, y: 10, z: 0 };
+                    break;
+                case 'iso':
+                    pos = { x: 60, y: 50, z: 60 };
+                    target = { x: 0, y: 0, z: 0 };
+                    break;
+                case 'detail':
+                    // Find a random bar to look at
+                    const randObj = sceneObjects[Math.floor(Math.random() * 10)];
+                    pos = { x: randObj.position.x + 10, y: 20, z: randObj.position.z + 10 };
+                    target = { x: randObj.position.x, y: 5, z: randObj.position.z };
+                    break;
+            }
+
+            // Animate Position
+            new TWEEN.Tween(camera.position)
+                .to(pos, 1500)
+                .easing(TWEEN.Easing.Cubic.InOut)
+                .start();
+
+            // Animate LookAt (OrbitControls target)
+            new TWEEN.Tween(controls.target)
+                .to(target, 1500)
+                .easing(TWEEN.Easing.Cubic.InOut)
+                .onUpdate(() => controls.update())
+                .start();
+        };
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -449,16 +565,20 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // Animation Loop
         function animate(time) {
             requestAnimationFrame(animate);
             TWEEN.update(time);
             controls.update();
+
+            // Animate Scatter Points (Floating)
+            const now = Date.now() * CONFIG.animSpeed;
+            scatterParticles.forEach(p => {
+                p.position.y = p.userData.initialY + Math.sin(now + p.userData.animOffset) * 2;
+            });
+
             renderer.render(scene, camera);
         }
-
-        // Run
-        init();
-
     </script>
 </body>
 </html>

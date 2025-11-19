@@ -7,26 +7,25 @@
     <style>
         body {
             margin: 0;
-            overflow: hidden;
-            background-color: #050505; /* Dark background for contrast */
-            font-family: sans-serif;
+            overflow: hidden; /* Prevent scrollbars */
+            background-color: #050505;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         #info {
             position: absolute;
             top: 10px;
             width: 100%;
             text-align: center;
-            color: rgba(255, 255, 255, 0.6);
+            color: #ffffff;
             pointer-events: none;
-            z-index: 1;
+            text-shadow: 0 0 5px #000;
+            z-index: 10;
+        }
+        canvas {
+            display: block;
         }
     </style>
-</head>
-<body>
-
-    <div id="info">Move your mouse to direct the particle stream</div>
-
-    <!-- Import Three.js from CDN -->
+    <!-- Import Three.js as a module -->
     <script type="importmap">
         {
             "imports": {
@@ -34,226 +33,216 @@
             }
         }
     </script>
+</head>
+<body>
+
+    <div id="info">
+        <h2>Magical Particle Stream</h2>
+        <p>Move your mouse to control the emitter source.</p>
+    </div>
 
     <script type="module">
         import * as THREE from 'three';
 
         // --- Configuration ---
-        const PARTICLE_COUNT = 10000;
-        const GRAVITY = -0.05;
-        const DRAG = 0.995; // Air resistance
-        const PARTICLE_SIZE = 0.8;
-        const EMITTER_SPREAD = 0.5;
+        const PARTICLE_COUNT = 15000;
+        const GRAVITY = -0.15;
+        const BASE_VELOCITY = 4.0;
+        const SPREAD = 1.5;
+        
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let particles, particleGeometry, particleMaterial;
+        
+        // We store custom physics data here (velocity, life)
+        const velocities = []; 
+        const lives = []; // 0 to 1 value representing particle life cycle
+        
+        // Mouse interaction
+        const mouse = new THREE.Vector2();
+        const targetPos = new THREE.Vector3(0, 0, 0);
+        const windowHalfX = window.innerWidth / 2;
+        const windowHalfY = window.innerHeight / 2;
 
-        // --- Setup Scene ---
-        const scene = new THREE.Scene();
-        // Add some fog for depth
-        scene.fog = new THREE.FogExp2(0x050505, 0.002);
+        // Color cycling
+        let hue = 0;
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 50;
-        camera.position.y = 10;
-
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        document.body.appendChild(renderer.domElement);
-
-        // --- Texture Generation (Soft Glow) ---
-        // Creating a texture programmatically prevents CORS issues with external images
-        function getTexture() {
+        // --- Helper: Create a soft glow texture on the fly ---
+        function createParticleTexture() {
             const canvas = document.createElement('canvas');
             canvas.width = 32;
             canvas.height = 32;
-            const ctx = canvas.getContext('2d');
-
-            const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
-            gradient.addColorStop(0, 'rgba(255,255,255,1)');
-            gradient.addColorStop(0.2, 'rgba(255,255,255,0.8)');
-            gradient.addColorStop(0.5, 'rgba(255,255,255,0.2)');
-            gradient.addColorStop(1, 'rgba(0,0,0,0)');
-
-            ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, 32, 32);
-
+            const context = canvas.getContext('2d');
+            
+            // Draw a radial gradient
+            const gradient = context.createRadialGradient(16, 16, 0, 16, 16, 16);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 32, 32);
+            
             const texture = new THREE.Texture(canvas);
             texture.needsUpdate = true;
             return texture;
         }
 
-        // --- Particle System Setup ---
-        
-        // Geometry holds the data for all particles
-        const geometry = new THREE.BufferGeometry();
-        
-        // Arrays to hold data for BufferAttributes
-        const positions = new Float32Array(PARTICLE_COUNT * 3);
-        const colors = new Float32Array(PARTICLE_COUNT * 3);
-        
-        // Custom arrays to hold physics data (Velocity and Life)
-        // These act as our state management, not sent directly to GPU
-        const velocities = []; 
-        const lifeSpans = []; 
+        function init() {
+            // 1. Scene Setup
+            scene = new THREE.Scene();
+            // Add some subtle fog for depth
+            scene.fog = new THREE.FogExp2(0x050505, 0.002);
 
-        // Initialize Particles
-        for (let i = 0; i < PARTICLE_COUNT; i++) {
-            // Initial Position (Hidden initially)
-            positions[i * 3] = 0;
-            positions[i * 3 + 1] = -1000; // Start off screen
-            positions[i * 3 + 2] = 0;
+            // 2. Camera Setup
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.z = 100;
+            camera.position.y = 20;
+            camera.lookAt(0, 0, 0);
 
-            // Initial Color (White)
-            colors[i * 3] = 1;
-            colors[i * 3 + 1] = 1;
-            colors[i * 3 + 2] = 1;
+            // 3. Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
 
-            // Physics Data
-            velocities.push({
-                x: (Math.random() - 0.5),
-                y: (Math.random() - 0.5),
-                z: (Math.random() - 0.5)
+            // 4. Particle System Initialization
+            particleGeometry = new THREE.BufferGeometry();
+            
+            const positions = [];
+            const colors = [];
+
+            const colorObj = new THREE.Color();
+
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // Initial Positions (start at center)
+                positions.push(0, -100, 0); // Start hidden
+
+                // Initial Velocities
+                const vx = (Math.random() - 0.5) * SPREAD;
+                const vy = (Math.random() * BASE_VELOCITY) + 2; // Always up
+                const vz = (Math.random() - 0.5) * SPREAD;
+                
+                velocities.push({ x: vx, y: vy, z: vz });
+
+                // Initial Life (staggered so they don't all spawn at once)
+                lives.push(Math.random());
+
+                // Initial Colors (white/blueish)
+                colorObj.setHSL(0.6, 1.0, 0.5);
+                colors.push(colorObj.r, colorObj.g, colorObj.b);
+            }
+
+            particleGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            particleGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            // Material
+            particleMaterial = new THREE.PointsMaterial({
+                size: 1.5,
+                map: createParticleTexture(),
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                transparent: true,
+                opacity: 0.8
             });
 
-            // Stagger start times so they don't all explode at once
-            lifeSpans.push({
-                current: 0,
-                max: 0, // Will be set on spawn
-                active: false
-            });
+            particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+
+            // 5. Event Listeners
+            document.addEventListener('mousemove', onDocumentMouseMove);
+            window.addEventListener('resize', onWindowResize);
         }
 
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-        // Material
-        const material = new THREE.PointsMaterial({
-            size: PARTICLE_SIZE,
-            map: getTexture(),
-            vertexColors: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            transparent: true,
-            opacity: 0.8
-        });
-
-        const particleSystem = new THREE.Points(geometry, material);
-        scene.add(particleSystem);
-
-        // --- Mouse Interaction ---
-        const mouse = new THREE.Vector2();
-        const targetPos = new THREE.Vector3(0, 0, 0);
-        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Invisible plane at Z=0
-        const raycaster = new THREE.Raycaster();
-
-        window.addEventListener('mousemove', (event) => {
-            // Normalize mouse coordinates (-1 to +1)
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        function onDocumentMouseMove(event) {
+            // Normalize mouse position (-1 to +1)
+            mouse.x = (event.clientX - windowHalfX) / 20; // Scaling factor for movement range
+            mouse.y = -(event.clientY - windowHalfY) / 20;
             
-            // Project mouse to 3D world coordinates
-            raycaster.setFromCamera(mouse, camera);
-            raycaster.ray.intersectPlane(plane, targetPos);
-        });
+            // Update target position for the emitter
+            targetPos.x = mouse.x * 5; // Multiplier defines how far emitter moves
+            targetPos.y = mouse.y * 3;
+        }
 
-        // --- Animation Loop ---
-        const clock = new THREE.Clock();
-        let hueOffset = 0;
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            
+            // Update centers
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+        }
 
-        function resetParticle(index) {
-            // Reset position to mouse/target position
-            positions[index * 3] = targetPos.x + (Math.random() - 0.5) * EMITTER_SPREAD;
-            positions[index * 3 + 1] = targetPos.y + (Math.random() - 0.5) * EMITTER_SPREAD;
-            positions[index * 3 + 2] = targetPos.z + (Math.random() - 0.5) * EMITTER_SPREAD;
+        function updateParticles() {
+            const positions = particleGeometry.attributes.position.array;
+            const colors = particleGeometry.attributes.color.array;
+            
+            // Cycle the base hue over time
+            hue += 0.001;
+            if (hue > 1) hue = 0;
 
-            // Reset Velocity (Explosion/Fountain effect)
-            // Upward bias + random spread
-            velocities[index].x = (Math.random() - 0.5) * 1.5;
-            velocities[index].y = (Math.random() * 1.5) + 0.5; // Push up
-            velocities[index].z = (Math.random() - 0.5) * 1.5;
+            const colorHelper = new THREE.Color();
 
-            // Reset Life
-            lifeSpans[index].active = true;
-            lifeSpans[index].current = 0;
-            lifeSpans[index].max = 100 + Math.random() * 100; // Random frames of life
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                // Index for the position array (x, y, z)
+                const i3 = i * 3;
+
+                // Update Physics
+                velocities[i].y += GRAVITY; // Apply gravity
+                
+                // Apply velocity to position
+                positions[i3] += velocities[i].x;
+                positions[i3 + 1] += velocities[i].y;
+                positions[i3 + 2] += velocities[i].z;
+
+                // Check Floor Collision / Death
+                // If particle falls below -40, respawn it at the emitter
+                if (positions[i3 + 1] < -40) {
+                    // Reset Position to the "Target" (Mouse position)
+                    positions[i3] = targetPos.x;
+                    positions[i3 + 1] = targetPos.y;
+                    positions[i3 + 2] = 0; // Keep Z relatively flat for the source
+
+                    // Reset Velocity (Explosion/Fountain effect)
+                    const speed = Math.random() * 0.5 + 0.5; // variance
+                    // Random cone spread
+                    const angle = Math.random() * Math.PI * 2;
+                    const radius = Math.random() * 0.5;
+
+                    velocities[i].x = Math.cos(angle) * radius + (Math.random() - 0.5);
+                    velocities[i].y = (Math.random() * BASE_VELOCITY * 0.8) + 2; 
+                    velocities[i].z = Math.sin(angle) * radius + (Math.random() - 0.5);
+
+                    // Reset Color based on global Hue
+                    // We vary the hue slightly per particle for richness
+                    colorHelper.setHSL(hue + (Math.random() * 0.1), 0.8, 0.6);
+                    colors[i3] = colorHelper.r;
+                    colors[i3 + 1] = colorHelper.g;
+                    colors[i3 + 2] = colorHelper.b;
+                }
+            }
+
+            // Mark attributes as needing update for the GPU
+            particleGeometry.attributes.position.needsUpdate = true;
+            particleGeometry.attributes.color.needsUpdate = true;
         }
 
         function animate() {
             requestAnimationFrame(animate);
 
-            // Cycle global hue for rainbow effect
-            hueOffset += 0.002;
-
-            // --- Physics Update ---
-            const positionAttribute = geometry.attributes.position;
-            const colorAttribute = geometry.attributes.color;
-
-            // We use a spawn rate to prevent all particles resetting exactly at once
-            let spawnRate = 20; 
-
-            for (let i = 0; i < PARTICLE_COUNT; i++) {
-                const life = lifeSpans[i];
-
-                if (life.active) {
-                    // 1. Apply Gravity
-                    velocities[i].y += GRAVITY;
-
-                    // 2. Apply Drag (Air resistance)
-                    velocities[i].x *= DRAG;
-                    velocities[i].y *= DRAG;
-                    velocities[i].z *= DRAG;
-
-                    // 3. Update Position
-                    positions[i * 3] += velocities[i].x;
-                    positions[i * 3 + 1] += velocities[i].y;
-                    positions[i * 3 + 2] += velocities[i].z;
-
-                    // 4. Update Color based on life and global hue
-                    // As particle ages, it shifts color
-                    const color = new THREE.Color();
-                    const hue = (hueOffset + (life.current * 0.005)) % 1; 
-                    const lightness = 0.5 + (0.5 * (1 - (life.current / life.max))); // Fade out light
-                    
-                    color.setHSL(hue, 1.0, lightness);
-
-                    colors[i * 3] = color.r;
-                    colors[i * 3 + 1] = color.g;
-                    colors[i * 3 + 2] = color.b;
-
-                    // 5. Life Logic
-                    life.current++;
-
-                    // Kill if too old or too low
-                    if (life.current > life.max || positions[i * 3 + 1] < -30) {
-                        life.active = false;
-                    }
-
-                } else if (spawnRate > 0) {
-                    // Respawn dead particles
-                    resetParticle(i);
-                    spawnRate--;
-                }
-            }
-
-            // Flag attributes as needing update for the GPU
-            positionAttribute.needsUpdate = true;
-            colorAttribute.needsUpdate = true;
-
-            // Slowly rotate camera for dynamic view
-            const time = clock.getElapsedTime();
-            camera.position.x = Math.sin(time * 0.1) * 5;
-            camera.lookAt(0, 0, 0);
+            updateParticles();
+            
+            // Slowly rotate the whole system for cinematic effect
+            particles.rotation.y += 0.001;
 
             renderer.render(scene, camera);
         }
 
-        // Handle Window Resize
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        // Start
+        // Start the application
+        init();
         animate();
 
     </script>

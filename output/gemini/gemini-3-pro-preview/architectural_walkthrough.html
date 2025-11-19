@@ -5,162 +5,122 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Procedural Architectural Walkthrough</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #111; color: white; }
-        #canvas-container { width: 100%; height: 100vh; display: block; }
-        
-        /* UI Overlays */
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; }
-        
-        /* Crosshair */
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #000; }
+        #blocker {
+            position: absolute; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5); display: flex;
+            flex-direction: column; justify-content: center; align-items: center; z-index: 10;
+        }
+        #instructions {
+            font-size: 24px; color: white; text-align: center; cursor: pointer;
+            padding: 20px; border: 2px solid white; background: rgba(0,0,0,0.8);
+        }
         #crosshair {
             position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
-            background: rgba(255, 255, 255, 0.8); border-radius: 50%;
-            transform: translate(-50%, -50%); border: 1px solid black;
+            border: 2px solid rgba(255, 255, 255, 0.8); border-radius: 50%;
+            transform: translate(-50%, -50%); pointer-events: none; z-index: 5;
         }
-
-        /* Minimap */
         #minimap-container {
             position: absolute; top: 20px; right: 20px;
             width: 200px; height: 200px;
-            background: rgba(0, 0, 0, 0.5); border: 2px solid #555;
-            border-radius: 8px; overflow: hidden;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #444;
+            border-radius: 5px;
+            z-index: 5;
         }
         #minimap { width: 100%; height: 100%; }
-
-        /* Interaction Prompt */
-        #interaction-msg {
-            position: absolute; top: 55%; left: 50%; transform: translate(-50%, 0);
-            background: rgba(0, 0, 0, 0.7); padding: 10px 20px; border-radius: 20px;
-            font-size: 14px; opacity: 0; transition: opacity 0.2s; text-align: center;
+        #ui-interaction {
+            position: absolute; bottom: 20px; width: 100%; text-align: center;
+            color: #fff; font-size: 18px; font-weight: bold; pointer-events: none;
+            text-shadow: 1px 1px 2px black; display: none;
         }
-
-        /* Instructions & Start Screen */
-        #blocker {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center;
-            z-index: 10; pointer-events: auto;
-        }
-        #instructions {
-            width: 500px; height: 300px;
-            background: rgba(20, 20, 20, 0.9);
-            border: 1px solid #444; border-radius: 10px; padding: 40px;
-            text-align: center; cursor: pointer;
-        }
-        h1 { margin-top: 0; font-weight: 300; color: #4da6ff; }
-        .key { display: inline-block; background: #333; padding: 4px 8px; border-radius: 4px; margin: 0 2px; border-bottom: 2px solid #111; font-family: monospace;}
-        
-        /* Debug / Info */
-        #debug-info { position: absolute; bottom: 10px; left: 10px; font-size: 12px; color: #888; }
+        .loading { color: #aaa; font-size: 14px; margin-top: 10px;}
     </style>
+    <!-- Import Map for Three.js modules -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
 <body>
-
-    <!-- 3D Canvas -->
-    <div id="canvas-container"></div>
-
-    <!-- UI Layer -->
-    <div id="ui-layer">
-        <div id="crosshair"></div>
-        <div id="minimap-container">
-            <canvas id="minimap" width="200" height="200"></canvas>
-        </div>
-        <div id="interaction-msg">Press <span class="key">E</span> to Interact</div>
-        <div id="debug-info">Room Culling: Active | Light Probes: Baked</div>
+    <div id="crosshair"></div>
+    <div id="ui-interaction">Press [E] to Interact</div>
+    
+    <div id="minimap-container">
+        <canvas id="minimap"></canvas>
     </div>
 
-    <!-- Start Screen -->
     <div id="blocker">
         <div id="instructions">
-            <h1>Architectural Walkthrough</h1>
-            <p>
-                Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span><br>
-                Look: Mouse<br>
-                Interact: <span class="key">E</span><br>
-            </p>
-            <p style="font-size: 14px; color: #aaa; margin-top: 30px;">
-                Features: Procedural Generation, Collision, Room Culling, <br>Baked Lighting Simulation, Interactive Furniture.
-            </p>
-            <p style="margin-top: 40px; font-size: 20px; font-weight: bold;">CLICK TO START</p>
+            <p style="font-size:36px">CLICK TO START</p>
+            <p>WASD to Move | MOUSE to Look</p>
+            <p>[E] to Interact with Hotspots (Glowing Orbs)</p>
+            <div class="loading">Generating procedural environment...</div>
         </div>
     </div>
 
-    <!-- Three.js Logic -->
     <script type="module">
-        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-        import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+        import * as THREE from 'three';
+        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+        import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 
-        // --- Global Variables ---
+        // --- Configuration ---
+        const WALL_HEIGHT = 4;
+        const CELL_SIZE = 5; // Size of one grid unit in meters
+        const PLAYER_HEIGHT = 1.7;
+        const PLAYER_SPEED = 6.0;
+        const PLAYER_RADIUS = 0.8;
+        
+        // --- Globals ---
         let camera, scene, renderer, controls;
         let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
         let prevTime = performance.now();
         const velocity = new THREE.Vector3();
         const direction = new THREE.Vector3();
         
-        // Architecture Storage
-        const walls = []; // Array of meshes for collision
-        const rooms = []; // { x, z, w, h, id, objects: [] }
-        const interactables = []; // { mesh, type, action }
+        // World Objects
+        const walls = [];
+        const rooms = []; // For culling
+        const interactables = [];
+        let houseGrid = []; // 2D array representing the map
         
         // Minimap
-        const mapCanvas = document.getElementById('minimap');
-        const mapCtx = mapCanvas.getContext('2d');
-        const mapScale = 5; 
-        const houseSize = 60; // Total grid size
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+        let mapWidth, mapHeight;
 
         // Raycaster for Interaction
         const raycaster = new THREE.Raycaster();
         const centerScreen = new THREE.Vector2(0, 0);
-        let currentIntersect = null;
+        const uiInteraction = document.getElementById('ui-interaction');
 
         init();
         animate();
 
         function init() {
-            // 1. Setup Scene
+            // 1. Setup Basic Scene
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xdddddd);
-            // Fog for depth and hiding culling artifacts
-            scene.fog = new THREE.Fog(0xdddddd, 0, 40);
+            scene.background = new THREE.Color(0x111111);
+            scene.fog = new THREE.Fog(0x111111, 0, 30); // Mood and draw distance masking
 
-            // 2. Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
             
-            // 3. Renderer
+            // 2. Renderer Setup
             renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true; // Enable shadows
+            renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            // Output encoding for realistic light
-            renderer.outputColorSpace = THREE.SRGBColorSpace;
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            document.body.appendChild(renderer.domElement);
 
-            // 4. Lighting (Simulating Baked/IBL)
-            // Hemisphere light acts as IBL/Ambient
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6); 
-            hemiLight.position.set(0, 20, 0);
-            scene.add(hemiLight);
+            // Initialize RectAreaLights (simulates windows/panels)
+            RectAreaLightUniformsLib.init();
 
-            // Directional Light (Sun)
-            const dirLight = new THREE.DirectionalLight(0xffdfba, 1.5);
-            dirLight.position.set(50, 100, 50);
-            dirLight.castShadow = true;
-            dirLight.shadow.camera.top = 50;
-            dirLight.shadow.camera.bottom = -50;
-            dirLight.shadow.camera.left = -50;
-            dirLight.shadow.camera.right = 50;
-            dirLight.shadow.mapSize.width = 2048;
-            dirLight.shadow.mapSize.height = 2048;
-            scene.add(dirLight);
-
-            // Light Probe (Simulating Global Illumination capture)
-            const lightProbe = new THREE.LightProbe();
-            scene.add(lightProbe);
-            // Normally we'd load SH data here, but we'll leave it default to affect PBR materials slightly
-
-            // 5. Procedural House Generation
-            generateHouse();
-
-            // 6. Controls
+            // 3. Controls
             controls = new PointerLockControls(camera, document.body);
 
             const blocker = document.getElementById('blocker');
@@ -177,12 +137,12 @@
 
             controls.addEventListener('unlock', function () {
                 blocker.style.display = 'flex';
-                instructions.style.display = '';
+                instructions.style.display = 'block';
             });
 
             scene.add(controls.getObject());
 
-            // Keyboard Listeners
+            // Inputs
             const onKeyDown = function (event) {
                 switch (event.code) {
                     case 'ArrowUp': case 'KeyW': moveForward = true; break;
@@ -204,458 +164,498 @@
 
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
-
-            // Handle Resize
             window.addEventListener('resize', onWindowResize);
-        }
 
-        // --- Procedural Generation Logic ---
-
-        function generateHouse() {
-            // Common Materials
-            const matWall = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-            const matFloor = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.5, metalness: 0.1 });
-            const matCeiling = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-
-            // Define Layout (Abstract grid units)
-            const layout = [
-                { x: 0, z: 0, w: 20, d: 10, name: 'Hallway', type: 'hall' },
-                { x: -15, z: -10, w: 15, d: 15, name: 'Living Room', type: 'living' },
-                { x: 15, z: -10, w: 15, d: 15, name: 'Kitchen', type: 'kitchen' },
-                { x: 0, z: -15, w: 10, d: 10, name: 'Bedroom', type: 'bed' },
-            ];
-
-            layout.forEach((roomData, index) => {
-                // Create Room Floor
-                const floorGeo = new THREE.PlaneGeometry(roomData.w, roomData.d);
-                const floor = new THREE.Mesh(floorGeo, matFloor);
-                floor.rotation.x = -Math.PI / 2;
-                floor.position.set(roomData.x, 0, roomData.z);
-                floor.receiveShadow = true;
-                scene.add(floor);
-
-                // Create Ceiling
-                const ceilGeo = new THREE.PlaneGeometry(roomData.w, roomData.d);
-                const ceiling = new THREE.Mesh(ceilGeo, matCeiling);
-                ceiling.rotation.x = Math.PI / 2;
-                ceiling.position.set(roomData.x, 4, roomData.z); // Height 4
-                scene.add(ceiling);
-
-                // Store room info for logic
-                const roomObj = {
-                    id: index,
-                    bounds: new THREE.Box3().setFromObject(floor),
-                    center: new THREE.Vector3(roomData.x, 2, roomData.z),
-                    contents: []
-                };
-
-                // Generate Walls (Simple Box Extrusions)
-                createWallsForRoom(roomData, matWall);
-
-                // Add Room Light (Simulating baked GI per room)
-                const roomLight = new THREE.PointLight(0xffeedd, 10, 20);
-                roomLight.position.set(roomData.x, 3.5, roomData.z);
-                scene.add(roomLight);
-                roomObj.contents.push(roomLight);
-
-                // Add Furniture based on type
-                if(roomData.type === 'living') addLivingRoomFurniture(roomData, roomObj);
-                if(roomData.type === 'kitchen') addKitchenFurniture(roomData, roomObj);
-                if(roomData.type === 'bed') addBedroomFurniture(roomData, roomObj);
-                if(roomData.type === 'hall') addHallDecor(roomData, roomObj);
-
-                rooms.push(roomObj);
-            });
-
-            // Initial Player Position
-            controls.getObject().position.set(0, 1.7, 0);
-        }
-
-        function createWallsForRoom(data, material) {
-            const thickness = 0.5;
-            const height = 4;
+            // 4. Procedural Generation
+            generateTextures(); // Create textures without loading images
+            generateFloorPlan(6, 6); // Create 6x6 grid house
+            buildHouse(); // Instantiate meshes
             
-            // 4 Walls relative to center
-            const configs = [
-                { pos: [0, data.d/2], dim: [data.w, thickness] }, // Front
-                { pos: [0, -data.d/2], dim: [data.w, thickness] }, // Back
-                { pos: [-data.w/2, 0], dim: [thickness, data.d] }, // Left
-                { pos: [data.w/2, 0], dim: [thickness, data.d] }  // Right
-            ];
+            // Initial Spawn
+            const startRoom = rooms[0];
+            controls.getObject().position.set(startRoom.centerX, PLAYER_HEIGHT, startRoom.centerZ);
+        }
 
-            configs.forEach(cfg => {
-                // Doorway logic: If wall is near 0 (hallway connection), make gaps
-                let isDoorway = false;
+        // --- Procedural Texture Generation ---
+        let woodTexture, wallTexture, floorTexture, fabricTexture;
+
+        function generateTextures() {
+            const createCanvasTexture = (color1, color2, noiseScale = 1, type = 'noise') => {
+                const size = 512;
+                const canvas = document.createElement('canvas');
+                canvas.width = size;
+                canvas.height = size;
+                const ctx = canvas.getContext('2d');
                 
-                // Very simple logic: if the wall crosses the axis where rooms connect
-                // Hallway is at 0,0. 
-                const worldX = data.x + cfg.pos[0];
-                const worldZ = data.z + cfg.pos[1];
+                // Base color
+                ctx.fillStyle = color1;
+                ctx.fillRect(0,0,size,size);
 
-                // Check for doorways based on layout coordinates (hardcoded connection logic for this proc-gen)
-                if ((data.type !== 'hall' && Math.abs(worldX) < 5 && Math.abs(worldZ) < 5) ||
-                    (data.type === 'hall')) {
-                    // It's a connection area, create door frame instead of full wall
-                    // Or simply skip wall segment to create an opening
-                    // For this demo: Split wall into two parts to make a door
-                    
-                    // If it is a solid wall, add it
-                    // Simplification: Just punch holes in specific known directions
-                    
-                    // If this wall segment is adjacent to the central hallway area...
-                    if(Math.abs(worldX) < 10 && Math.abs(worldZ) < 10) {
-                         // Make a door gap
-                         createDoorWall(data.x + cfg.pos[0], data.z + cfg.pos[1], cfg.dim[0], cfg.dim[1], height, material, cfg.dim[0] > cfg.dim[1]);
-                         return;
+                if(type === 'noise'){
+                    for(let i=0; i<50000; i++){
+                        ctx.fillStyle = color2;
+                        ctx.globalAlpha = 0.1 * noiseScale;
+                        const x = Math.random() * size;
+                        const y = Math.random() * size;
+                        ctx.fillRect(x, y, 2, 2);
+                    }
+                } else if (type === 'planks') {
+                    ctx.strokeStyle = color2;
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = 0.5;
+                    // Horizontal lines
+                    for(let i=0; i<size; i+=64) {
+                        ctx.beginPath();
+                        ctx.moveTo(0, i);
+                        ctx.lineTo(size, i);
+                        ctx.stroke();
+                        // Random vertical cuts for planks
+                        for(let j=0; j<size; j+=128) {
+                            if(Math.random() > 0.5) {
+                                const offset = (i/64) % 2 === 0 ? 0 : 64;
+                                ctx.beginPath();
+                                ctx.moveTo(j + offset, i);
+                                ctx.lineTo(j + offset, i+64);
+                                ctx.stroke();
+                            }
+                        }
                     }
                 }
 
-                // Solid Wall
-                const geo = new THREE.BoxGeometry(cfg.dim[0], height, cfg.dim[1]);
-                const mesh = new THREE.Mesh(geo, material);
-                mesh.position.set(data.x + cfg.pos[0], height/2, data.z + cfg.pos[1]);
+                const tex = new THREE.CanvasTexture(canvas);
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                return tex;
+            };
+
+            woodTexture = createCanvasTexture('#8B5A2B', '#3d2314', 1, 'planks');
+            wallTexture = createCanvasTexture('#e0e0e0', '#999999', 1.5);
+            floorTexture = createCanvasTexture('#555555', '#333333', 1, 'planks'); 
+            fabricTexture = createCanvasTexture('#4A6fa5', '#111111', 2);
+        }
+
+        // --- House Generation Logic ---
+        function generateFloorPlan(width, height) {
+            // 1 = Wall, 0 = Empty/Room
+            houseGrid = Array(height).fill().map(() => Array(width).fill(1));
+            
+            // Simple recursive division or room placer
+            // Let's use a simple room carving approach
+            const numRooms = 6;
+            const roomList = [];
+
+            for(let i=0; i<numRooms; i++) {
+                const roomW = Math.floor(Math.random() * 2) + 2; // 2 to 3 cells
+                const roomH = Math.floor(Math.random() * 2) + 2;
+                const x = Math.floor(Math.random() * (width - roomW - 1)) + 1;
+                const z = Math.floor(Math.random() * (height - roomH - 1)) + 1;
+
+                // Carve room
+                let overlap = false;
+                for(let rz = z; rz < z + roomH; rz++) {
+                    for(let rx = x; rx < x + roomW; rx++) {
+                        houseGrid[rz][rx] = 0;
+                    }
+                }
+                
+                roomList.push({x, z, w: roomW, h: roomH});
+            }
+
+            // Connect rooms with corridors (Naive approach: connect to center)
+            // Just carving paths between rooms sequentially
+            for(let i=0; i<roomList.length - 1; i++) {
+                const r1 = roomList[i];
+                const r2 = roomList[i+1];
+                
+                let cx = r1.x + Math.floor(r1.w/2);
+                let cz = r1.z + Math.floor(r1.h/2);
+                let tx = r2.x + Math.floor(r2.w/2);
+                let tz = r2.z + Math.floor(r2.h/2);
+
+                // Move X
+                while(cx !== tx) {
+                    houseGrid[cz][cx] = 0;
+                    cx += (cx < tx) ? 1 : -1;
+                }
+                // Move Z
+                while(cz !== tz) {
+                    houseGrid[cz][cx] = 0;
+                    cz += (cz < tz) ? 1 : -1;
+                }
+            }
+
+            // Border Walls
+            for(let z=0; z<height; z++) {
+                houseGrid[z][0] = 1;
+                houseGrid[z][width-1] = 1;
+            }
+            for(let x=0; x<width; x++) {
+                houseGrid[0][x] = 1;
+                houseGrid[height-1][x] = 1;
+            }
+
+            mapWidth = width;
+            mapHeight = height;
+        }
+
+        function buildHouse() {
+            const wallMat = new THREE.MeshStandardMaterial({ 
+                map: wallTexture, 
+                roughness: 0.8, 
+                color: 0xeeeeee 
+            });
+            const floorMat = new THREE.MeshStandardMaterial({ 
+                map: woodTexture, 
+                roughness: 0.5, 
+                metalness: 0.1 
+            });
+
+            // Set minimap size
+            minimapCanvas.width = mapWidth * 20;
+            minimapCanvas.height = mapHeight * 20;
+
+            // Group walls to keep scene clean
+            const houseGroup = new THREE.Group();
+            scene.add(houseGroup);
+
+            // Iterate grid
+            for (let z = 0; z < mapHeight; z++) {
+                for (let x = 0; x < mapWidth; x++) {
+                    const type = houseGrid[z][x];
+                    const posX = x * CELL_SIZE;
+                    const posZ = z * CELL_SIZE;
+
+                    if (type === 1) {
+                        // Wall
+                        const geom = new THREE.BoxGeometry(CELL_SIZE, WALL_HEIGHT, CELL_SIZE);
+                        const mesh = new THREE.Mesh(geom, wallMat);
+                        mesh.position.set(posX, WALL_HEIGHT / 2, posZ);
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        houseGroup.add(mesh);
+                        
+                        // Collision Box
+                        const box = new THREE.Box3().setFromObject(mesh);
+                        walls.push(box);
+                    } else {
+                        // Floor
+                        const fGeom = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE);
+                        const fMesh = new THREE.Mesh(fGeom, floorMat);
+                        fMesh.rotation.x = -Math.PI / 2;
+                        fMesh.position.set(posX, 0, posZ);
+                        fMesh.receiveShadow = true;
+                        houseGroup.add(fMesh);
+
+                        // Ceiling
+                        const cMesh = new THREE.Mesh(fGeom, wallMat);
+                        cMesh.rotation.x = Math.PI / 2;
+                        cMesh.position.set(posX, WALL_HEIGHT, posZ);
+                        houseGroup.add(cMesh);
+
+                        // Identify Room clusters for logic
+                        // (Simplified: every empty cell is a potential spawn/furniture spot)
+                        rooms.push({
+                            centerX: posX,
+                            centerZ: posZ,
+                            gridX: x,
+                            gridZ: z,
+                            objects: []
+                        });
+
+                        // Chance to spawn furniture or light
+                        if(Math.random() > 0.7) {
+                            spawnFurniture(posX, posZ);
+                        }
+                        
+                        // Add lights periodically
+                        if(x % 2 === 0 && z % 2 === 0) {
+                             // Soft warm Point light
+                             const light = new THREE.PointLight(0xffaa77, 50, 10);
+                             light.position.set(posX, WALL_HEIGHT - 0.5, posZ);
+                             light.castShadow = true;
+                             light.shadow.bias = -0.0001;
+                             houseGroup.add(light);
+                        }
+                    }
+                }
+            }
+            
+            // Add global ambient
+            const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x444444, 0.2 );
+            scene.add( hemiLight );
+        }
+
+        function spawnFurniture(x, z) {
+            const type = Math.random();
+            
+            if (type < 0.3) {
+                // Interactive Pedestal
+                const geo = new THREE.CylinderGeometry(0.3, 0.3, 1, 16);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.set(x, 0.5, z);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 scene.add(mesh);
+
+                // Collision for furniture
                 walls.push(new THREE.Box3().setFromObject(mesh));
-            });
-        }
 
-        function createDoorWall(x, z, w, d, h, mat, isHorizontal) {
-            // Create two smaller walls with a gap
-            const doorWidth = 3;
-            
-            if (isHorizontal) {
-                // Wall runs along X
-                const segW = (w - doorWidth) / 2;
-                const left = new THREE.Mesh(new THREE.BoxGeometry(segW, h, d), mat);
-                left.position.set(x - doorWidth/2 - segW/2, h/2, z);
-                const right = new THREE.Mesh(new THREE.BoxGeometry(segW, h, d), mat);
-                right.position.set(x + doorWidth/2 + segW/2, h/2, z);
-                const top = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, 1, d), mat);
-                top.position.set(x, h - 0.5, z);
+                // Add Hotspot
+                createHotspot(x, 1.5, z, "change_color", mesh);
+
+            } else if (type < 0.6) {
+                // Table
+                const tableGroup = new THREE.Group();
                 
-                [left, right, top].forEach(m => {
-                    m.castShadow = true; scene.add(m);
-                    walls.push(new THREE.Box3().setFromObject(m));
-                });
-            } else {
-                 // Wall runs along Z
-                const segD = (d - doorWidth) / 2;
-                const left = new THREE.Mesh(new THREE.BoxGeometry(w, h, segD), mat);
-                left.position.set(x, h/2, z - doorWidth/2 - segD/2);
-                const right = new THREE.Mesh(new THREE.BoxGeometry(w, h, segD), mat);
-                right.position.set(x, h/2, z + doorWidth/2 + segD/2);
-                const top = new THREE.Mesh(new THREE.BoxGeometry(w, 1, doorWidth), mat);
-                top.position.set(x, h - 0.5, z);
+                const topGeo = new THREE.BoxGeometry(1.5, 0.1, 1);
+                const legGeo = new THREE.BoxGeometry(0.1, 0.8, 0.1);
+                const mat = new THREE.MeshStandardMaterial({ map: woodTexture });
 
-                [left, right, top].forEach(m => {
-                    m.castShadow = true; scene.add(m);
-                    walls.push(new THREE.Box3().setFromObject(m));
+                const top = new THREE.Mesh(topGeo, mat);
+                top.position.y = 0.8;
+                top.castShadow = true;
+                tableGroup.add(top);
+
+                const positions = [[-0.6, -0.4], [0.6, -0.4], [-0.6, 0.4], [0.6, 0.4]];
+                positions.forEach(p => {
+                    const leg = new THREE.Mesh(legGeo, mat);
+                    leg.position.set(p[0], 0.4, p[1]);
+                    leg.castShadow = true;
+                    tableGroup.add(leg);
                 });
+
+                tableGroup.position.set(x, 0, z);
+                scene.add(tableGroup);
+                
+                // Collision
+                walls.push(new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(x, 0.4, z), new THREE.Vector3(1.5, 0.8, 1)));
+
+                createHotspot(x, 1.2, z, "toggle_lamp", tableGroup);
             }
         }
 
-        // --- Furniture Generators ---
-
-        function createHotspot(mesh, type, roomObj) {
-            // Create a visual indicator
-            const geometry = new THREE.SphereGeometry(0.2, 16, 16);
-            const material = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.6 });
-            const hotspot = new THREE.Mesh(geometry, material);
+        function createHotspot(x, y, z, type, targetObject) {
+            // Visual indicator (Orb)
+            const geom = new THREE.SphereGeometry(0.15, 16, 16);
+            const mat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.7 });
+            const orb = new THREE.Mesh(geom, mat);
+            orb.position.set(x, y, z);
             
-            // Position above object
-            const box = new THREE.Box3().setFromObject(mesh);
-            const center = new THREE.Vector3();
-            box.getCenter(center);
-            hotspot.position.set(center.x, box.max.y + 0.5, center.z);
-            
-            scene.add(hotspot);
-            roomObj.contents.push(hotspot);
+            // Pulse animation data
+            orb.userData = { 
+                type: type, 
+                target: targetObject, 
+                baseY: y, 
+                timeOffset: Math.random() * 100,
+                isHotspot: true
+            };
 
-            // Add to interactive list
-            interactables.push({
-                mesh: hotspot,
-                targetMesh: mesh,
-                type: type,
-                originalColor: mesh.material.color ? mesh.material.color.getHex() : 0xffffff
-            });
-
-            // Animation user data
-            hotspot.userData = { timeOffset: Math.random() * 100 };
-        }
-
-        function addLivingRoomFurniture(data, roomObj) {
-            // Sofa
-            const sofaGeo = new THREE.BoxGeometry(4, 1, 1.5);
-            const sofaMat = new THREE.MeshStandardMaterial({ color: 0x552222 });
-            const sofa = new THREE.Mesh(sofaGeo, sofaMat);
-            sofa.position.set(data.x, 0.5, data.z - 2);
-            sofa.castShadow = true;
-            scene.add(sofa);
-            roomObj.contents.push(sofa);
-            walls.push(new THREE.Box3().setFromObject(sofa)); // Collide with sofa
-            
-            createHotspot(sofa, 'color_change', roomObj);
-
-            // Table
-            const tableTop = new THREE.Mesh(new THREE.BoxGeometry(3, 0.2, 2), new THREE.MeshStandardMaterial({color: 0x3e2723}));
-            tableTop.position.set(data.x, 1, data.z + 1);
-            tableTop.castShadow = true;
-            scene.add(tableTop);
-            roomObj.contents.push(tableTop);
-            createHotspot(tableTop, 'toggle_vis', roomObj);
-        }
-
-        function addKitchenFurniture(data, roomObj) {
-            // Counter
-            const counterGeo = new THREE.BoxGeometry(2, 1.2, 10);
-            const counter = new THREE.Mesh(counterGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }));
-            counter.position.set(data.x - 5, 0.6, data.z);
-            counter.castShadow = true;
-            scene.add(counter);
-            roomObj.contents.push(counter);
-            walls.push(new THREE.Box3().setFromObject(counter));
-            createHotspot(counter, 'color_change', roomObj);
-        }
-
-        function addBedroomFurniture(data, roomObj) {
-            const bedGeo = new THREE.BoxGeometry(3, 0.8, 4);
-            const bed = new THREE.Mesh(bedGeo, new THREE.MeshStandardMaterial({ color: 0x333399 }));
-            bed.position.set(data.x, 0.4, data.z);
-            bed.castShadow = true;
-            scene.add(bed);
-            roomObj.contents.push(bed);
-            walls.push(new THREE.Box3().setFromObject(bed));
-            createHotspot(bed, 'color_change', roomObj);
-        }
-
-        function addHallDecor(data, roomObj) {
-            // Art Pedestal
-            const pedGeo = new THREE.BoxGeometry(0.8, 1.5, 0.8);
-            const ped = new THREE.Mesh(pedGeo, new THREE.MeshStandardMaterial({color: 0x222222}));
-            ped.position.set(data.x, 0.75, data.z);
-            scene.add(ped);
-            roomObj.contents.push(ped);
-            walls.push(new THREE.Box3().setFromObject(ped));
-
-            // Floating Art
-            const artGeo = new THREE.IcosahedronGeometry(0.5, 0);
-            const art = new THREE.Mesh(artGeo, new THREE.MeshStandardMaterial({color: 0xffd700, metalness: 1.0, roughness: 0.2}));
-            art.position.set(data.x, 2.2, data.z);
-            scene.add(art);
-            roomObj.contents.push(art);
-            
-            // Rotate art in animation loop
-            art.userData = { rotate: true };
-            
-            createHotspot(art, 'color_change', roomObj);
+            scene.add(orb);
+            interactables.push(orb);
         }
 
         // --- Interaction Logic ---
-
         function interact() {
-            if (currentIntersect) {
-                const item = interactables.find(i => i.mesh === currentIntersect.object);
-                if (item) {
-                    if (item.type === 'color_change') {
-                        const newColor = Math.random() * 0xffffff;
-                        item.targetMesh.material.color.setHex(newColor);
-                    } else if (item.type === 'toggle_vis') {
-                        item.targetMesh.visible = !item.targetMesh.visible;
-                    }
-                }
-            }
-        }
-
-        // --- Main Loops ---
-
-        function updateRoomCulling(playerPos) {
-            // Determine which room the player is in
-            // Simple logic: Find closest room center
-            let activeRoom = null;
-            let minDist = Infinity;
-
-            rooms.forEach(r => {
-                const dist = playerPos.distanceTo(r.center);
-                if (dist < minDist) {
-                    minDist = dist;
-                    activeRoom = r;
-                }
-            });
-
-            // Room-based Culling Logic:
-            // Show current room and immediate neighbors (based on layout index or distance)
-            // For this grid, we just use distance threshold to hide contents of far rooms
-            const viewDistance = 30; 
-
-            rooms.forEach(r => {
-                const dist = playerPos.distanceTo(r.center);
-                const isVisible = dist < viewDistance;
-                
-                // Toggle content visibility
-                r.contents.forEach(obj => {
-                    obj.visible = isVisible;
-                });
-            });
-        }
-
-        function drawMinimap(px, pz) {
-            // Clear canvas
-            mapCtx.fillStyle = '#222';
-            mapCtx.fillRect(0, 0, 200, 200);
-
-            // Center of map (100, 100) represents player position? 
-            // Better: Draw entire map scaled to fit, draw player dot.
-
-            const cx = 100;
-            const cy = 100;
-            const scale = 3; // Pixels per unit
-
-            mapCtx.save();
-            mapCtx.translate(cx, cy);
-            mapCtx.scale(scale, scale);
-            
-            // Invert Z for canvas coordinates (Canvas Y is down, 3D Z is back/forward)
-            // Translate so player is in center
-            mapCtx.translate(-px, -pz);
-
-            // Draw Rooms
-            mapCtx.fillStyle = '#444';
-            mapCtx.strokeStyle = '#666';
-            mapCtx.lineWidth = 1;
-            
-            rooms.forEach(r => {
-                // Room floor is roughly the bounds
-                const w = r.bounds.max.x - r.bounds.min.x;
-                const d = r.bounds.max.z - r.bounds.min.z;
-                const x = r.bounds.min.x;
-                const z = r.bounds.min.z;
-                
-                mapCtx.fillRect(x, z, w, d);
-                mapCtx.strokeRect(x, z, w, d);
-            });
-
-            // Draw Player
-            mapCtx.restore(); // Back to center center
-            
-            // Draw Player Arrow
-            mapCtx.fillStyle = 'red';
-            mapCtx.beginPath();
-            mapCtx.arc(100, 100, 3, 0, Math.PI * 2);
-            mapCtx.fill();
-
-            // Direction indicator
-            const dir = new THREE.Vector3();
-            camera.getWorldDirection(dir);
-            mapCtx.strokeStyle = 'red';
-            mapCtx.beginPath();
-            mapCtx.moveTo(100, 100);
-            mapCtx.lineTo(100 + dir.x * 10, 100 + dir.z * 10);
-            mapCtx.stroke();
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            const time = performance.now();
-            const delta = (time - prevTime) / 1000;
-
-            if (controls.isLocked) {
-                
-                // --- Physics / Movement ---
-                
-                // Friction
-                velocity.x -= velocity.x * 10.0 * delta;
-                velocity.z -= velocity.z * 10.0 * delta;
-
-                // Input direction
-                direction.z = Number(moveForward) - Number(moveBackward);
-                direction.x = Number(moveRight) - Number(moveLeft);
-                direction.normalize(); // consistent speed
-
-                const speed = 40.0; // Movement speed
-
-                if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
-
-                // Apply movement attempt
-                controls.moveRight(-velocity.x * delta);
-                controls.moveForward(-velocity.z * delta);
-
-                // Collision Detection (AABB)
-                const playerPos = controls.getObject().position;
-                const playerBox = new THREE.Box3();
-                const radius = 0.5; // Player radius
-                // Construct player box
-                playerBox.min.set(playerPos.x - radius, playerPos.y - 1.5, playerPos.z - radius);
-                playerBox.max.set(playerPos.x + radius, playerPos.y + 0.5, playerPos.z + radius);
-
-                let collision = false;
-                for (let wall of walls) {
-                    if (playerBox.intersectsBox(wall)) {
-                        collision = true;
-                        break;
-                    }
-                }
-
-                if (collision) {
-                    // Revert movement (Simple slide prevention)
-                    controls.moveRight(velocity.x * delta);
-                    controls.moveForward(velocity.z * delta);
-                    velocity.x = 0;
-                    velocity.z = 0;
-                }
-
-                // --- Room Logic ---
-                updateRoomCulling(playerPos);
-                
-                // --- Minimap ---
-                drawMinimap(playerPos.x, playerPos.z);
-            }
-
-            // --- Hotspot Raycasting ---
             raycaster.setFromCamera(centerScreen, camera);
-            const intersects = raycaster.intersectObjects(interactables.map(i => i.mesh), false);
-            const msgDiv = document.getElementById('interaction-msg');
+            const intersects = raycaster.intersectObjects(interactables);
 
             if (intersects.length > 0) {
-                if(intersects[0].distance < 4) {
-                    currentIntersect = intersects[0];
-                    msgDiv.style.opacity = 1;
-                    msgDiv.style.top = '55%'; // subtle float
-                } else {
-                    currentIntersect = null;
-                    msgDiv.style.opacity = 0;
+                const obj = intersects[0].object;
+                const data = obj.userData;
+
+                if (data.type === "change_color") {
+                    // Change pedestal color
+                    const newColor = Math.random() * 0xffffff;
+                    data.target.material.color.setHex(newColor);
+                } else if (data.type === "toggle_lamp") {
+                    // Toggle a lamp on the table
+                    if (!data.lamp) {
+                        const lampGroup = new THREE.Group();
+                        const bulb = new THREE.PointLight(0xffaa00, 20, 5);
+                        bulb.position.y = 0.5;
+                        bulb.castShadow = true;
+                        
+                        const shade = new THREE.Mesh(
+                            new THREE.ConeGeometry(0.3, 0.3, 16, 1, true),
+                            new THREE.MeshStandardMaterial({ color: 0xffaa00, side: THREE.DoubleSide, transparent:true, opacity: 0.8})
+                        );
+                        shade.position.y = 0.5;
+                        
+                        lampGroup.add(bulb);
+                        lampGroup.add(shade);
+                        lampGroup.position.y = 0.8; // On top of table
+                        
+                        data.target.add(lampGroup);
+                        data.lamp = lampGroup;
+                    } else {
+                        data.target.remove(data.lamp);
+                        data.lamp = null;
+                    }
                 }
+            }
+        }
+
+        function checkInteractionFocus() {
+            raycaster.setFromCamera(centerScreen, camera);
+            const intersects = raycaster.intersectObjects(interactables);
+            
+            if (intersects.length > 0 && intersects[0].distance < 4) {
+                uiInteraction.style.display = 'block';
+                intersects[0].object.scale.setScalar(1.2);
             } else {
-                currentIntersect = null;
-                msgDiv.style.opacity = 0;
+                uiInteraction.style.display = 'none';
+                interactables.forEach(obj => obj.scale.setScalar(1.0));
+            }
+        }
+
+        // --- Collision & Physics ---
+        function checkCollision(position) {
+            // Create a player bounding box at the intended position
+            const playerBox = new THREE.Box3();
+            const min = new THREE.Vector3(position.x - PLAYER_RADIUS/2, position.y - 1, position.z - PLAYER_RADIUS/2);
+            const max = new THREE.Vector3(position.x + PLAYER_RADIUS/2, position.y + 0.5, position.z + PLAYER_RADIUS/2);
+            playerBox.set(min, max);
+
+            // Optimization: Only check walls near the player
+            // (In a full engine, we'd use a spatial hash or octree)
+            for (const wallBox of walls) {
+                if (playerBox.intersectsBox(wallBox)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // --- Room Culling (Optimization) ---
+        function updateCulling(playerPos) {
+            // Find current grid cell
+            const gx = Math.round(playerPos.x / CELL_SIZE);
+            const gz = Math.round(playerPos.z / CELL_SIZE);
+
+            // In this simplified version, we could hide interactables or lights far away
+            interactables.forEach(orb => {
+                const d = playerPos.distanceTo(orb.position);
+                orb.visible = (d < 25);
+            });
+            
+            // Note: Three.js does Frustum Culling automatically. 
+            // Manual occlusion culling (portal rendering) is complex for a single file.
+            // We are using distance-based vis toggling for heavy items here.
+        }
+
+        // --- Minimap ---
+        function drawMinimap(px, pz) {
+            // Clear
+            minimapCtx.fillStyle = '#222';
+            minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+
+            const scale = minimapCanvas.width / (mapWidth * CELL_SIZE);
+
+            // Draw Walls
+            minimapCtx.fillStyle = '#666';
+            for(let z=0; z<mapHeight; z++) {
+                for(let x=0; x<mapWidth; x++) {
+                    if(houseGrid[z][x] === 1) {
+                        minimapCtx.fillRect(
+                            x * CELL_SIZE * scale, 
+                            z * CELL_SIZE * scale, 
+                            CELL_SIZE * scale, 
+                            CELL_SIZE * scale
+                        );
+                    }
+                }
             }
 
-            // --- Animation Effects ---
-            interactables.forEach(i => {
-                // Pulse logic for hotspots
-                const s = 1 + Math.sin(time * 0.005 + i.mesh.userData.timeOffset) * 0.1;
-                i.mesh.scale.set(s, s, s);
-            });
+            // Draw Player
+            minimapCtx.fillStyle = 'red';
+            minimapCtx.beginPath();
+            minimapCtx.arc(px * scale, pz * scale, 3, 0, Math.PI*2);
+            minimapCtx.fill();
 
-            // Rotate Art objects
-            scene.traverse(obj => {
-                if(obj.userData.rotate) {
-                    obj.rotation.y += delta;
-                    obj.rotation.x += delta * 0.5;
-                }
-            });
-
-            prevTime = time;
-            renderer.render(scene, camera);
+            // Draw Player Direction (Camera)
+            const dir = new THREE.Vector3();
+            camera.getWorldDirection(dir);
+            minimapCtx.strokeStyle = 'red';
+            minimapCtx.beginPath();
+            minimapCtx.moveTo(px * scale, pz * scale);
+            minimapCtx.lineTo( (px + dir.x * 5) * scale, (pz + dir.z * 5) * scale );
+            minimapCtx.stroke();
         }
 
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = performance.now();
+            
+            if (controls.isLocked) {
+                const delta = (time - prevTime) / 1000;
+
+                // Friction
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize(); // this ensures consistent movements in all directions
+
+                if (moveForward || moveBackward) velocity.z -= direction.z * PLAYER_SPEED * 10.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * PLAYER_SPEED * 10.0 * delta;
+
+                // Calculate intended movement
+                const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+                const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+                
+                // Flatten to XZ plane
+                forward.y = 0; forward.normalize();
+                right.y = 0; right.normalize();
+
+                const moveVector = new THREE.Vector3();
+                if(moveForward) moveVector.add(forward);
+                if(moveBackward) moveVector.sub(forward);
+                if(moveRight) moveVector.add(right);
+                if(moveLeft) moveVector.sub(right);
+                
+                if(moveVector.length() > 0) moveVector.normalize().multiplyScalar(PLAYER_SPEED * delta);
+
+                const currentPos = controls.getObject().position.clone();
+                
+                // Check X Movement
+                const targetX = currentPos.clone().add(new THREE.Vector3(moveVector.x, 0, 0));
+                if (!checkCollision(targetX)) {
+                    controls.getObject().position.x = targetX.x;
+                }
+
+                // Check Z Movement
+                const targetZ = currentPos.clone().add(new THREE.Vector3(0, 0, moveVector.z));
+                if (!checkCollision(targetZ)) {
+                    controls.getObject().position.z = targetZ.z;
+                }
+
+                // Animation for Hotspots
+                interactables.forEach(obj => {
+                    if(obj.userData.isHotspot) {
+                        obj.position.y = obj.userData.baseY + Math.sin(time * 0.003 + obj.userData.timeOffset) * 0.1;
+                    }
+                });
+
+                checkInteractionFocus();
+                
+                // Optimization
+                updateCulling(controls.getObject().position);
+                
+                // UI Updates
+                drawMinimap(controls.getObject().position.x, controls.getObject().position.z);
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
         }
     </script>
 </body>

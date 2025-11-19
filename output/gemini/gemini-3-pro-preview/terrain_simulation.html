@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>3D Procedural Terrain - Flight Mode</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Procedural Terrain Flight</title>
     <style>
-        body {
-            margin: 0;
-            background-color: #000;
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            pointer-events: none;
+            text-shadow: 1px 1px 2px black;
+            z-index: 10;
         }
         #blocker {
             position: absolute;
@@ -19,305 +24,320 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 10;
-        }
-        #instructions {
-            width: 100%;
-            height: 100%;
-            display: flex;
+            color: white;
             flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #ffffff;
-            text-align: center;
             cursor: pointer;
+            z-index: 20;
         }
-        h1 { font-size: 36px; margin-bottom: 10px; text-shadow: 2px 2px 4px #000; }
-        p { font-size: 18px; text-shadow: 1px 1px 2px #000; }
-        .keys { color: #ff9f43; font-weight: bold; }
+        h1 { margin: 0; font-size: 2rem; }
+        p { font-size: 1.2rem; }
     </style>
-</head>
-<body>
-
-    <div id="blocker">
-        <div id="instructions">
-            <h1>Click to Enter Flight Mode</h1>
-            <p>
-                Move: <span class="keys">W, A, S, D</span><br/>
-                Up/Down: <span class="keys">Space / Shift</span><br/>
-                Look: <span class="keys">Mouse</span>
-            </p>
-        </div>
-    </div>
-
-    <!-- Import Map for Three.js and Addons -->
+    
+    <!-- Import Three.js as an ES module from a reliable CDN -->
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
-                "simplex-noise": "https://unpkg.com/simplex-noise@4.0.1/dist/esm/simplex-noise.js"
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
             }
         }
     </script>
+</head>
+<body>
+
+    <div id="instructions">
+        WASD to Move | SPACE to Go Up | SHIFT to Go Down
+    </div>
+
+    <div id="blocker">
+        <div>
+            <h1>Click to Start</h1>
+            <p>Mouse to Look</p>
+        </div>
+    </div>
 
     <script type="module">
         import * as THREE from 'three';
-        import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-        import { createNoise2D } from 'simplex-noise';
 
-        // --- Configuration ---
-        const WORLD_WIDTH = 2000;
-        const WORLD_DEPTH = 2000;
-        const SEGMENTS = 150; // Higher = more detail, lower = better performance
-        const FOG_COLOR = 0xcce0ff;
-        const SPEED = 400.0;
+        // --- 1. PERLIN NOISE IMPLEMENTATION (Self-contained) ---
+        // A standard implementation of Improved Perlin Noise to generate heightmaps
+        const _p = [151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,190, 6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168, 68,175,74,165,71,134,139,48,27,166,77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54, 65,25,63,161,1,216,80,73,209,76,132,187,208, 89,18,169,200,196,135,130,116,188,159,86,164,100,109,198,173,186, 3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,223,183,170,213,119,248,152, 2,44,154,163,70,221,153,101,155,167, 43,172,9,129,22,39,253, 19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107,49,192,214, 31,181,199,106,157,184, 84,204,176,115,121,50,45,127, 4,150,254,138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180];
+        const p = new Array(512);
+        for (let i=0; i < 256 ; i++) p[256+i] = p[i] = _p[i];
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+        function lerp(t, a, b) { return a + t * (b - a); }
+        function grad(hash, x, y, z) {
+            const h = hash & 15;
+            const u = h < 8 ? x : y, v = h < 4 ? y : h == 12 || h == 14 ? x : z;
+            return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+        }
+
+        function noise(x, y, z) {
+            const X = Math.floor(x) & 255, Y = Math.floor(y) & 255, Z = Math.floor(z) & 255;
+            x -= Math.floor(x); y -= Math.floor(y); z -= Math.floor(z);
+            const u = fade(x), v = fade(y), w = fade(z);
+            const A = p[X]+Y, AA = p[A]+Z, AB = p[A+1]+Z, B = p[X+1]+Y, BA = p[B]+Z, BB = p[B+1]+Z;
+            return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z), grad(p[BA], x-1, y, z)),
+                                   lerp(u, grad(p[AB], x, y-1, z), grad(p[BB], x-1, y-1, z))),
+                           lerp(v, lerp(u, grad(p[AA+1], x, y, z-1), grad(p[BA+1], x-1, y, z-1)),
+                                   lerp(u, grad(p[AB+1], x, y-1, z-1), grad(p[BB+1], x-1, y-1, z-1))));
+        }
+
+        // --- 2. SCENE SETUP ---
         
-        // --- Global Variables ---
-        let camera, scene, renderer, controls;
-        let moveForward = false;
-        let moveBackward = false;
-        let moveLeft = false;
-        let moveRight = false;
-        let moveUp = false;
-        let moveDown = false;
-        let prevTime = performance.now();
-        const velocity = new THREE.Vector3();
-        const direction = new THREE.Vector3();
+        const scene = new THREE.Scene();
+        // Light blue-grey fog for depth
+        const fogColor = 0xcce0ff;
+        scene.background = new THREE.Color(fogColor);
+        scene.fog = new THREE.FogExp2(fogColor, 0.0012);
 
-        init();
-        animate();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
 
-        function init() {
-            // 1. Setup Scene & Camera
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(FOG_COLOR);
-            scene.fog = new THREE.FogExp2(FOG_COLOR, 0.0012);
+        // --- 3. LIGHTING ---
 
-            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 5000);
-            camera.position.set(0, 150, 400); // Start in the air
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+        scene.add(hemiLight);
 
-            // 2. Lighting
-            const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-            hemiLight.position.set(0, 200, 0);
-            scene.add(hemiLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(50, 200, 100);
+        scene.add(dirLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(100, 200, 100);
-            dirLight.castShadow = true;
-            scene.add(dirLight);
+        // --- 4. TERRAIN GENERATION ---
 
-            // 3. Generate Terrain
-            generateTerrain();
+        // Terrain Parameters
+        const worldWidth = 256;
+        const worldDepth = 256;
+        const geometry = new THREE.PlaneGeometry(2000, 2000, worldWidth - 1, worldDepth - 1);
+        geometry.rotateX(-Math.PI / 2);
 
-            // 4. Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setPixelRatio(window.devicePixelRatio);
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.shadowMap.enabled = true;
-            document.body.appendChild(renderer.domElement);
+        const vertices = geometry.attributes.position.array;
+        const colors = [];
 
-            // 5. Controls
-            controls = new PointerLockControls(camera, document.body);
+        // Define Color Palettes (RGB normalized 0-1)
+        const colorWater = new THREE.Color(0x006994);
+        const colorSand = new THREE.Color(0xd2b48c);
+        const colorGrass = new THREE.Color(0x559c2a);
+        const colorRock = new THREE.Color(0x666666);
+        const colorSnow = new THREE.Color(0xffffff);
 
-            const blocker = document.getElementById('blocker');
-            const instructions = document.getElementById('instructions');
-
-            instructions.addEventListener('click', function () {
-                controls.lock();
-            });
-
-            controls.addEventListener('lock', function () {
-                instructions.style.display = 'none';
-                blocker.style.display = 'none';
-            });
-
-            controls.addEventListener('unlock', function () {
-                blocker.style.display = 'flex';
-                instructions.style.display = 'flex';
-            });
-
-            scene.add(controls.getObject());
-
-            // 6. Event Listeners
-            document.addEventListener('keydown', onKeyDown);
-            document.addEventListener('keyup', onKeyUp);
-            window.addEventListener('resize', onWindowResize);
-        }
-
-        function generateTerrain() {
-            // Geometry
-            const geometry = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH, SEGMENTS, SEGMENTS);
-            geometry.rotateX(-Math.PI / 2);
-
-            // Noise Generation
-            const noise2D = createNoise2D();
-            const vertices = geometry.attributes.position.array;
-            const colors = [];
+        // Fractal Brownian Motion settings for noise
+        function getTerrainHeight(x, z) {
+            let y = 0;
+            let amp = 120; // Height amplitude
+            let freq = 0.003; // Frequency
             
-            // Colors for shading
-            const colorWater = new THREE.Color(0x205080); // Deep Blue (if we went below 0)
-            const colorGrassLow = new THREE.Color(0x3b7d34); // Darker Green
-            const colorGrassHigh = new THREE.Color(0x6db058); // Lighter Green
-            const colorRock = new THREE.Color(0x5a5a5a); // Grey
-            const colorSnow = new THREE.Color(0xffffff); // White
-
-            // Iterate over vertices to set Height (Y) and Color
-            for (let i = 0; i < vertices.length; i += 3) {
-                const x = vertices[i];
-                const z = vertices[i + 2];
-
-                // Combine multiple noise layers (octaves) for realism
-                // Layer 1: Large mountains
-                let y = noise2D(x * 0.002, z * 0.002) * 120;
-                // Layer 2: Smaller details
-                y += noise2D(x * 0.01, z * 0.01) * 15;
-                // Layer 3: Roughness
-                y += noise2D(x * 0.03, z * 0.03) * 3;
-
-                // Flatten valleys slightly
-                if (y < 0) y = y * 0.5;
-
-                vertices[i + 1] = y;
-
-                // Vertex Coloring based on height
-                let finalColor = new THREE.Color();
-
-                if (y < 10) {
-                    // Lowlands / Grass
-                    finalColor.copy(colorGrassLow).lerp(colorGrassHigh, (y + 50) / 60);
-                } else if (y < 90) {
-                    // Mountains / Rock
-                    let t = (y - 10) / 80;
-                    finalColor.copy(colorGrassHigh).lerp(colorRock, t);
-                } else {
-                    // Peaks / Snow
-                    let t = (y - 90) / 50;
-                    // Clamp t
-                    if(t > 1) t = 1;
-                    finalColor.copy(colorRock).lerp(colorSnow, t);
-                }
-
-                colors.push(finalColor.r, finalColor.g, finalColor.b);
-            }
-
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-            geometry.computeVertexNormals();
-
-            // Material
-            const material = new THREE.MeshStandardMaterial({
-                vertexColors: true,
-                roughness: 0.8,
-                metalness: 0.1,
-                side: THREE.DoubleSide // Render bottom just in case
-            });
-
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.receiveShadow = true;
-            scene.add(mesh);
-
-            // Add some water plane
-            const waterGeo = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH);
-            waterGeo.rotateX(-Math.PI / 2);
-            const waterMat = new THREE.MeshBasicMaterial({ color: 0x36689c, transparent: true, opacity: 0.6 });
-            const water = new THREE.Mesh(waterGeo, waterMat);
-            water.position.y = -5;
-            scene.add(water);
+            // 3 Octaves of noise
+            y += noise(x * freq, 0, z * freq) * amp;
+            y += noise(x * freq * 2, 0, z * freq * 2) * amp * 0.5;
+            y += noise(x * freq * 4, 0, z * freq * 4) * amp * 0.25;
+            
+            // Flatten valleys to create water/plains
+            if(y < -50) y = -50; 
+            return y;
         }
 
-        function onKeyDown(event) {
+        // Generate height and color
+        for (let i = 0, j = 0, l = vertices.length; i < l; i++, j += 3) {
+            const x = vertices[j];
+            const z = vertices[j + 2];
+            
+            const y = getTerrainHeight(x, z);
+            vertices[j + 1] = y;
+
+            // Vertex Coloring based on height
+            const heightNormalized = (y + 50) / 200; // Normalize roughly 0 to 1
+            let color = new THREE.Color();
+
+            // Add some random variation to blend
+            const variation = Math.random() * 0.1 - 0.05;
+
+            if (y < -30) {
+                color.copy(colorWater); // Deep Water
+            } else if (y < -10) {
+                color.copy(colorSand); // Sand
+            } else if (y < 60) {
+                color.copy(colorGrass); // Grass
+                // Darken grass slightly based on height for variety
+                color.offsetHSL(0, 0, variation);
+            } else if (y < 110) {
+                color.copy(colorRock); // Rock
+            } else {
+                color.copy(colorSnow); // Snow
+            }
+
+            colors.push(color.r, color.g, color.b);
+        }
+
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.computeVertexNormals();
+
+        const material = new THREE.MeshLambertMaterial({ 
+            vertexColors: true,
+            side: THREE.DoubleSide,
+            wireframe: false
+        });
+
+        const terrain = new THREE.Mesh(geometry, material);
+        scene.add(terrain);
+
+        // Water Plane (optional visual polish)
+        const waterGeo = new THREE.PlaneGeometry(2000, 2000);
+        waterGeo.rotateX(-Math.PI / 2);
+        const waterMat = new THREE.MeshBasicMaterial({ color: 0x006994, transparent: true, opacity: 0.6 });
+        const water = new THREE.Mesh(waterGeo, waterMat);
+        water.position.y = -32; // Just below sand level
+        scene.add(water);
+
+
+        // --- 5. CONTROLS (FLY) ---
+
+        camera.position.set(0, 100, 400);
+        
+        // Control state
+        const controls = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false,
+            up: false,
+            down: false,
+            velocity: new THREE.Vector3(),
+            direction: new THREE.Vector3()
+        };
+
+        const moveSpeed = 200.0;
+        let prevTime = performance.now();
+
+        // Pointer Lock setup
+        const blocker = document.getElementById('blocker');
+        
+        blocker.addEventListener('click', () => {
+            document.body.requestPointerLock();
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === document.body) {
+                blocker.style.display = 'none';
+            } else {
+                blocker.style.display = 'flex';
+            }
+        });
+
+        // Mouse Look
+        document.addEventListener('mousemove', (event) => {
+            if (document.pointerLockElement === document.body) {
+                const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+                const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+                
+                // Yaw (Left/Right) - Rotate around world Y
+                camera.rotation.y -= movementX * 0.002;
+                
+                // Pitch (Up/Down) - Rotate around local X
+                camera.rotation.x -= movementY * 0.002;
+                // Clamp pitch to avoid flipping
+                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+            }
+        });
+
+        // Keyboard Input
+        const onKeyDown = (event) => {
             switch (event.code) {
                 case 'ArrowUp':
-                case 'KeyW':
-                    moveForward = true;
-                    break;
+                case 'KeyW': controls.forward = true; break;
                 case 'ArrowLeft':
-                case 'KeyA':
-                    moveLeft = true;
-                    break;
+                case 'KeyA': controls.left = true; break;
                 case 'ArrowDown':
-                case 'KeyS':
-                    moveBackward = true;
-                    break;
+                case 'KeyS': controls.backward = true; break;
                 case 'ArrowRight':
-                case 'KeyD':
-                    moveRight = true;
-                    break;
-                case 'Space':
-                    moveUp = true;
-                    break;
-                case 'ShiftLeft':
-                case 'ShiftRight':
-                    moveDown = true;
-                    break;
+                case 'KeyD': controls.right = true; break;
+                case 'Space': controls.up = true; break;
+                case 'ShiftLeft': 
+                case 'ShiftRight': controls.down = true; break;
             }
-        }
+        };
 
-        function onKeyUp(event) {
+        const onKeyUp = (event) => {
             switch (event.code) {
                 case 'ArrowUp':
-                case 'KeyW':
-                    moveForward = false;
-                    break;
+                case 'KeyW': controls.forward = false; break;
                 case 'ArrowLeft':
-                case 'KeyA':
-                    moveLeft = false;
-                    break;
+                case 'KeyA': controls.left = false; break;
                 case 'ArrowDown':
-                case 'KeyS':
-                    moveBackward = false;
-                    break;
+                case 'KeyS': controls.backward = false; break;
                 case 'ArrowRight':
-                case 'KeyD':
-                    moveRight = false;
-                    break;
-                case 'Space':
-                    moveUp = false;
-                    break;
-                case 'ShiftLeft':
-                case 'ShiftRight':
-                    moveDown = false;
-                    break;
+                case 'KeyD': controls.right = false; break;
+                case 'Space': controls.up = false; break;
+                case 'ShiftLeft': 
+                case 'ShiftRight': controls.down = false; break;
             }
-        }
+        };
 
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+
+        // --- 6. ANIMATION LOOP ---
+
+        // Reusable vectors to prevent garbage collection
+        const forwardVec = new THREE.Vector3();
+        const rightVec = new THREE.Vector3();
 
         function animate() {
             requestAnimationFrame(animate);
 
             const time = performance.now();
-            
-            if (controls.isLocked === true) {
-                const delta = (time - prevTime) / 1000;
+            const delta = (time - prevTime) / 1000; // seconds
 
-                // Dampen velocity (friction)
-                velocity.x -= velocity.x * 5.0 * delta;
-                velocity.z -= velocity.z * 5.0 * delta;
-                velocity.y -= velocity.y * 5.0 * delta;
+            if (document.pointerLockElement === document.body) {
+                // Damping (slow down when not pressing keys)
+                controls.velocity.x -= controls.velocity.x * 10.0 * delta;
+                controls.velocity.z -= controls.velocity.z * 10.0 * delta;
+                controls.velocity.y -= controls.velocity.y * 10.0 * delta;
 
-                direction.z = Number(moveForward) - Number(moveBackward);
-                direction.x = Number(moveRight) - Number(moveLeft);
-                direction.y = Number(moveUp) - Number(moveDown);
-                direction.normalize(); // Consistent speed in all directions
+                // Calculate movement direction relative to camera look
+                controls.direction.z = Number(controls.forward) - Number(controls.backward);
+                controls.direction.x = Number(controls.right) - Number(controls.left);
+                controls.direction.y = Number(controls.up) - Number(controls.down);
+                
+                controls.direction.normalize();
 
-                if (moveForward || moveBackward) velocity.z -= direction.z * SPEED * delta;
-                if (moveLeft || moveRight) velocity.x -= direction.x * SPEED * delta;
-                if (moveUp || moveDown) velocity.y += direction.y * SPEED * delta;
+                // Acceleration
+                if (controls.forward || controls.backward) controls.velocity.z -= controls.direction.z * moveSpeed * delta;
+                if (controls.left || controls.right) controls.velocity.x -= controls.direction.x * moveSpeed * delta;
+                if (controls.up || controls.down) controls.velocity.y += controls.direction.y * moveSpeed * delta;
 
                 // Apply movement
-                controls.moveRight(-velocity.x * delta);
-                controls.moveForward(-velocity.z * delta);
-                controls.getObject().position.y += velocity.y * delta;
+                // Forward/Back (Local Z)
+                forwardVec.setFromMatrixColumn(camera.matrix, 2); // Local Z axis
+                forwardVec.y = 0; // Keep level when moving forward/back (optional, comment out for full 3D flight)
+                forwardVec.normalize();
+                
+                camera.position.addScaledVector(forwardVec, -controls.velocity.z * delta);
+
+                // Left/Right (Local X)
+                rightVec.setFromMatrixColumn(camera.matrix, 0); // Local X axis
+                camera.position.addScaledVector(rightVec, controls.velocity.x * delta);
+
+                // Up/Down (World Y)
+                camera.position.y += controls.velocity.y * delta;
             }
 
             prevTime = time;
             renderer.render(scene, camera);
         }
+
+        // Handle Window Resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+
     </script>
 </body>
 </html>
