@@ -58,7 +58,7 @@ Examples:
   praisonaibench --suite tests.yaml
   praisonaibench --suite tests.yaml --test-name "terrain_simulation"
   praisonaibench --cross-model "Write a poem" --models gpt-4o,gpt-3.5-turbo
-  praisonaibench --extract output/benchmark_results_20250829_173322.json
+  praisonaibench --extract output/json/benchmark_results_20250829_173322.json
         """
     )
     

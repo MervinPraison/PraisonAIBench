@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Solar System</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        #info { position: absolute; top: 10px; left: 10px; color: white; }
+    </style>
+</head>
+<body>
+    <div id="info">Click on a planet for more information</div>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/r128/build/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/r128/examples/js/controls/OrbitControls.js"></script>
+    <script>
+
+        // Scene and Camera
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const sunLight = new THREE.PointLight(0xffffff, 1, 100);
+        sunLight.position.set(0, 0, 0);
+        scene.add(sunLight);
+
+        // Create Sun
+        const sunGeometry = new THREE.SphereGeometry(2, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        scene.add(sun);
+
+        // Planet Data
+        const planets = [
+            { name: 'Mercury', radius: 0.3, distance: 5, rotationSpeed: 0.4, orbitSpeed: 0.07, color: 0xaaaaaa, facts: 'Mercury is the closest planet to the Sun.' },
+            { name: 'Venus', radius: 0.6, distance: 8, rotationSpeed: 0.3, orbitSpeed: 0.05, color: 0xffcc00, facts: 'Venus is known as Earth\'s twin.' },
+            { name: 'Earth', radius: 0.7, distance: 10, rotationSpeed: 0.2, orbitSpeed: 0.03, color: 0x0000ff, facts: 'Earth is the only planet known to support life.' },
+            { name: 'Mars', radius: 0.4, distance: 12, rotationSpeed: 0.2, orbitSpeed: 0.03, color: 0xff4444, facts: 'Mars is known as the Red Planet.' },
+            { name: 'Jupiter', radius: 1.5, distance: 15, rotationSpeed: 0.1, orbitSpeed: 0.01, color: 0xffcc66, facts: 'Jupiter is the largest planet in the Solar System.' },
+            { name: 'Saturn', radius: 1.2, distance: 18, rotationSpeed: 0.1, orbitSpeed: 0.008, color: 0xe6b36b, facts: 'Saturn is known for its beautiful rings.' },
+            { name: 'Uranus', radius: 0.9, distance: 21, rotationSpeed: 0.1, orbitSpeed: 0.007, color: 0x66aaff, facts: 'Uranus has a unique sideways rotation.' },
+            { name: 'Neptune', radius: 0.9, distance: 24, rotationSpeed: 0.1, orbitSpeed: 0.006, color: 0x4444ff, facts: 'Neptune is known for its strong winds.' }
+        ];
+
+        // Create Orbit Lines
+        const createOrbit = (distance) => {
+            const orbitGeometry = new THREE.CircleGeometry(distance, 100);
+            orbitGeometry.vertices.shift(); // Remove center vertex
+            const orbitMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.5, transparent: true });
+            const orbitLine = new THREE.LineLoop(orbitGeometry, orbitMaterial);
+            orbitLine.rotation.x = Math.PI / 2; // Rotate to lie flat
+            return orbitLine;
+        };
+
+        // Create Planets
+        let planetMeshes = [];
+        planets.forEach((planet) => {
+            const geometry = new THREE.SphereGeometry(planet.radius, 32, 32);
+            const material = new THREE.MeshStandardMaterial({ color: planet.color });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.x = planet.distance;
+            mesh.planetInfo = planet; // Store planet data in mesh
+            scene.add(mesh);
+            planetMeshes.push(mesh);
+            scene.add(createOrbit(planet.distance)); // Add orbit lines
+        });
+
+        // Camera Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        camera.position.z = 30;
+
+        // Time Speed Control
+        let timeSpeed = 1;
+        document.addEventListener('keydown', (event) => {
+            if (event.key === '+') timeSpeed += 0.1;
+            if (event.key === '-') timeSpeed = Math.max(0, timeSpeed - 0.1);
+            console.log('Time Speed:', timeSpeed);
+        });
+
+        // Click to reveal planet facts
+        window.addEventListener('click', (event) => {
+            const mouse = new THREE.Vector2(
+                (event.clientX / window.innerWidth) * 2 - 1,
+                -(event.clientY / window.innerHeight) * 2 + 1
+            );
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObjects(planetMeshes);
+            if (intersects.length > 0) {
+                alert(intersects[0].object.planetInfo.facts);
+            }
+        });
+
+        // Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+            planetMeshes.forEach((mesh, index) => {
+                // Rotate the planets on their axis
+                mesh.rotation.y += planets[index].rotationSpeed * timeSpeed * 0.01;
+
+                // Orbiting the planets
+                const angle = (Date.now() * planets[index].orbitSpeed * timeSpeed * 0.0001) % (Math.PI * 2);
+                mesh.position.x = planets[index].distance * Math.cos(angle);
+                mesh.position.z = planets[index].distance * Math.sin(angle);
+            });
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+    </script>
+</body>
+</html>

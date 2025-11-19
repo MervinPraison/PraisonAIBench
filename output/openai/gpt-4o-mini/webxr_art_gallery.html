@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VR Gallery</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        .modal {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            display: none;
+        }
+        .modal.active { display: block; }
+        .button { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div id="infoModal" class="modal">
+        <h2>Artwork Info</h2>
+        <p id="artworkDescription"></p>
+        <button id="closeModal" class="button">Close</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/jsm/webxr/VRButton.js"></script>
+    <script src="https://unpkg.com/@webxr-input-profiles/assets/dist/hand.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aframe/1.2.0/aframe.min.js"></script>
+
+    <script>
+        let scene, camera, renderer, teleportControls, raycaster;
+        const artworks = [];
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+            document.body.appendChild(VRButton.createButton(renderer));
+
+            // Add lights and the baked lightmapped room
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            // Load Room (replace with your own model)
+            const roomGeometry = new THREE.BoxGeometry(10, 6, 10);
+            const roomMaterial = new THREE.MeshBasicMaterial({ color: 0xfffff

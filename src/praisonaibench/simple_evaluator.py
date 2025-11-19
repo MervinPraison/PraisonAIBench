@@ -183,8 +183,9 @@ class LLMJudge:
     Uses your existing LLM setup
     """
     
-    def __init__(self, model="gpt-4o"):
+    def __init__(self, model="gpt-4o", temperature=0.1):
         self.model = model
+        self.temperature = temperature  # Low temp for consistency (research-based)
     
     def evaluate(self, html_content: str, prompt: str) -> dict:
         """
@@ -201,18 +202,78 @@ class LLMJudge:
             }
         """
         
-        # Simple prompt for LLM
-        judge_prompt = f"""Rate this HTML/JS code quality (0-100):
+        # Research-based evaluation prompt (3-point scale + few-shot examples)
+        # Based on: EvidentlyAI, Databricks, TDS best practices (2024)
+        judge_prompt = f"""You are an expert code quality evaluator with 10+ years of experience.
 
-Original request: {prompt}
+TASK: Evaluate HTML/JavaScript code quality using a 3-point rubric.
 
-Code (first 2000 chars):
+ORIGINAL REQUEST:
+{prompt}
+
+CODE TO EVALUATE:
 {html_content[:2000]}
+
+EVALUATION RUBRIC (3-point scale for consistency):
+
+SCORE 3 (Excellent - Pass):
+- Fulfills ALL requirements from original request
+- Clean, professional code structure
+- Follows modern standards (HTML5/ES6+)
+- No critical errors or issues
+
+SCORE 2 (Acceptable - Pass):
+- Fulfills MOST requirements (80%+)
+- Code works but has minor issues
+- Some improvements possible
+- No critical errors
+
+SCORE 1 (Poor - Fail):
+- Missing key requirements (<80%)
+- Multiple functional issues
+- Poor code quality or structure
+- Critical errors present
+
+FEW-SHOT EXAMPLES (for calibration):
+
+EXAMPLE 1 - Score 3:
+Request: "Create a rotating green cube with Three.js"
+Code: <!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/three@0.150.0/build/three.min.js"></script></head><body><script>const scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);const renderer=new THREE.WebGLRenderer();renderer.setSize(window.innerWidth,window.innerHeight);document.body.appendChild(renderer.domElement);const geometry=new THREE.BoxGeometry();const material=new THREE.MeshBasicMaterial({{color:0x00ff00}});const cube=new THREE.Mesh(geometry,material);scene.add(cube);camera.position.z=5;window.addEventListener('resize',()=>{{camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();renderer.setSize(window.innerWidth,window.innerHeight);}});function animate(){{requestAnimationFrame(animate);cube.rotation.x+=0.01;cube.rotation.y+=0.01;renderer.render(scene,camera);}}animate();</script></body></html>
+Reasoning: Implements all requirements (rotating, green, cube, Three.js), includes resize handling, clean structure, modern practices.
+Score: 3
+
+EXAMPLE 2 - Score 2:
+Request: "Create a rotating green cube with Three.js"
+Code: <!DOCTYPE html><html><head><script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script></head><body><script>var scene=new THREE.Scene();var camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight);var renderer=new THREE.WebGLRenderer();renderer.setSize(window.innerWidth,window.innerHeight);document.body.appendChild(renderer.domElement);var geometry=new THREE.BoxGeometry();var material=new THREE.MeshBasicMaterial({{color:0x00ff00}});var cube=new THREE.Mesh(geometry,material);scene.add(cube);camera.position.z=5;function animate(){{requestAnimationFrame(animate);cube.rotation.x+=0.01;cube.rotation.y+=0.01;renderer.render(scene,camera);}}animate();</script></body></html>
+Reasoning: Implements core requirements but uses older Three.js, var instead of const/let, missing resize handling.
+Score: 2
+
+EXAMPLE 3 - Score 1:
+Request: "Create a rotating green cube with Three.js"
+Code: <!DOCTYPE html><html><body><script>var scene=new THREE.Scene();var cube=new THREE.Mesh(new THREE.BoxGeometry(),new THREE.MeshBasicMaterial());scene.add(cube);cube.rotation.x+=0.01;</script></body></html>
+Reasoning: Missing Three.js import, no renderer, no camera, no animation loop, cube not green, doesn't actually rotate.
+Score: 1
+
+INSTRUCTIONS:
+1. Analyze the code step-by-step (Chain-of-Thought)
+2. Compare against the original request
+3. Identify strengths and weaknesses
+4. Provide clear reasoning
+5. Assign score (1, 2, or 3)
+
+IMPORTANT (Bias Mitigation):
+- Evaluate ONLY on correctness and completeness
+- Do NOT favor longer responses
+- Do NOT consider response order
+- If you cannot determine quality due to insufficient information, return score: -1
 
 Respond with JSON only:
 {{
-  "score": <0-100>,
-  "feedback": "<one sentence feedback>"
+  "score": <1, 2, 3, or -1>,
+  "reasoning": "<step-by-step analysis>",
+  "strengths": "<specific strengths>",
+  "weaknesses": "<specific weaknesses>",
+  "confidence": "<high|medium|low>"
 }}"""
 
         try:
@@ -231,9 +292,28 @@ Respond with JSON only:
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
                 result = json.loads(json_match.group())
+                raw_score = result.get('score', 0)
+                
+                # Convert 3-point scale to 0-100 for compatibility
+                # Score 3 (Excellent) -> 90-100
+                # Score 2 (Acceptable) -> 75-85
+                # Score 1 (Poor) -> 40-60
+                # Score -1 (Cannot determine) -> 0
+                score_mapping = {
+                    3: 90,
+                    2: 80,
+                    1: 50,
+                    -1: 0
+                }
+                quality_score = score_mapping.get(raw_score, 0)
+                
                 return {
-                    'quality_score': result.get('score', 0),
-                    'feedback': result.get('feedback', 'No feedback')
+                    'quality_score': quality_score,
+                    'raw_score': raw_score,  # Keep original 3-point score
+                    'reasoning': result.get('reasoning', 'No reasoning'),
+                    'strengths': result.get('strengths', ''),
+                    'weaknesses': result.get('weaknesses', ''),
+                    'confidence': result.get('confidence', 'unknown')
                 }
         except Exception as e:
             print(f"  ⚠️  LLM judge failed: {str(e)}")

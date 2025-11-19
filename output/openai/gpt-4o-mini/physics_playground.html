@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Playground</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+<div id="controls">
+    <button id="reset">Reset</button>
+    <label>Gravity: <input type="range" id="gravity" min="-30" max="-1" value="-9" step="0.1"></label>
+    <label>
+        Slow Motion: <input type="checkbox" id="slowMotion">
+    </label>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.rawgit.com/pmndrs/cannon-es/master/build/cannon-es.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+    let scene, camera, renderer, world, clock, delta, timeStep;
+    const objects = [];
+    let isSlowMotion = false;
+
+    function init() {
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.z = 5;
+
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        world = new CANNON.World();
+        world.gravity.set(0, -9, 0); // Earth gravity
+
+        clock = new THREE.Clock();
+        
+        // Controls
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+        // Event listeners
+        document.getElementById('reset').addEventListener('click', reset);
+        document.getElementById('gravity').addEventListener('input', updateGravity);
+        document.getElementById('slowMotion').addEventListener('change', updateSlowMotion);
+
+        // Add initial boxes and spheres
+        addStackableBox(-1, 1, -1);
+        addStackableBox(1, 1, 1);
+        addRagdoll(0, 1, 0);
+
+        animate();
+    }
+
+    function addStackableBox(x, y, z) {
+        const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(x, y, z);
+        scene.add(cube);
+
+        // Add physics
+        const shape = new CANNON.Box(new CANNON.Vec3(0.25, 0.25, 0.25));
+        const body = new CANNON.Body({ mass: 1 });
+        body.addShape(shape);
+        body.position.set(x, y, z);
+        world.addBody(body);
+        objects.push({ mesh: cube, body: body });
+    }
+
+    function addRagdoll(x, y, z) {
+        // Create a simple ragdoll using spheres
+        for (let i = 0; i < 5; i++) {
+            const radius = 0.15;
+            const geometry = new THREE.SphereGeometry(radius);
+            const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.position.set(x, y - i * 0.3, z);
+            scene.add(sphere);
+
+            const shape = new CANNON.Sphere(radius);
+            const body = new CANNON.Body({ mass: 1 });
+            body.addShape(shape);
+            body.position.set(x, y - i * 0.3, z);
+            world.addBody(body);
+            objects.push({ mesh: sphere, body: body });
+        }
+    }
+
+    function animate() {
+        delta = clock.getDelta();
+        timeStep = isSlowMotion ? delta / 2 : delta;
+
+        // Step the physics world
+        world.step(timeStep);
+
+        // Update the Three.js meshes
+        for (const obj of objects) {
+            obj.mesh.position.copy(obj.body.position);
+            obj.mesh.quaternion.copy(obj.body.quaternion);
+        }
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+
+    function reset() {
+        // Remove old objects
+        for (const obj of objects) {
+            scene.remove(obj.mesh);
+            world.removeBody(obj.body);
+        }
+        objects.length = 0; // Clear the array
+
+        // Add new objects
+        addStackableBox(-1, 1, -1);
+        addStackableBox(1, 1, 1);
+        addRagdoll(0, 1, 0);
+    }
+
+    function updateGravity(event) {
+        const gravityValue = parseFloat(event.target.value);
+        world.gravity.set(0, gravityValue, 0);
+    }
+
+    function updateSlowMotion(event) {
+        isSlowMotion = event.target.checked;
+    }
+
+    // Initialize and start the scene
+    init();
+
+    // Resize event
+    window.addEventListener('resize', () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+    });
+</script>
+</body>
+</html>

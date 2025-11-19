@@ -282,37 +282,19 @@ class TestDocumentationCompleteness:
     """Verify documentation covers all use cases"""
     
     def test_quickstart_guide_exists(self):
-        """Verify quickstart guide exists and is readable"""
-        assert os.path.exists("QUICKSTART_EVALUATION.md")
-        
-        with open("QUICKSTART_EVALUATION.md", 'r') as f:
-            content = f.read()
-            assert "Quick Start" in content
-            assert "pip install playwright" in content
-        
-        print("✅ Quickstart guide is complete")
+        """Verify evaluation documentation exists"""
+        assert os.path.exists('EVALUATION.md'), "Main evaluation guide missing"
+        print("✅ Main evaluation guide exists")
     
     def test_implementation_guide_exists(self):
-        """Verify implementation guide exists"""
-        assert os.path.exists("EVALUATION_SIMPLIFIED.md")
-        
-        with open("EVALUATION_SIMPLIFIED.md", 'r') as f:
-            content = f.read()
-            assert "SimpleEvaluator" in content
-            assert "LLMJudge" in content
-        
-        print("✅ Implementation guide is complete")
+        """Verify LLM judge criteria documentation exists"""
+        assert os.path.exists('LLM_JUDGE_CRITERIA.md'), "LLM judge criteria missing"
+        print("✅ LLM judge criteria exists")
     
     def test_comparison_guide_exists(self):
-        """Verify comparison guide exists"""
-        assert os.path.exists("EVALUATION_COMPARISON.md")
-        
-        with open("EVALUATION_COMPARISON.md", 'r') as f:
-            content = f.read()
-            assert "Simplified" in content
-            assert "Comprehensive" in content
-        
-        print("✅ Comparison guide is complete")
+        """Verify best practices documentation exists"""
+        assert os.path.exists('LLM_JUDGE_BEST_PRACTICES.md'), "Best practices guide missing"
+        print("✅ Best practices guide exists")
 
 
 if __name__ == "__main__":

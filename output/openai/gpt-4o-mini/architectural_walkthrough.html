@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architectural Walkthrough</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #minimap { position: absolute; top: 10px; left: 10px; width: 200px; height: 200px; background-color: rgba(255, 255, 255, 0.5); }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://threejs.org/examples/js/controls/PointerLockControls.js"></script>
+</head>
+<body>
+<div id="minimap"></div>
+<script>
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Basic Lighting
+    const ambientLight = new THREE.AmbientLight(0x404040, 2);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    directionalLight.position.set(1, 1, 1).normalize();
+    scene.add(directionalLight);
+
+    // Geometry for rooms
+    function createRoom(width, height, depth) {
+        const geometry = new THREE.BoxGeometry(width, height, depth);
+        const material = new THREE.MeshStandardMaterial({color: 0xffffff, roughness: 0.5});
+        const room = new THREE.Mesh(geometry, material);
+        return room;
+    }
+
+    // Create multiple rooms
+    const room1 = createRoom(4, 2.5, 4);
+    room1.position.set(0, 1.25, 0);
+    scene.add(room1);
+
+    const room2 = createRoom(4, 2.5, 4);
+    room2.position.set(0, 1.25, 5);
+    scene.add(room2);
+
+    const hotspotGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+    function createHotspot(position) {
+        const hotspot = new THREE.Mesh(hotspotGeometry, new THREE.MeshBasicMaterial({color: 0xff0000}));
+        hotspot.position.copy(position);
+        hotspot.userData.interactive = true;
+        scene.add(hotspot);
+        return hotspot;
+    }
+
+    // Create interactive hotspots
+    createHotspot(new THREE.Vector3(0, 1.25, 3));
+
+    // Setup Camera Controls
+    const controls = new THREE.PointerLockControls(camera, document.body);
+    document.body.appendChild(controls.getElement());
+    
+    document.addEventListener('click', () => {
+        controls.lock();
+    });
+
+    const velocity = new THREE.Vector3();
+    const direction = new THREE.Vector3();
+    
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.moveForward(0.1);
+        renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Minimap setup
+    const minimapRenderer = new THREE.WebGLRenderer();
+    minimapRenderer.setSize(200, 200);
+    minimapRenderer.domElement.style.position = 'absolute';
+    minimapRenderer.domElement.style.top = '10px';
+    minimapRenderer.domElement.style.left = '10px';
+    document.body.appendChild(minimapRenderer.domElement);
+
+    const minimapCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
+    minimapCamera.position.set(0, 10, 0);
+    minimapCamera.lookAt(0, 0, 0);
+
+    function renderMinimap() {
+        minimapRenderer.render(scene, minimapCamera);
+    }
+
+    function render() {
+        requestAnimationFrame(render);
+        renderMinimap();
+    }
+
+    render();
+
+    // Handle collisions (simplified)
+    function checkCollisions() {
+        // Simple check that limits movement when near walls/furniture could be implemented here.
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>

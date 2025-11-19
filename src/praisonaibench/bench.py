@@ -252,10 +252,12 @@ class Bench:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"benchmark_results_{timestamp}.json"
         
+        # Create json subdirectory for better organization
         output_dir = self.config.get("output_dir", "output")
-        os.makedirs(output_dir, exist_ok=True)
+        json_dir = os.path.join(output_dir, "json")
+        os.makedirs(json_dir, exist_ok=True)
         
-        filepath = os.path.join(output_dir, filename)
+        filepath = os.path.join(json_dir, filename)
         
         with open(filepath, 'w') as f:
             json.dump(self.results, f, indent=2)
