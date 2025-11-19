@@ -1,5 +1,4 @@
 # Output and Results
-output/*.json
 output/*.html
 output/screenshots/
 output/html/
