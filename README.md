@@ -16,7 +16,15 @@ Benchmark any LiteLLM-compatible model with automatic HTML extraction, model-spe
 
 ## 🚀 Quick Start
 
-### 1. Install with uv (Recommended)
+### 1. Install from PyPI (Recommended)
+
+```bash
+pip install praisonaibench
+```
+
+[![PyPI](https://img.shields.io/pypi/v/praisonaibench)](https://pypi.org/project/praisonaibench/)
+
+### 2. Install with uv
 
 ```bash
 # Clone the repository
@@ -30,13 +38,15 @@ uv sync
 uv pip install -e .
 ```
 
-### 2. Alternative: Install with pip
+### 3. Alternative: Install with pip (from source)
 
 ```bash
+git clone https://github.com/MervinPraison/praisonaibench
+cd praisonaibench
 pip install -e .
 ```
 
-### 3. Set Your API Keys
+### 4. Set Your API Keys
 
 ```bash
 # OpenAI
