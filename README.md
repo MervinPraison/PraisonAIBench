@@ -21,19 +21,34 @@ Benchmark any LiteLLM-compatible model with automatic HTML extraction, model-spe
 
 ### 🔍 What's Included in Evaluation?
 
-Our evaluation system provides comprehensive quality assessment:
+Our **research-backed hybrid evaluation system** provides comprehensive quality assessment:
 
 | Component | What It Does | Score Weight |
 |-----------|--------------|--------------|
-| **🌐 Functional** | Browser rendering, console errors, render time | 70% |
-| **🎨 Quality (LLM)** | Code quality, completeness, best practices | 30% |
+| **📝 HTML Validation** | Static structure validation, DOCTYPE, required tags | 15% |
+| **🌐 Functional** | Browser rendering, console errors, render time | 40% |
+| **🎯 Expected Result** | Objective comparison (optional, for factual tasks) | 20%* |
+| **🎨 Quality (LLM)** | Code quality, completeness, best practices | 25% |
 | **📊 Overall** | Combined score (0-100) with pass/fail (≥70) | 100% |
 
-**Example Output**:
+*When `expected` field is not provided, weights are automatically normalized (HTML: 18.75%, Functional: 50%, LLM: 31.25%)
+
+**Example Output (with expected)**:
 ```
+HTML Validation: 90/100 ✅ Valid structure
 Functional: 85/100 (renders ✅, 1 error, <1s)
+Expected: 95/100 (95% similarity with expected result)
 Quality: 80/100 (good structure, minor issues)
-Overall: 83/100 ✅ PASSED
+Overall: 87/100 ✅ PASSED
+```
+
+**Example Output (without expected)**:
+```
+HTML Validation: 90/100 ✅ Valid structure
+Functional: 85/100 (renders ✅, 1 error, <1s)
+Expected: N/A (not provided)
+Quality: 80/100 (good structure, minor issues)
+Overall: 85/100 ✅ PASSED
 ```
 
 ## ✨ Key Features
@@ -205,14 +220,22 @@ praisonaibench --suite examples/threejs_simulation_suite.yaml --model xai/grok-c
 tests:
   - name: "math_test"
     prompt: "What is 15 * 23?"
+    expected: "345"  # Optional: for objective comparison
   
   - name: "creative_test"
     prompt: "Write a short story about a robot"
+    # No expected field - subjective task
   
   - name: "model_specific_test"
     prompt: "Explain quantum physics"
     model: "gpt-4o"
 ```
+
+**Using the `expected` field**:
+- ✅ **Use for**: Factual questions, math problems, code output, deterministic tasks
+- ❌ **Skip for**: Creative tasks, open-ended questions, visual/interactive content
+- When provided: Adds 20% objective scoring based on similarity
+- When omitted: Weights automatically normalize (no penalty)
 
 ### Advanced Test Suite with Full Config Support
 

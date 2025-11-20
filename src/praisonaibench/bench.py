@@ -39,13 +39,13 @@ class Bench:
         # Initialize evaluator if enabled
         if self.enable_evaluation:
             try:
-                from .simple_evaluator import CombinedEvaluator
-                self.evaluator = CombinedEvaluator(
+                from .hybrid_evaluator import HybridEvaluator
+                self.evaluator = HybridEvaluator(
                     use_llm_judge=self.config.get('use_llm_judge', True),
-                    judge_model=self.config.get('judge_model', 'gpt-4o'),
+                    judge_model=self.config.get('judge_model', 'gpt-5.1'),
                     headless=self.config.get('headless', True)
                 )
-                logging.info("✅ Evaluation system enabled")
+                logging.info("✅ Hybrid evaluation system enabled")
             except ImportError:
                 logging.warning("⚠️  Evaluation system not available (install playwright)")
                 self.evaluator = None
@@ -81,11 +81,12 @@ class Bench:
     
 
     
-    def run_single_test(self, 
-                       prompt: str, 
+    def run_single_test(self,
+                       prompt: str,
                        model: str = None,
                        test_name: str = None,
-                       llm_config: Dict[str, Any] = None) -> Dict[str, Any]:
+                       llm_config: Dict[str, Any] = None,
+                       expected: str = None) -> Dict[str, Any]:
         """
         Run a single benchmark test.
         
@@ -94,6 +95,7 @@ class Bench:
             model: LLM model to use (defaults to first model in config)
             test_name: Optional test name
             llm_config: Dictionary of LLM configuration parameters (max_tokens, temperature, etc.)
+            expected: Optional expected result for objective comparison
             
         Returns:
             Test result dictionary
@@ -132,12 +134,13 @@ class Bench:
         
         # Run evaluation if enabled
         if self.evaluator and result['status'] == 'success' and result['response']:
-            print(f"\n📊 Evaluating output...")
+            print("\n📊 Evaluating output...")
             try:
                 evaluation = self.evaluator.evaluate(
                     html_content=result['response'],
                     test_name=test_name,
-                    prompt=prompt
+                    prompt=prompt,
+                    expected=expected
                 )
                 result['evaluation'] = evaluation
                 
@@ -146,12 +149,17 @@ class Bench:
                 status_emoji = '✅ PASSED' if evaluation['passed'] else '❌ FAILED'
                 print(f"  Status: {status_emoji}")
                 
-                # Print feedback
-                for item in evaluation['functional']['feedback']:
-                    print(f"  {item['message']}")
-                
-                if evaluation.get('quality'):
-                    print(f"  💬 {evaluation['quality']['feedback']}")
+                # Print feedback from all components
+                feedback = self.evaluator.get_feedback(evaluation)
+                for item in feedback:
+                    if item['level'] == 'success':
+                        print(f"  {item['message']}")
+                    elif item['level'] == 'warning':
+                        print(f"  {item['message']}")
+                    elif item['level'] == 'error':
+                        print(f"  {item['message']}")
+                    elif item['level'] == 'info':
+                        print(f"  {item['message']}")
                     
             except Exception as e:
                 logging.warning(f"⚠️  Evaluation failed: {str(e)}")
@@ -196,13 +204,14 @@ class Bench:
             prompt = test.get('prompt', '')
             model = default_model or test.get('model', None)  # Use default_model if provided
             test_name = test.get('name', f'test_{len(suite_results) + 1}')
+            expected = test.get('expected', None)  # Optional expected result
             
             # Skip test if filter is specified and doesn't match
             if test_filter and test_name != test_filter:
                 continue
             
             print(f"Running test: {test_name}")
-            result = self.run_single_test(prompt, model, test_name, llm_config=suite_config)
+            result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
             suite_results.append(result)
             
             if result['status'] == 'success':
