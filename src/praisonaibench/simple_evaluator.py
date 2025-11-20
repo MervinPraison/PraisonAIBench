@@ -165,7 +165,7 @@ class SimpleEvaluator:
             feedback.append({
                 'level': 'error',
                 'message': f"❌ {len(result['errors'])} console error(s)",
-                'details': result['errors'][:3]  # Show first 3
+                'details': result['errors']  # Show all errors
             })
         
         if len(result['warnings']) > 0:
@@ -183,7 +183,7 @@ class LLMJudge:
     Uses your existing LLM setup
     """
     
-    def __init__(self, model="gpt-4o", temperature=0.1):
+    def __init__(self, model="gpt-5.1", temperature=0.1):
         self.model = model
         self.temperature = temperature  # Low temp for consistency (research-based)
     
@@ -212,7 +212,7 @@ ORIGINAL REQUEST:
 {prompt}
 
 CODE TO EVALUATE:
-{html_content[:2000]}
+{html_content}
 
 EVALUATION RUBRIC (3-point scale for consistency):
 
@@ -328,13 +328,13 @@ class CombinedEvaluator:
     This is the main evaluator you should use.
     """
     
-    def __init__(self, use_llm_judge=True, judge_model="gpt-4o", headless=True):
+    def __init__(self, use_llm_judge=True, judge_model="gpt-5.1", headless=True):
         """
         Initialize combined evaluator
         
         Args:
             use_llm_judge: Enable LLM-as-a-Judge quality scoring
-            judge_model: Model to use for judging (default: gpt-4o)
+            judge_model: Model to use for judging (default: gpt-5.1)
             headless: Run browser in headless mode
         """
         self.functional = SimpleEvaluator(headless=headless)

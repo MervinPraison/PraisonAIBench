@@ -120,7 +120,7 @@ Examples:
         try:
             result = bench.run_single_test(args.test, args.model)
             print(f"✅ Test completed in {result['execution_time']:.2f}s")
-            print(f"Response: {result['response'][:200]}...")
+            print(f"Response length: {len(result['response'])} characters")
             
         except Exception as e:
             print(f"❌ Test failed: {e}")
