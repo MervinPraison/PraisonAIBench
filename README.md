@@ -4,6 +4,38 @@
 
 Benchmark any LiteLLM-compatible model with automatic HTML extraction, model-specific output organization, and flexible test suite management.
 
+## 🎯 Testing Modes
+
+| Feature | Single Test | Test Suite (YAML) |
+|---------|-------------|-------------------|
+| **📝 Description** | Run one prompt | Run multiple tests from YAML file |
+| **🔧 Command** | `praisonaibench --test "prompt"` | `praisonaibench --suite tests.yaml` |
+| **📊 Evaluation** | ✅ Enabled (Browser + LLM Judge) | ✅ Enabled (Browser + LLM Judge) |
+| **🎨 HTML Extraction** | ✅ Auto-extracted | ✅ Auto-extracted |
+| **📁 Output** | Single JSON result | Batch JSON results |
+| **🖼️ Screenshots** | ✅ Generated | ✅ Generated |
+| **⚡ Console Errors** | ✅ Detected | ✅ Detected |
+| **🤖 LLM Judge** | ✅ gpt-5.1 quality scoring | ✅ gpt-5.1 quality scoring |
+| **🔄 Retry Logic** | ✅ 3 attempts | ✅ 3 attempts |
+| **📈 Use Case** | Quick testing | Comprehensive benchmarking |
+
+### 🔍 What's Included in Evaluation?
+
+Our evaluation system provides comprehensive quality assessment:
+
+| Component | What It Does | Score Weight |
+|-----------|--------------|--------------|
+| **🌐 Functional** | Browser rendering, console errors, render time | 70% |
+| **🎨 Quality (LLM)** | Code quality, completeness, best practices | 30% |
+| **📊 Overall** | Combined score (0-100) with pass/fail (≥70) | 100% |
+
+**Example Output**:
+```
+Functional: 85/100 (renders ✅, 1 error, <1s)
+Quality: 80/100 (good structure, minor issues)
+Overall: 83/100 ✅ PASSED
+```
+
 ## ✨ Key Features
 
 - 🎯 **Any LLM Model** - OpenAI, Anthropic, Google, XAI, local models via LiteLLM
