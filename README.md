@@ -68,6 +68,7 @@ Overall: 85/100 ✅ PASSED
 - 📈 **HTML Dashboard Reports** - Beautiful visual reports with interactive charts using `--report`
 - 🛠️ **Modern Tooling** - Built with `pyproject.toml` and `uv` package manager
 - 📋 **Comprehensive Results** - Complete metrics with timing, success rates, costs, and metadata
+- 🔌 **Plugin System** - Extensible evaluators for any language (Python, TypeScript, Go, etc.) via plugins
 
 ## 🚀 Quick Start
 
@@ -366,6 +367,11 @@ tests:
     prompt: "What is 15 * 23?"
     expected: "345"  # Optional: for objective comparison
   
+  - name: "python_test"
+    language: "python"  # Use plugin evaluator
+    prompt: "Write Python factorial function"
+    expected: "120"
+  
   - name: "creative_test"
     prompt: "Write a short story about a robot"
     # No expected field - subjective task
@@ -558,6 +564,64 @@ Results saved to: output/benchmark_results_20250829_160426.json
 - **Single Agent Design** - Your prompt becomes the instruction
 - **No Complex Configs** - Just write your test prompts
 - **Minimal Dependencies** - Only what you need
+
+## 🔌 Plugin System
+
+**Extensible evaluators for any language or task** - Create plugins in one file.
+
+### Create Plugin (One File)
+
+```python
+from praisonaibench import BaseEvaluator
+
+class MyEvaluator(BaseEvaluator):
+    def get_language(self):
+        return 'mylang'  # e.g., 'python', 'typescript', 'go'
+    
+    def evaluate(self, code, test_name, prompt, expected=None):
+        return {
+            'score': 85,      # 0-100
+            'passed': True,   # score >= 70
+            'feedback': [{'level': 'success', 'message': '✅ Works!'}],
+            'details': {}
+        }
+```
+
+**Setup** (`pyproject.toml`):
+```toml
+[project]
+name = "praisonaibench-mylang"
+version = "0.1.0"
+dependencies = ["praisonaibench>=0.1.0"]
+
+[project.entry-points."praisonaibench.evaluators"]
+mylang = "my_evaluator:MyEvaluator"
+```
+
+**Install**: `pip install -e .` or `uv pip install -e .`
+
+### Use Plugin
+
+```yaml
+# tests.yaml
+tests:
+  - name: "python_test"
+    language: "python"  # Auto-discovered
+    prompt: "Write Python hello world"
+    expected: "Hello World"
+```
+
+**Run**: `praisonaibench --suite tests.yaml`
+
+### Features
+
+- ✅ **One file** (~50 lines) per plugin
+- ✅ **Auto-discovery** - No config needed
+- ✅ **Backwards compatible** - HTML evaluation unchanged
+- ✅ **Language detection** - Auto-detects from code blocks or explicit `language` field
+- ✅ **Any task** - Programming languages, text summarization, translation, etc.
+
+**Example**: `examples/plugins/python_evaluator.py`
 
 ## 🚀 Use Cases
 

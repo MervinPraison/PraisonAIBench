@@ -1,0 +1,31 @@
+# Example pyproject.toml for creating a plugin package
+# Rename this to pyproject.toml and modify for your language
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "praisonaibench-mylang"  # Change: praisonaibench-python, praisonaibench-rust, etc.
+version = "0.1.0"
+description = "MyLang evaluator plugin for PraisonAI Bench"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+dependencies = [
+    "praisonaibench>=0.1.0"
+]
+requires-python = ">=3.8"
+
+# Entry point - this is how the plugin is discovered
+[project.entry-points."praisonaibench.evaluators"]
+mylang = "my_evaluator:MyEvaluator"  # Change: python = "python_evaluator:PythonEvaluator"
+
+# Optional: If publishing to PyPI
+[project.urls]
+Homepage = "https://github.com/yourusername/praisonaibench-mylang"
+Repository = "https://github.com/yourusername/praisonaibench-mylang"
+
+# Hatchling configuration
+[tool.hatch.build.targets.wheel]
+packages = ["."]  # Includes all .py files in the directory

@@ -4,23 +4,21 @@ Python Evaluator Plugin Example for PraisonAI Bench
 This is a minimal example showing how to create a plugin.
 
 Installation:
-1. Create setup.py in the same directory:
+1. Create pyproject.toml in the same directory:
    
-   from setuptools import setup
+   [build-system]
+   requires = ["hatchling"]
+   build-backend = "hatchling.build"
    
-   setup(
-       name='praisonaibench-python',
-       version='0.1.0',
-       py_modules=['python_evaluator'],
-       install_requires=['praisonaibench>=0.3.0'],
-       entry_points={
-           'praisonaibench.evaluators': [
-               'python = python_evaluator:PythonEvaluator',
-           ],
-       },
-   )
+   [project]
+   name = "praisonaibench-python"
+   version = "0.1.0"
+   dependencies = ["praisonaibench>=0.1.0"]
+   
+   [project.entry-points."praisonaibench.evaluators"]
+   python = "python_evaluator:PythonEvaluator"
 
-2. Install: pip install -e .
+2. Install: pip install -e .  (or: uv pip install -e .)
 
 3. Use in tests.yaml:
    tests:

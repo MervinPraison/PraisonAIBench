@@ -29,25 +29,23 @@ class MyEvaluator(BaseEvaluator):
         }
 ```
 
-2. **Create setup.py**:
+2. **Create pyproject.toml**:
 
-```python
-from setuptools import setup
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-setup(
-    name='praisonaibench-mylang',
-    version='0.1.0',
-    py_modules=['my_evaluator'],
-    install_requires=['praisonaibench>=0.3.0'],
-    entry_points={
-        'praisonaibench.evaluators': [
-            'mylang = my_evaluator:MyEvaluator',
-        ],
-    },
-)
+[project]
+name = "praisonaibench-mylang"
+version = "0.1.0"
+dependencies = ["praisonaibench>=0.1.0"]
+
+[project.entry-points."praisonaibench.evaluators"]
+mylang = "my_evaluator:MyEvaluator"
 ```
 
-3. **Install**: `pip install -e .`
+3. **Install**: `pip install -e .` or `uv pip install -e .`
 
 Done! Your plugin is now active.
 
