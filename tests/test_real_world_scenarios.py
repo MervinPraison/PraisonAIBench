@@ -39,7 +39,7 @@ class TestRealWorldScenarios:
         
         # Verify evaluation is disabled
         assert bench.enable_evaluation is False
-        assert bench.evaluator is None
+        assert bench.plugin_manager is None
         print("✅ User can disable evaluation for speed")
     
     def test_playwright_not_installed_graceful_degradation(self):

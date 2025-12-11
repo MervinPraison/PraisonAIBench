@@ -73,7 +73,7 @@ config:
         
         bench = Bench(enable_evaluation=False)
         assert bench.enable_evaluation is False
-        assert bench.evaluator is None
+        assert bench.plugin_manager is None
 
 
 class TestEvaluationWorkflow:

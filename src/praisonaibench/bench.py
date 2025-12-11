@@ -19,6 +19,7 @@ import csv
 from .cost_tracker import CostTracker
 from .report_generator import ReportGenerator
 from .enhanced_report import EnhancedReportGenerator
+from .plugin_manager import PluginManager
 from rich.progress import (
     Progress,
     SpinnerColumn,
@@ -49,22 +50,18 @@ class Bench:
         self.results = []
         self.config = self._load_config(config_file)
         self.enable_evaluation = enable_evaluation
-        self.evaluator = None
         self.cost_tracker = CostTracker()
         
-        # Initialize evaluator if enabled
+        # Initialize plugin manager if evaluation enabled
+        self.plugin_manager = None
         if self.enable_evaluation:
             try:
-                from .hybrid_evaluator import HybridEvaluator
-                self.evaluator = HybridEvaluator(
-                    use_llm_judge=self.config.get('use_llm_judge', True),
-                    judge_model=self.config.get('judge_model', 'gpt-5.1'),
-                    headless=self.config.get('headless', True)
-                )
-                logging.info("✅ Hybrid evaluation system enabled")
-            except ImportError:
-                logging.warning("⚠️  Evaluation system not available (install playwright)")
-                self.evaluator = None
+                self.plugin_manager = PluginManager()
+                supported_langs = ', '.join(self.plugin_manager.list_languages())
+                logging.info(f"✅ Loaded evaluators for: {supported_langs}")
+            except Exception as e:
+                logging.warning(f"⚠️  Could not initialize plugin manager: {e}")
+                self.plugin_manager = None
     
     def _load_config(self, config_file: str = None) -> Dict[str, Any]:
         """Load configuration from file or use defaults."""
@@ -93,9 +90,35 @@ class Bench:
         
         return default_config
     
-
-    
-
+    def _detect_language(self, response: str, test_config: dict = None) -> str:
+        """
+        Detect language from response or test configuration.
+        
+        Args:
+            response: LLM response
+            test_config: Test configuration dict (may contain 'language' key)
+        
+        Returns:
+            Language identifier
+        """
+        # 1. Check explicit language in test config
+        if test_config and 'language' in test_config:
+            return test_config['language'].lower()
+        
+        # 2. Check for code blocks with language tags (```python, ```typescript, etc.)
+        match = re.search(r'```(\w+)', response)
+        if match:
+            lang = match.group(1).lower()
+            # Skip generic 'code' tag
+            if lang != 'code':
+                return lang
+        
+        # 3. Check for HTML indicators
+        if '<!doctype' in response.lower() or '<html' in response.lower():
+            return 'html'
+        
+        # 4. Default to HTML (backwards compatible)
+        return 'html'
     
     def run_single_test(self,
                        prompt: str,
@@ -149,36 +172,43 @@ class Bench:
             self._extract_and_save_html(result['response'], test_name, model)
         
         # Run evaluation if enabled
-        if self.evaluator and result['status'] == 'success' and result['response']:
+        if self.plugin_manager and result['status'] == 'success' and result['response']:
             print("\n📊 Evaluating output...")
-            try:
-                evaluation = self.evaluator.evaluate(
-                    html_content=result['response'],
-                    test_name=test_name,
-                    prompt=prompt,
-                    expected=expected
-                )
-                result['evaluation'] = evaluation
-                
-                # Print summary
-                print(f"  Overall Score: {evaluation['overall_score']}/100")
-                status_emoji = '✅ PASSED' if evaluation['passed'] else '❌ FAILED'
-                print(f"  Status: {status_emoji}")
-                
-                # Print feedback from all components
-                feedback = self.evaluator.get_feedback(evaluation)
-                for item in feedback:
-                    if item['level'] == 'success':
-                        print(f"  {item['message']}")
-                    elif item['level'] == 'warning':
-                        print(f"  {item['message']}")
-                    elif item['level'] == 'error':
-                        print(f"  {item['message']}")
-                    elif item['level'] == 'info':
-                        print(f"  {item['message']}")
+            
+            # Detect language
+            test_config = {'language': llm_config.get('language')} if llm_config and 'language' in llm_config else {}
+            language = self._detect_language(result['response'], test_config)
+            
+            # Get appropriate evaluator
+            evaluator = self.plugin_manager.get_evaluator(language)
+            
+            if evaluator:
+                print(f"  Using {language} evaluator...")
+                try:
+                    evaluation = evaluator.evaluate(
+                        code=result['response'],
+                        test_name=test_name,
+                        prompt=prompt,
+                        expected=expected
+                    )
+                    result['evaluation'] = evaluation
+                    result['language'] = language
                     
-            except Exception as e:
-                logging.warning(f"⚠️  Evaluation failed: {str(e)}")
+                    # Print summary
+                    score = evaluation.get('overall_score', evaluation.get('score', 0))
+                    print(f"  Overall Score: {score}/100")
+                    status_emoji = '✅ PASSED' if evaluation['passed'] else '❌ FAILED'
+                    print(f"  Status: {status_emoji}")
+                    
+                    # Print feedback
+                    for item in evaluation.get('feedback', []):
+                        print(f"  {item.get('message', '')}")
+                        
+                except Exception as e:
+                    logging.warning(f"⚠️  Evaluation failed: {str(e)}")
+            else:
+                print(f"  ⚠️  No evaluator found for language: {language}")
+                print(f"  Available: {', '.join(self.plugin_manager.list_languages())}")
         
         # Track costs if available
         if result['status'] == 'success' and 'token_usage' in result:

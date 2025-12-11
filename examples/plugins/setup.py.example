@@ -1,0 +1,27 @@
+"""
+Example setup.py for creating a plugin package.
+
+Rename this to setup.py and modify for your language.
+"""
+
+from setuptools import setup
+
+setup(
+    name='praisonaibench-python',  # Change to your language
+    version='0.1.0',
+    author='Your Name',
+    author_email='your.email@example.com',
+    description='Python evaluator plugin for PraisonAI Bench',
+    py_modules=['python_evaluator'],  # Your plugin file name
+    install_requires=['praisonaibench>=0.3.0'],
+    entry_points={
+        'praisonaibench.evaluators': [
+            'python = python_evaluator:PythonEvaluator',  # language = module:Class
+        ],
+    },
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Developers',
+        'Programming Language :: Python :: 3',
+    ],
+)

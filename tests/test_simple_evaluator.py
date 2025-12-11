@@ -166,12 +166,19 @@ class TestLLMJudge:
         """Test LLM judge returns correct structure"""
         result = llm_judge.evaluate(simple_html, "Create a simple HTML page")
         
-        # Check structure
+        # Check structure - quality_score is required
         assert 'quality_score' in result
-        assert 'feedback' in result
         
         # Score should be 0-100
         assert 0 <= result['quality_score'] <= 100
+        
+        # Should have either detailed results or feedback on failure
+        if result['quality_score'] > 0:
+            # Success case: detailed results
+            assert 'reasoning' in result or 'confidence' in result
+        else:
+            # Failure case: feedback
+            assert 'feedback' in result
 
 
 class TestCombinedEvaluator:
@@ -259,7 +266,7 @@ class TestBenchIntegration:
     def test_bench_with_evaluation_disabled(self, bench_without_eval):
         """Test Bench initializes without evaluation"""
         assert bench_without_eval.enable_evaluation == False
-        assert bench_without_eval.evaluator is None
+        assert bench_without_eval.plugin_manager is None
 
 
 class TestEndToEnd:

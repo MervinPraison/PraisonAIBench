@@ -445,11 +445,12 @@ class TestBenchIntegrationHybrid:
             pytest.skip("Bench not available")
     
     def test_bench_uses_hybrid_evaluator(self, bench_with_hybrid):
-        """Test that Bench uses HybridEvaluator"""
-        if bench_with_hybrid.evaluator is not None:
-            # Should have HybridEvaluator
-            assert hasattr(bench_with_hybrid.evaluator, 'html_validator')
-            assert hasattr(bench_with_hybrid.evaluator, 'expected_evaluator')
+        """Test that Bench uses plugin manager with HTML evaluator"""
+        if bench_with_hybrid.plugin_manager is not None:
+            # Check that HTML evaluator is available (backwards compatibility)
+            html_eval = bench_with_hybrid.plugin_manager.get_evaluator('html')
+            assert html_eval is not None
+            assert 'html' in bench_with_hybrid.plugin_manager.list_languages()
 
 
 class TestEndToEndHybrid:
