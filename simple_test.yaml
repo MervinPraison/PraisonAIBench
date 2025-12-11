@@ -1,0 +1,19 @@
+# Simple tests to verify parallel execution feature
+# These are quick prompts that return fast responses
+
+tests:
+  - name: "math_test_1"
+    prompt: "What is 2 + 2? Reply with just the number."
+    expected: "4"
+
+  - name: "math_test_2"
+    prompt: "What is 5 * 3? Reply with just the number."
+    expected: "15"
+
+  - name: "math_test_3"
+    prompt: "What is 10 - 7? Reply with just the number."
+    expected: "3"
+
+  - name: "math_test_4"
+    prompt: "What is 8 / 2? Reply with just the number."
+    expected: "4"

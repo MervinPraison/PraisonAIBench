@@ -7,6 +7,7 @@ from typing import Dict, List, Any, Optional
 import json
 import time
 import logging
+from .cost_tracker import CostTracker
 
 
 class BenchAgent:
@@ -46,6 +47,49 @@ class BenchAgent:
             instructions=self.instructions,
             llm=self.llm
         )
+    
+    def _extract_usage_and_cost(self, prompt: str, response: str) -> tuple:
+        """
+        Extract token usage and calculate cost.
+        
+        Args:
+            prompt: Input prompt
+            response: LLM response
+            
+        Returns:
+            Tuple of (token_usage_dict, cost_dict)
+        """
+        model_name = self.llm.get("model", str(self.llm)) if isinstance(self.llm, dict) else self.llm
+        
+        # Try to extract actual token usage from agent
+        input_tokens, output_tokens = CostTracker.extract_token_usage(self.agent)
+        
+        # If extraction failed, estimate from text
+        if input_tokens == 0 and output_tokens == 0:
+            input_tokens = CostTracker.estimate_tokens(prompt)
+            output_tokens = CostTracker.estimate_tokens(response) if response else 0
+            estimation_method = "estimated"
+        else:
+            estimation_method = "actual"
+        
+        # Calculate cost
+        cost_usd = CostTracker.calculate_cost(input_tokens, output_tokens, model_name)
+        
+        token_usage = {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens,
+            "method": estimation_method
+        }
+        
+        cost_info = {
+            "total_usd": round(cost_usd, 6),
+            "input_cost_usd": round((input_tokens / 1_000_000) * CostTracker.get_model_pricing(model_name)["input"], 6),
+            "output_cost_usd": round((output_tokens / 1_000_000) * CostTracker.get_model_pricing(model_name)["output"], 6),
+            "model": model_name
+        }
+        
+        return token_usage, cost_info
     
     def run_test(self, prompt: str, test_name: str = None, max_retries: int = 3) -> Dict[str, Any]:
         """
@@ -97,6 +141,9 @@ class BenchAgent:
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
                         }
                 
+                # Extract token usage and calculate cost
+                token_usage, cost_info = self._extract_usage_and_cost(prompt, response)
+                
                 # Success!
                 result = {
                     "test_name": test_name or "unnamed_test",
@@ -106,7 +153,9 @@ class BenchAgent:
                     "agent_name": self.name,
                     "execution_time": end_time - start_time,
                     "status": "success",
-                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "token_usage": token_usage,
+                    "cost": cost_info
                 }
                 
                 if attempt > 0:

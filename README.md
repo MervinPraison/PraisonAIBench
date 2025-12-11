@@ -17,6 +17,8 @@ Benchmark any LiteLLM-compatible model with automatic HTML extraction, model-spe
 | **⚡ Console Errors** | ✅ Detected | ✅ Detected |
 | **🤖 LLM Judge** | ✅ gpt-5.1 quality scoring | ✅ gpt-5.1 quality scoring |
 | **🔄 Retry Logic** | ✅ 3 attempts | ✅ 3 attempts |
+| **⚡ Parallel Execution** | N/A | ✅ `--concurrent N` |
+| **💰 Cost Tracking** | ✅ Token & cost per test | ✅ Cumulative cost summary |
 | **📈 Use Case** | Quick testing | Comprehensive benchmarking |
 
 ### 🔍 What's Included in Evaluation?
@@ -58,8 +60,10 @@ Overall: 85/100 ✅ PASSED
 - 💾 **Auto HTML Extraction** - Automatically saves HTML code from responses
 - 📁 **Smart Organization** - Model-specific output folders (`output/gpt-4o/`, `output/xai/grok-code-fast-1/`)
 - 🎛️ **Flexible Testing** - Run single tests, full suites, or filter specific tests
-- ⚡ **Modern Tooling** - Built with `pyproject.toml` and `uv` package manager
-- 📊 **Comprehensive Results** - JSON metrics with timing, success rates, and metadata
+- ⚡ **Parallel Execution** - Run tests concurrently with `--concurrent N` for faster benchmarking
+- 💰 **Cost & Token Tracking** - Automatic token usage and cost calculation for all supported models
+- 🛠️ **Modern Tooling** - Built with `pyproject.toml` and `uv` package manager
+- 📊 **Comprehensive Results** - JSON metrics with timing, success rates, costs, and metadata
 
 ## 🚀 Quick Start
 
@@ -180,6 +184,9 @@ praisonaibench --suite examples/threejs_simulation_suite.yaml --test-name "rotat
 
 # Run suite with specific model (overrides individual test models)
 praisonaibench --suite tests.yaml --model xai/grok-code-fast-1
+
+# Run tests in parallel (3 concurrent workers)
+praisonaibench --suite tests.yaml --concurrent 3
 ```
 
 ### Cross-Model Comparison
@@ -211,6 +218,40 @@ praisonaibench --test "Create a rotating cube HTML with Three.js" --model gpt-4o
 praisonaibench --suite examples/threejs_simulation_suite.yaml --model xai/grok-code-fast-1
 # → Saves to: output/xai/grok-code-fast-1/rotating_cube_simulation.html
 ```
+
+### Cost & Token Tracking
+
+Automatically track token usage and costs for all LLM API calls:
+
+```bash
+# Run tests with automatic cost tracking
+praisonaibench --suite tests.yaml --model gpt-4o
+
+# Output includes per-test costs:
+💰 Cost: $0.002400 (1250 tokens)
+
+# Summary shows total costs:
+📊 Summary:
+   Total tests: 4
+   Success rate: 100.0%
+   Average time: 8.42s
+
+💰 Cost Summary:
+   Total tokens: 5,420
+   Total cost: $0.0124
+
+   By model:
+     gpt-4o: $0.0124 (5,420 tokens)
+```
+
+**Supported models** include accurate pricing for:
+- OpenAI (GPT-4o, GPT-4, GPT-3.5, O1)
+- Anthropic (Claude 3 family)
+- Google (Gemini 1.5 family)
+- XAI (Grok models)
+- Groq (optimised models)
+
+Token usage is extracted from API responses when available, or estimated from text length. Costs are calculated using official provider pricing (updated December 2024).
 
 ## 📋 Test Suite Format
 

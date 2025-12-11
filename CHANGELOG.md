@@ -5,6 +5,36 @@ All notable changes to PraisonAI Bench will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.9] - 2024-12-11
+
+### Added
+- **Cost & Token Usage Tracking** - Automatic tracking of token usage and costs
+  - `CostTracker` class for managing token and cost data
+  - Token usage extracted from LiteLLM responses (or estimated from text)
+  - Cost calculation for 30+ models across OpenAI, Anthropic, Google, XAI, Groq
+  - Per-test cost display: `💰 Cost: $0.002400 (1250 tokens)`
+  - Cumulative cost summary in benchmark results
+  - Per-model cost breakdown for multi-model tests
+  - Token usage included in JSON results: `token_usage` and `cost` fields
+
+### Changed
+- Results JSON now includes `token_usage` and `cost` fields
+- Summary output includes cost information when available
+- `get_summary()` returns cost summary with token counts and costs by model
+
+## [0.0.8] - 2024-12-11
+
+### Added
+- **Parallel Test Execution** - Run tests concurrently for faster benchmarking
+  - `--concurrent N` CLI flag to specify number of workers
+  - Thread-safe result collection with progress tracking
+  - Uses `ThreadPoolExecutor` for I/O-bound LLM API calls
+  - Results sorted by test name for consistent ordering
+
+### Changed
+- `run_test_suite` now accepts `concurrent` parameter (default: 1 = sequential)
+- Internal refactoring: sequential and parallel execution separated into `_run_tests_sequential` and `_run_tests_parallel` methods
+
 ## [0.0.7] - 2024-11-20
 
 ### Added

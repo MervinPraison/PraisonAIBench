@@ -13,6 +13,9 @@ import yaml
 from datetime import datetime
 import re
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+from .cost_tracker import CostTracker
 
 
 class Bench:
@@ -35,6 +38,7 @@ class Bench:
         self.config = self._load_config(config_file)
         self.enable_evaluation = enable_evaluation
         self.evaluator = None
+        self.cost_tracker = CostTracker()
         
         # Initialize evaluator if enabled
         if self.enable_evaluation:
@@ -164,11 +168,26 @@ class Bench:
             except Exception as e:
                 logging.warning(f"⚠️  Evaluation failed: {str(e)}")
         
+        # Track costs if available
+        if result['status'] == 'success' and 'token_usage' in result:
+            token_usage = result['token_usage']
+            cost_info = result.get('cost', {})
+            self.cost_tracker.add_usage(
+                input_tokens=token_usage.get('input_tokens', 0),
+                output_tokens=token_usage.get('output_tokens', 0),
+                model=model,
+                cost=cost_info.get('total_usd', None)
+            )
+            
+            # Print cost info
+            if cost_info.get('total_usd', 0) > 0:
+                print(f"💰 Cost: ${cost_info['total_usd']:.6f} ({token_usage['total_tokens']} tokens)")
+        
         self.results.append(result)
         
         return result
     
-    def run_test_suite(self, test_file: str, test_filter: str = None, default_model: str = None) -> List[Dict[str, Any]]:
+    def run_test_suite(self, test_file: str, test_filter: str = None, default_model: str = None, concurrent: int = 1) -> List[Dict[str, Any]]:
         """
         Run a complete test suite from a YAML or JSON file.
         
@@ -176,6 +195,7 @@ class Bench:
             test_file: Path to test configuration file
             test_filter: Optional test name to run only that specific test
             default_model: Optional model to use for all tests (overrides individual test models)
+            concurrent: Number of concurrent workers (default: 1 = sequential)
             
         Returns:
             List of all test results
@@ -190,8 +210,6 @@ class Bench:
             else:
                 tests = json.load(f)
         
-        suite_results = []
-        
         # Extract config and tests sections
         if isinstance(tests, dict) and 'tests' in tests:
             test_list = tests['tests']
@@ -200,15 +218,30 @@ class Bench:
             test_list = tests
             suite_config = {}
         
-        for test in test_list:
-            prompt = test.get('prompt', '')
-            model = default_model or test.get('model', None)  # Use default_model if provided
-            test_name = test.get('name', f'test_{len(suite_results) + 1}')
-            expected = test.get('expected', None)  # Optional expected result
-            
-            # Skip test if filter is specified and doesn't match
+        # Filter tests if specified
+        filtered_tests = []
+        for idx, test in enumerate(test_list):
+            test_name = test.get('name', f'test_{idx + 1}')
             if test_filter and test_name != test_filter:
                 continue
+            filtered_tests.append(test)
+        
+        # Sequential execution (default)
+        if concurrent <= 1:
+            return self._run_tests_sequential(filtered_tests, suite_config, default_model)
+        
+        # Parallel execution
+        return self._run_tests_parallel(filtered_tests, suite_config, default_model, concurrent)
+    
+    def _run_tests_sequential(self, test_list: List[Dict], suite_config: Dict, default_model: str = None) -> List[Dict[str, Any]]:
+        """Run tests sequentially."""
+        suite_results = []
+        
+        for idx, test in enumerate(test_list):
+            prompt = test.get('prompt', '')
+            model = default_model or test.get('model', None)
+            test_name = test.get('name', f'test_{idx + 1}')
+            expected = test.get('expected', None)
             
             print(f"Running test: {test_name}")
             result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
@@ -218,6 +251,60 @@ class Bench:
                 print(f"✅ Completed: {test_name}")
             else:
                 print(f"❌ Failed: {test_name} - {result.get('response', 'Unknown error')}")
+        
+        return suite_results
+    
+    def _run_tests_parallel(self, test_list: List[Dict], suite_config: Dict, default_model: str = None, max_workers: int = 3) -> List[Dict[str, Any]]:
+        """Run tests in parallel using ThreadPoolExecutor."""
+        suite_results = []
+        results_lock = threading.Lock()
+        completed_count = [0]  # Use list for mutable counter in closure
+        total_tests = len(test_list)
+        
+        print(f"⚡ Running {total_tests} tests with {max_workers} concurrent workers...")
+        
+        def run_test_wrapper(test_info):
+            """Wrapper for running a single test in a thread."""
+            idx, test = test_info
+            prompt = test.get('prompt', '')
+            model = default_model or test.get('model', None)
+            test_name = test.get('name', f'test_{idx + 1}')
+            expected = test.get('expected', None)
+            
+            try:
+                result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
+                
+                with results_lock:
+                    completed_count[0] += 1
+                    progress = f"[{completed_count[0]}/{total_tests}]"
+                    if result['status'] == 'success':
+                        print(f"✅ {progress} Completed: {test_name}")
+                    else:
+                        print(f"❌ {progress} Failed: {test_name}")
+                
+                return result
+            except Exception as e:
+                with results_lock:
+                    completed_count[0] += 1
+                    print(f"❌ [{completed_count[0]}/{total_tests}] Error in {test_name}: {str(e)}")
+                return {
+                    'test_name': test_name,
+                    'status': 'error',
+                    'response': str(e),
+                    'execution_time': 0
+                }
+        
+        # Run tests in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(run_test_wrapper, (idx, test)): idx 
+                      for idx, test in enumerate(test_list)}
+            
+            for future in as_completed(futures):
+                result = future.result()
+                suite_results.append(result)
+        
+        # Sort results by test_name to maintain consistent ordering
+        suite_results.sort(key=lambda x: x.get('test_name', ''))
         
         return suite_results
     
@@ -342,7 +429,7 @@ class Bench:
                 print(f"⚠️  Failed to save HTML file {html_path}: {e}")
     
     def get_summary(self) -> Dict[str, Any]:
-        """Get a summary of benchmark results."""
+        """Get a summary of benchmark results including costs."""
         if not self.results:
             return {"message": "No results available"}
         
@@ -365,7 +452,10 @@ class Bench:
         
         avg_execution_time = sum([r.get("execution_time", 0) for r in self.results]) / total_tests
         
-        return {
+        # Get cost summary
+        cost_summary = self.cost_tracker.get_summary()
+        
+        summary = {
             "total_tests": total_tests,
             "successful_tests": successful_tests,
             "failed_tests": failed_tests,
@@ -374,3 +464,13 @@ class Bench:
             "average_execution_time": f"{avg_execution_time:.2f}s",
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        
+        # Add cost information if available
+        if cost_summary["total_tokens"] > 0:
+            summary["cost_summary"] = {
+                "total_tokens": cost_summary["total_tokens"],
+                "total_cost_usd": cost_summary["total_cost_usd"],
+                "by_model": cost_summary["by_model"]
+            }
+        
+        return summary

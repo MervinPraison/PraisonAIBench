@@ -286,10 +286,12 @@ class HybridEvaluator:
             score += results['expected']['score'] * weight
             total_weight += weight
         
-        # LLM Judge (25%)
+        # LLM Judge (25%) - uses 'quality_score' instead of 'score'
         if results.get('llm_judge'):
             weight = 0.25
-            score += results['llm_judge']['score'] * weight
+            llm_result = results['llm_judge']
+            llm_score = llm_result.get('quality_score', llm_result.get('score', 0))
+            score += llm_score * weight
             total_weight += weight
         
         # Normalize if expected is missing
@@ -329,10 +331,16 @@ class HybridEvaluator:
         # Add component details
         for component, weight in weights.items():
             if results.get(component):
+                comp_result = results[component]
+                # Handle llm_judge which uses 'quality_score' instead of 'score'
+                if component == 'llm_judge':
+                    comp_score = comp_result.get('quality_score', comp_result.get('score', 0))
+                else:
+                    comp_score = comp_result.get('score', 0)
                 breakdown['components'][component] = {
-                    'score': results[component]['score'],
+                    'score': comp_score,
                     'weight': f"{weight * 100:.2f}%",
-                    'contribution': f"{results[component]['score'] * weight:.2f}"
+                    'contribution': f"{comp_score * weight:.2f}"
                 }
             elif component == 'expected' and not has_expected:
                 breakdown['components'][component] = {
@@ -396,15 +404,16 @@ class HybridEvaluator:
                     'message': f"⚠️  Low similarity ({exp_result['similarity']:.1%}) with expected result"
                 })
         
-        # LLM Judge feedback
+        # LLM Judge feedback - uses 'quality_score' instead of 'score'
         if results.get('llm_judge'):
             llm_result = results['llm_judge']
+            llm_score = llm_result.get('quality_score', llm_result.get('score', 0))
             feedback.append({
                 'level': 'info',
                 'component': 'LLM Judge',
-                'message': f"🤖 Quality Score: {llm_result['score']}/100",
+                'message': f"🤖 Quality Score: {llm_score}/100",
                 'reasoning': llm_result.get('reasoning', ''),
-                'strengths': llm_result.get('strengths', []),
+                'strengths': llm_result.get('strengths', ''),
                 'weaknesses': llm_result.get('weaknesses', [])
             })
         

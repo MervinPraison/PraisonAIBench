@@ -57,6 +57,7 @@ Examples:
   praisonaibench --test "Explain quantum computing" --model gpt-4o
   praisonaibench --suite tests.yaml
   praisonaibench --suite tests.yaml --test-name "terrain_simulation"
+  praisonaibench --suite tests.yaml --concurrent 3
   praisonaibench --cross-model "Write a poem" --models gpt-4o,gpt-3.5-turbo
   praisonaibench --extract output/json/benchmark_results_20250829_173322.json
         """
@@ -71,6 +72,8 @@ Examples:
     # Test suite options
     parser.add_argument('--suite', type=str, help='Run test suite from YAML/JSON file')
     parser.add_argument('--test-name', type=str, help='Run only the specified test from the suite (use with --suite)')
+    parser.add_argument('--concurrent', type=int, default=1, metavar='N',
+                       help='Number of concurrent workers for parallel test execution (default: 1 = sequential)')
     
     # Cross-model testing
     parser.add_argument('--cross-model', type=str, help='Run same test across multiple models')
@@ -135,9 +138,10 @@ Examples:
         if args.test_name:
             print(f"\n📋 Running test '{args.test_name}' from {args.suite}...")
         else:
-            print(f"\n📋 Running test suite from {args.suite}...")
+            concurrent_msg = f" (concurrent: {args.concurrent})" if args.concurrent > 1 else ""
+            print(f"\n📋 Running test suite from {args.suite}{concurrent_msg}...")
         try:
-            results = bench.run_test_suite(args.suite, test_filter=args.test_name, default_model=args.model)
+            results = bench.run_test_suite(args.suite, test_filter=args.test_name, default_model=args.model, concurrent=args.concurrent)
             if args.test_name:
                 print(f"✅ Test '{args.test_name}' completed")
             else:
@@ -184,9 +188,10 @@ Examples:
     else:
         default_suite = "tests.yaml"
         if os.path.exists(default_suite):
-            print(f"\n📋 No command specified, running default test suite: {default_suite}...")
+            concurrent_msg = f" (concurrent: {args.concurrent})" if args.concurrent > 1 else ""
+            print(f"\n📋 No command specified, running default test suite: {default_suite}{concurrent_msg}...")
             try:
-                results = bench.run_test_suite(default_suite, test_filter=args.test_name, default_model=args.model)
+                results = bench.run_test_suite(default_suite, test_filter=args.test_name, default_model=args.model, concurrent=args.concurrent)
                 if args.test_name:
                     print(f"✅ Test '{args.test_name}' completed")
                 else:
@@ -210,6 +215,19 @@ Examples:
     print(f"   Total tests: {summary['total_tests']}")
     print(f"   Success rate: {summary['success_rate']}")
     print(f"   Average time: {summary['average_execution_time']}")
+    
+    # Show cost summary if available
+    if 'cost_summary' in summary:
+        cost_info = summary['cost_summary']
+        print(f"\n💰 Cost Summary:")
+        print(f"   Total tokens: {cost_info['total_tokens']:,}")
+        print(f"   Total cost: ${cost_info['total_cost_usd']:.4f}")
+        
+        # Show per-model breakdown if multiple models
+        if len(cost_info['by_model']) > 1:
+            print(f"\n   By model:")
+            for model, data in cost_info['by_model'].items():
+                print(f"     {model}: ${data['cost']:.4f} ({data['input_tokens'] + data['output_tokens']:,} tokens)")
     
     # Save results
     if args.output:
