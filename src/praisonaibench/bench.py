@@ -19,6 +19,15 @@ import csv
 from .cost_tracker import CostTracker
 from .report_generator import ReportGenerator
 from .enhanced_report import EnhancedReportGenerator
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    BarColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+    MofNCompleteColumn,
+)
 
 
 class Bench:
@@ -237,74 +246,126 @@ class Bench:
         return self._run_tests_parallel(filtered_tests, suite_config, default_model, concurrent)
     
     def _run_tests_sequential(self, test_list: List[Dict], suite_config: Dict, default_model: str = None) -> List[Dict[str, Any]]:
-        """Run tests sequentially."""
+        """Run tests sequentially with progress bar."""
         suite_results = []
+        total_tests = len(test_list)
         
-        for idx, test in enumerate(test_list):
-            prompt = test.get('prompt', '')
-            model = default_model or test.get('model', None)
-            test_name = test.get('name', f'test_{idx + 1}')
-            expected = test.get('expected', None)
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(complete_style="green", finished_style="bold green"),
+            MofNCompleteColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+        ) as progress:
             
-            print(f"Running test: {test_name}")
-            result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
-            suite_results.append(result)
+            # Add overall progress task
+            overall_task = progress.add_task(
+                "[cyan]Running tests...",
+                total=total_tests
+            )
             
-            if result['status'] == 'success':
-                print(f"✅ Completed: {test_name}")
-            else:
-                print(f"❌ Failed: {test_name} - {result.get('response', 'Unknown error')}")
+            for idx, test in enumerate(test_list, 1):
+                prompt = test.get('prompt', '')
+                model = default_model or test.get('model', None)
+                test_name = test.get('name', f'test_{idx}')
+                expected = test.get('expected', None)
+                
+                # Update progress description
+                progress.update(
+                    overall_task,
+                    description=f"[cyan]Test {idx}/{total_tests}: {test_name}"
+                )
+                
+                result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
+                suite_results.append(result)
+                
+                # Update progress
+                progress.update(overall_task, advance=1)
+                
+                # Show completion message
+                if result['status'] == 'success':
+                    print(f"  ✅ Completed: {test_name}")
+                else:
+                    print(f"  ❌ Failed: {test_name} - {result.get('response', 'Unknown error')}")
         
         return suite_results
     
     def _run_tests_parallel(self, test_list: List[Dict], suite_config: Dict, default_model: str = None, max_workers: int = 3) -> List[Dict[str, Any]]:
-        """Run tests in parallel using ThreadPoolExecutor."""
+        """Run tests in parallel with progress bar."""
         suite_results = []
         results_lock = threading.Lock()
-        completed_count = [0]  # Use list for mutable counter in closure
         total_tests = len(test_list)
         
-        print(f"⚡ Running {total_tests} tests with {max_workers} concurrent workers...")
+        print(f"⚡ Running {total_tests} tests with {max_workers} concurrent workers...\n")
         
-        def run_test_wrapper(test_info):
-            """Wrapper for running a single test in a thread."""
-            idx, test = test_info
-            prompt = test.get('prompt', '')
-            model = default_model or test.get('model', None)
-            test_name = test.get('name', f'test_{idx + 1}')
-            expected = test.get('expected', None)
+        # Create progress bar
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(complete_style="green", finished_style="bold green"),
+            MofNCompleteColumn(),
+            TextColumn("•"),
+            TimeElapsedColumn(),
+            TextColumn("•"),
+            TimeRemainingColumn(),
+        ) as progress:
             
-            try:
-                result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
-                
-                with results_lock:
-                    completed_count[0] += 1
-                    progress = f"[{completed_count[0]}/{total_tests}]"
-                    if result['status'] == 'success':
-                        print(f"✅ {progress} Completed: {test_name}")
-                    else:
-                        print(f"❌ {progress} Failed: {test_name}")
-                
-                return result
-            except Exception as e:
-                with results_lock:
-                    completed_count[0] += 1
-                    print(f"❌ [{completed_count[0]}/{total_tests}] Error in {test_name}: {str(e)}")
-                return {
-                    'test_name': test_name,
-                    'status': 'error',
-                    'response': str(e),
-                    'execution_time': 0
-                }
-        
-        # Run tests in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(run_test_wrapper, (idx, test)): idx 
-                      for idx, test in enumerate(test_list)}
+            overall_task = progress.add_task(
+                "[cyan]Running tests (concurrent)...",
+                total=total_tests
+            )
             
-            for future in as_completed(futures):
-                result = future.result()
-                suite_results.append(result)
+            completed_count = [0]
+            
+            def run_test_wrapper(test_info):
+                """Wrapper for running a single test in a thread."""
+                idx, test = test_info
+                prompt = test.get('prompt', '')
+                model = default_model or test.get('model', None)
+                test_name = test.get('name', f'test_{idx + 1}')
+                expected = test.get('expected', None)
+                
+                try:
+                    result = self.run_single_test(prompt, model, test_name, llm_config=suite_config, expected=expected)
+                    
+                    with results_lock:
+                        completed_count[0] += 1
+                        progress.update(
+                            overall_task,
+                            advance=1,
+                            description=f"[cyan]Running tests... [{completed_count[0]}/{total_tests}]"
+                        )
+                        
+                        if result['status'] == 'success':
+                            print(f"  ✅ [{completed_count[0]}/{total_tests}] Completed: {test_name}")
+                        else:
+                            print(f"  ❌ [{completed_count[0]}/{total_tests}] Failed: {test_name}")
+                    
+                    return result
+                except Exception as e:
+                    with results_lock:
+                        completed_count[0] += 1
+                        progress.update(overall_task, advance=1)
+                        print(f"  ❌ [{completed_count[0]}/{total_tests}] Error: {test_name}")
+                    return {
+                        'test_name': test_name,
+                        'status': 'error',
+                        'response': str(e),
+                        'execution_time': 0
+                    }
+            
+            # Run tests in parallel
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(run_test_wrapper, (idx, test)): idx 
+                          for idx, test in enumerate(test_list)}
+                
+                for future in as_completed(futures):
+                    result = future.result()
+                    suite_results.append(result)
         
         # Sort results by test_name to maintain consistent ordering
         suite_results.sort(key=lambda x: x.get('test_name', ''))
