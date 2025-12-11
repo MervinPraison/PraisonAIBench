@@ -19,7 +19,9 @@ Benchmark any LiteLLM-compatible model with automatic HTML extraction, model-spe
 | **🔄 Retry Logic** | ✅ 3 attempts | ✅ 3 attempts |
 | **⚡ Parallel Execution** | N/A | ✅ `--concurrent N` |
 | **💰 Cost Tracking** | ✅ Token & cost per test | ✅ Cumulative cost summary |
-| **📈 Use Case** | Quick testing | Comprehensive benchmarking |
+| **📊 Export Formats** | JSON | JSON, CSV |
+| **📈 HTML Reports** | N/A | ✅ `--report` |
+| **🎯 Use Case** | Quick testing | Comprehensive benchmarking |
 
 ### 🔍 What's Included in Evaluation?
 
@@ -62,8 +64,10 @@ Overall: 85/100 ✅ PASSED
 - 🎛️ **Flexible Testing** - Run single tests, full suites, or filter specific tests
 - ⚡ **Parallel Execution** - Run tests concurrently with `--concurrent N` for faster benchmarking
 - 💰 **Cost & Token Tracking** - Automatic token usage and cost calculation for all supported models
+- 📊 **Multiple Export Formats** - Export results as JSON or CSV for easy analysis
+- 📈 **HTML Dashboard Reports** - Beautiful visual reports with interactive charts using `--report`
 - 🛠️ **Modern Tooling** - Built with `pyproject.toml` and `uv` package manager
-- 📊 **Comprehensive Results** - JSON metrics with timing, success rates, costs, and metadata
+- 📋 **Comprehensive Results** - Complete metrics with timing, success rates, costs, and metadata
 
 ## 🚀 Quick Start
 
@@ -252,6 +256,105 @@ praisonaibench --suite tests.yaml --model gpt-4o
 - Groq (optimised models)
 
 Token usage is extracted from API responses when available, or estimated from text length. Costs are calculated using official provider pricing (updated December 2024).
+
+### CSV Export
+
+Export benchmark results to CSV for spreadsheet analysis:
+
+```bash
+# Export to CSV format
+praisonaibench --suite tests.yaml --format csv
+
+# Results saved to: output/csv/benchmark_results_20241211_123456.csv
+```
+
+**CSV includes:**
+- Test names and status
+- Model information
+- Execution times
+- Token usage (input/output/total)
+- Costs per test
+- Evaluation scores
+- Prompts and response lengths
+- Error messages (if any)
+
+Perfect for:
+- Spreadsheet analysis in Excel/Google Sheets
+- Data visualization tools
+- Statistical analysis
+- Sharing results with non-technical stakeholders
+
+### HTML Dashboard Reports
+
+Generate beautiful interactive reports with comprehensive visualizations inspired by the React UI:
+
+```bash
+# Generate enhanced HTML report after running tests
+praisonaibench --suite tests.yaml --report
+
+# Generate report from existing results (without re-running tests)
+praisonaibench --report-from output/json/benchmark_results_20241211_123456.json
+
+# Compare multiple test results
+praisonaibench --compare result1.json result2.json result3.json
+
+# Reports saved to: output/reports/
+```
+
+**Enhanced Report Includes:**
+
+**📊 Dashboard Tab:**
+- Summary cards with key metrics (tests, models, success rate, avg time, cost, tokens)
+- Interactive charts:
+  - Status distribution (success/failure)
+  - Execution time by model
+  - Evaluation scores (radar chart)
+  - Errors & warnings
+
+**🏆 Leaderboard Tab:**
+- Model rankings with multiple criteria:
+  - Overall Score (default)
+  - Functional Score
+  - Quality Score
+  - Pass Rate
+  - Speed (fastest first)
+- Top 3 models highlighted with medals
+- Detailed metrics per model (functional, quality, pass rate, time)
+- Click criteria to re-rank dynamically
+
+**⚖️ Comparison Tab:**
+- Detailed side-by-side model comparison
+- Comprehensive metrics table:
+  - Overall score, functional score, quality score
+  - Pass rate with color coding
+  - Average execution time
+  - Total errors and warnings count
+- Full model names and stats
+
+**📋 Results Tab:**
+- Complete test results table
+- Individual test status, scores, time, tokens, cost
+- Sortable columns
+- Status indicators
+
+**Features:**
+- 🎨 Modern UI with gradient headers and smooth transitions
+- 📱 Fully responsive design
+- ⚡ Fast and lightweight (no external dependencies)
+- 🔄 Tab navigation for organized viewing
+- 📊 Chart.js powered visualizations
+- 🎯 Based on praisonaibench-ui React application
+- 💾 Standalone HTML - works offline
+- 📧 Easy to share via email or host on web
+
+**Comparison Reports:**
+Multi-run comparison shows:
+- Side-by-side success rates
+- Performance trends
+- Cost and token usage evolution
+- Model improvements over time
+
+Open any generated HTML file in any modern browser!
 
 ## 📋 Test Suite Format
 

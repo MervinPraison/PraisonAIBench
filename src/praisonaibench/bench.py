@@ -15,7 +15,10 @@ import re
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import csv
 from .cost_tracker import CostTracker
+from .report_generator import ReportGenerator
+from .enhanced_report import EnhancedReportGenerator
 
 
 class Bench:
@@ -334,9 +337,25 @@ class Bench:
         
         return cross_model_results
     
-    def save_results(self, filename: str = None) -> str:
+    def save_results(self, filename: str = None, format: str = "json") -> str:
         """
         Save benchmark results to file.
+        
+        Args:
+            filename: Optional custom filename
+            format: Output format - "json" or "csv" (default: "json")
+            
+        Returns:
+            Path to saved file
+        """
+        if format.lower() == "csv":
+            return self.save_results_csv(filename)
+        else:
+            return self.save_results_json(filename)
+    
+    def save_results_json(self, filename: str = None) -> str:
+        """
+        Save benchmark results to JSON file.
         
         Args:
             filename: Optional custom filename
@@ -360,6 +379,251 @@ class Bench:
         
         print(f"Results saved to: {filepath}")
         return filepath
+    
+    def save_results_csv(self, filename: str = None) -> str:
+        """
+        Save benchmark results to CSV file.
+        
+        Args:
+            filename: Optional custom filename
+            
+        Returns:
+            Path to saved file
+        """
+        if not self.results:
+            print("No results to save")
+            return None
+        
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"benchmark_results_{timestamp}.csv"
+        
+        # Ensure .csv extension
+        if not filename.endswith('.csv'):
+            if filename.endswith('.json'):
+                filename = filename.replace('.json', '.csv')
+            else:
+                filename = filename + '.csv'
+        
+        # Create csv subdirectory for better organization
+        output_dir = self.config.get("output_dir", "output")
+        csv_dir = os.path.join(output_dir, "csv")
+        os.makedirs(csv_dir, exist_ok=True)
+        
+        filepath = os.path.join(csv_dir, filename)
+        
+        # Define CSV columns
+        fieldnames = [
+            'test_name',
+            'status',
+            'model',
+            'execution_time',
+            'timestamp',
+            'input_tokens',
+            'output_tokens',
+            'total_tokens',
+            'cost_usd',
+            'evaluation_score',
+            'evaluation_passed',
+            'prompt',
+            'response_length',
+            'retry_attempts',
+            'error'
+        ]
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+            writer.writeheader()
+            
+            for result in self.results:
+                # Extract model name (handle both string and dict)
+                model = result.get('model')
+                if isinstance(model, dict):
+                    model_name = model.get('model', str(model))
+                else:
+                    model_name = str(model) if model else ''
+                
+                # Extract token usage
+                token_usage = result.get('token_usage', {})
+                cost_info = result.get('cost', {})
+                
+                # Extract evaluation info
+                evaluation = result.get('evaluation', {})
+                eval_score = evaluation.get('overall_score', '') if evaluation else ''
+                eval_passed = evaluation.get('passed', '') if evaluation else ''
+                
+                # Create CSV row
+                row = {
+                    'test_name': result.get('test_name', ''),
+                    'status': result.get('status', ''),
+                    'model': model_name,
+                    'execution_time': f"{result.get('execution_time', 0):.2f}",
+                    'timestamp': result.get('timestamp', ''),
+                    'input_tokens': token_usage.get('input_tokens', ''),
+                    'output_tokens': token_usage.get('output_tokens', ''),
+                    'total_tokens': token_usage.get('total_tokens', ''),
+                    'cost_usd': f"{cost_info.get('total_usd', 0):.6f}" if cost_info.get('total_usd') else '',
+                    'evaluation_score': eval_score,
+                    'evaluation_passed': eval_passed,
+                    'prompt': result.get('prompt', ''),
+                    'response_length': len(result.get('response', '')) if result.get('response') else 0,
+                    'retry_attempts': result.get('retry_attempts', ''),
+                    'error': result.get('error', '')
+                }
+                
+                writer.writerow(row)
+        
+        print(f"Results saved to: {filepath}")
+        return filepath
+    
+    def generate_report(self, output_path: str = None, enhanced: bool = True) -> str:
+        """
+        Generate HTML report from results.
+        
+        Args:
+            output_path: Optional path for report file
+            enhanced: Use enhanced report with all UI features (default: True)
+            
+        Returns:
+            Path to generated report
+        """
+        if not self.results:
+            print("No results to generate report from")
+            return None
+        
+        summary = self.get_summary()
+        
+        if enhanced:
+            return EnhancedReportGenerator.generate(self.results, summary, output_path)
+        else:
+            return ReportGenerator.generate_html_report(self.results, summary, output_path)
+    
+    @staticmethod
+    def generate_report_from_file(results_file: str, output_path: str = None) -> str:
+        """
+        Generate HTML report from existing results file.
+        
+        Args:
+            results_file: Path to JSON results file
+            output_path: Optional path for report file
+            
+        Returns:
+            Path to generated report
+        """
+        if not os.path.exists(results_file):
+            print(f"❌ Results file not found: {results_file}")
+            return None
+        
+        print(f"📖 Reading results from: {results_file}")
+        
+        # Load results from file
+        with open(results_file, 'r') as f:
+            data = json.load(f)
+        
+        # Handle different JSON structures
+        if isinstance(data, list):
+            # Direct list of results
+            results = data
+            summary = {}
+        elif isinstance(data, dict):
+            # Dict with 'results' key or single result
+            results = data.get('results', [data] if data else [])
+            summary = data.get('summary', {})
+        else:
+            print("❌ Invalid JSON format")
+            return None
+        
+        if not results:
+            print("❌ No results found in file")
+            return None
+        
+        # If no summary exists, build basic one from results
+        if not summary:
+            total = len(results)
+            success = sum(1 for r in results if r.get('status') == 'success')
+            total_time = sum(r.get('execution_time', 0) for r in results)
+            
+            summary = {
+                'total_tests': total,
+                'successful_tests': success,
+                'failed_tests': total - success,
+                'success_rate': f"{(success/total*100):.1f}%" if total > 0 else "0%",
+                'total_execution_time': f"{total_time:.2f}s",
+                'average_execution_time': f"{(total_time/total):.2f}s" if total > 0 else "0s",
+                'cost_summary': {}
+            }
+            
+            # Try to build cost summary if token data exists
+            total_input = sum(r.get('token_usage', {}).get('input_tokens', 0) for r in results)
+            total_output = sum(r.get('token_usage', {}).get('output_tokens', 0) for r in results)
+            total_cost = sum(r.get('cost', {}).get('total_usd', 0) for r in results)
+            
+            if total_input > 0 or total_output > 0:
+                summary['cost_summary'] = {
+                    'total_input_tokens': total_input,
+                    'total_output_tokens': total_output,
+                    'total_tokens': total_input + total_output,
+                    'total_cost_usd': total_cost
+                }
+        
+        print(f"✅ Loaded {len(results)} test results")
+        return EnhancedReportGenerator.generate(results, summary, output_path)
+    
+    @staticmethod
+    def compare_results(result_files: list, output_path: str = None) -> str:
+        """
+        Generate comparison report from multiple results files.
+        
+        Args:
+            result_files: List of paths to JSON results files
+            output_path: Optional path for comparison report
+            
+        Returns:
+            Path to generated comparison report
+        """
+        if not result_files or len(result_files) < 2:
+            print("❌ Need at least 2 result files to compare")
+            return None
+        
+        print(f"📊 Comparing {len(result_files)} test runs...")
+        
+        all_runs = []
+        for i, file_path in enumerate(result_files):
+            if not os.path.exists(file_path):
+                print(f"⚠️  Skipping missing file: {file_path}")
+                continue
+            
+            print(f"  [{i+1}] Loading: {file_path}")
+            
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            
+            # Handle different JSON structures
+            if isinstance(data, list):
+                results = data
+                summary = {}
+            elif isinstance(data, dict):
+                results = data.get('results', [data] if data else [])
+                summary = data.get('summary', {})
+            else:
+                continue
+            
+            # Build run info
+            run_info = {
+                'file': os.path.basename(file_path),
+                'full_path': file_path,
+                'results': results,
+                'summary': summary,
+                'timestamp': file_path.split('_')[-2:] if '_' in file_path else ['unknown'],
+            }
+            all_runs.append(run_info)
+        
+        if len(all_runs) < 2:
+            print("❌ Need at least 2 valid result files")
+            return None
+        
+        print(f"✅ Loaded {len(all_runs)} runs for comparison")
+        return ReportGenerator.generate_comparison_report(all_runs, output_path)
     
     def _extract_and_save_html(self, response, test_name, model=None):
         """Extract HTML code from response and save to .html file if found."""

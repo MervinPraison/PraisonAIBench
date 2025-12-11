@@ -190,3 +190,6 @@ test_output.txt
 *.bak
 *.backup
 *.orig
+
+
+output/reports/

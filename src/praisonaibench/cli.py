@@ -48,6 +48,50 @@ def extract_html_from_results(results_file, bench):
 
 def main():
     """Main CLI entry point."""
+    # Handle --compare FIRST before any other processing
+    if '--compare' in sys.argv:
+        idx = sys.argv.index('--compare')
+        # Collect all file arguments after --compare until next flag
+        result_files = []
+        i = idx + 1
+        while i < len(sys.argv) and not sys.argv[i].startswith('--'):
+            result_files.append(sys.argv[i])
+            i += 1
+        
+        if len(result_files) < 2:
+            print("❌ Error: --compare requires at least 2 result files")
+            sys.exit(1)
+        
+        output_file = None
+        if '--output' in sys.argv:
+            out_idx = sys.argv.index('--output')
+            if out_idx + 1 < len(sys.argv):
+                output_file = sys.argv[out_idx + 1]
+        
+        # Generate comparison report and exit
+        Bench.compare_results(result_files, output_file)
+        sys.exit(0)
+    
+    # Handle --report-from FIRST before any other processing
+    if '--report-from' in sys.argv:
+        idx = sys.argv.index('--report-from')
+        if idx + 1 < len(sys.argv):
+            results_file = sys.argv[idx + 1]
+            output_file = None
+            
+            # Check for --output flag
+            if '--output' in sys.argv:
+                out_idx = sys.argv.index('--output')
+                if out_idx + 1 < len(sys.argv):
+                    output_file = sys.argv[out_idx + 1]
+            
+            # Generate report and exit
+            Bench.generate_report_from_file(results_file, output_file)
+            sys.exit(0)
+        else:
+            print("❌ Error: --report-from requires a file path")
+            sys.exit(1)
+    
     parser = argparse.ArgumentParser(
         description="PraisonAI Bench - Simple LLM Benchmarking Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -58,6 +102,10 @@ Examples:
   praisonaibench --suite tests.yaml
   praisonaibench --suite tests.yaml --test-name "terrain_simulation"
   praisonaibench --suite tests.yaml --concurrent 3
+  praisonaibench --suite tests.yaml --format csv
+  praisonaibench --suite tests.yaml --report
+  praisonaibench --report-from output/json/benchmark_results_20241211.json
+  praisonaibench --compare file1.json file2.json file3.json
   praisonaibench --cross-model "Write a poem" --models gpt-4o,gpt-3.5-turbo
   praisonaibench --extract output/json/benchmark_results_20250829_173322.json
         """
@@ -87,7 +135,17 @@ Examples:
                        help='Disable evaluation system (faster, no quality assessment)')
     parser.add_argument('--no-llm-judge', action='store_true',
                        help='Disable LLM-as-a-Judge (functional validation only)')
+    
+    # Output options
     parser.add_argument('--output', type=str, help='Output file for results')
+    parser.add_argument('--format', type=str, choices=['json', 'csv'], default='json',
+                       help='Output format: json or csv (default: json)')
+    parser.add_argument('--report', action='store_true',
+                       help='Generate HTML report with charts and visualizations')
+    parser.add_argument('--report-from', type=str, metavar='FILE',
+                       help='Generate HTML report from existing JSON results file')
+    parser.add_argument('--compare', nargs='+', metavar='FILE',
+                       help='Compare multiple test results (provide 2+ JSON files)')
     
     # Extract HTML from existing results
     parser.add_argument('--extract', type=str, help='Extract HTML from existing benchmark results JSON file')
@@ -231,9 +289,13 @@ Examples:
     
     # Save results
     if args.output:
-        bench.save_results(args.output)
+        bench.save_results(args.output, format=args.format)
     elif bench.config.get('save_results', True):
-        bench.save_results()
+        bench.save_results(format=args.format)
+    
+    # Generate HTML report if requested
+    if args.report:
+        bench.generate_report()
 
 
 if __name__ == '__main__':
