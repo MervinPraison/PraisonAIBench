@@ -31,7 +31,8 @@ class PluginManager:
         self._discover_plugins()
     
     def _load_builtin_evaluators(self):
-        """Load built-in evaluators (HTML/JavaScript)."""
+        """Load built-in evaluators (HTML/JavaScript, SVG)."""
+        # Load HTML evaluator
         try:
             from .evaluators.html_evaluator import HTMLEvaluator
             html_eval = HTMLEvaluator()
@@ -44,6 +45,17 @@ class PluginManager:
             logging.info("✅ Loaded built-in HTML/JavaScript evaluator")
         except ImportError as e:
             logging.warning(f"⚠️  Could not load HTML evaluator: {e}")
+        
+        # Load SVG evaluator
+        try:
+            from .evaluators.svg_evaluator import SVGEvaluator
+            svg_eval = SVGEvaluator(use_llm_judge=False)  # Disable LLM by default
+            
+            self.register('svg', svg_eval)
+            
+            logging.info("✅ Loaded built-in SVG evaluator")
+        except ImportError as e:
+            logging.warning(f"⚠️  Could not load SVG evaluator: {e}")
     
     def _discover_plugins(self):
         """Discover and load plugins via entry points."""

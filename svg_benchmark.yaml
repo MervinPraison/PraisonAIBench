@@ -1,0 +1,431 @@
+# SVG Generation Benchmark for PraisonAI Bench
+# Based on research from SVGenius, Tom Gally's LLM SVG Benchmark, and StarVector
+#
+# This benchmark evaluates LLM capabilities in generating SVG graphics from
+# natural language descriptions. Tests range from simple shapes to complex scenes.
+#
+# Metrics evaluated:
+# - SVG Validity (15%): Structural correctness
+# - Visual Quality (35%): Rendered image quality
+# - Semantic Alignment (25%): Match with prompt description
+# - Code Quality (10%): SVG code structure
+# - LLM Judge (15%): Semantic quality assessment
+
+config:
+  language: svg
+  max_tokens: 8192
+  temperature: 0.7
+
+# System instructions for SVG generation
+system_instructions: |
+  You are an expert SVG artist. Generate clean, well-structured SVG code that accurately 
+  represents the requested image. Follow these guidelines:
+  
+  1. Always include proper SVG structure with xmlns, viewBox, width, and height
+  2. Use semantic grouping with <g> elements and meaningful IDs/comments
+  3. Optimize paths and use appropriate elements (rect, circle, path, etc.)
+  4. Include colors that match the scene description
+  5. Return ONLY the SVG code, no explanations
+  
+  Example format:
+  ```svg
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+    <!-- Your SVG content here -->
+  </svg>
+  ```
+
+tests:
+  # ============================================================================
+  # LANDMARK SCENES (Complex)
+  # ============================================================================
+  
+  - name: golden_gate_bridge_sunset
+    prompt: |
+      Generate an SVG of the Golden Gate Bridge at sunset.
+      Include the iconic red-orange bridge towers, suspension cables, the bay water below,
+      and a warm sunset sky with orange and purple gradients.
+    category: landmark
+    difficulty: hard
+    expected_elements:
+      - bridge towers
+      - suspension cables
+      - water
+      - sunset sky
+      - gradient colors
+
+  - name: eiffel_tower_night
+    prompt: |
+      Generate an SVG of the Eiffel Tower at night with twinkling lights.
+      Show the iconic iron lattice structure, the Paris skyline silhouette,
+      and a dark blue night sky with stars.
+    category: landmark
+    difficulty: hard
+    expected_elements:
+      - tower structure
+      - lattice pattern
+      - lights
+      - night sky
+      - stars
+
+  - name: mount_fuji_sunrise
+    prompt: |
+      Generate an SVG of Mount Fuji at sunrise.
+      Include the snow-capped peak, cherry blossom trees in the foreground,
+      a lake reflection, and warm sunrise colors in the sky.
+    category: landmark
+    difficulty: hard
+    expected_elements:
+      - mountain
+      - snow cap
+      - cherry blossoms
+      - lake
+      - sunrise
+
+  # ============================================================================
+  # NATURE SCENES (Medium)
+  # ============================================================================
+
+  - name: forest_path
+    prompt: |
+      Generate an SVG of a peaceful forest path.
+      Show tall trees on both sides, dappled sunlight filtering through leaves,
+      a winding dirt path, and some wildflowers along the edges.
+    category: nature
+    difficulty: medium
+    expected_elements:
+      - trees
+      - path
+      - sunlight
+      - flowers
+
+  - name: ocean_waves
+    prompt: |
+      Generate an SVG of ocean waves crashing on a beach.
+      Include blue-green waves with white foam, sandy beach,
+      and a clear blue sky with a few clouds.
+    category: nature
+    difficulty: medium
+    expected_elements:
+      - waves
+      - foam
+      - beach
+      - sky
+      - clouds
+
+  - name: mountain_landscape
+    prompt: |
+      Generate an SVG of a mountain landscape.
+      Show multiple mountain peaks with snow, a green valley below,
+      a river flowing through, and birds flying in the sky.
+    category: nature
+    difficulty: medium
+    expected_elements:
+      - mountains
+      - snow
+      - valley
+      - river
+      - birds
+
+  # ============================================================================
+  # WHIMSICAL/CREATIVE (From Tom Gally's Benchmark)
+  # ============================================================================
+
+  - name: octopus_pipe_organ
+    prompt: |
+      Generate an SVG of an octopus operating a pipe organ.
+      Show a purple octopus with its tentacles playing the keys and pulling stops,
+      with ornate golden pipes rising above.
+    category: whimsical
+    difficulty: hard
+    expected_elements:
+      - octopus
+      - tentacles
+      - pipe organ
+      - pipes
+      - keys
+
+  - name: butterfly_steam_engine
+    prompt: |
+      Generate an SVG of a butterfly inspecting a steam engine.
+      Show a colorful monarch butterfly hovering near a vintage steam locomotive,
+      with steam clouds and mechanical details.
+    category: whimsical
+    difficulty: hard
+    expected_elements:
+      - butterfly
+      - wings
+      - steam engine
+      - steam
+      - wheels
+
+  - name: sloth_excavator
+    prompt: |
+      Generate an SVG of a sloth steering an excavator.
+      Show a cute sloth in the operator's cabin of a yellow construction excavator,
+      with the arm extended and a construction site background.
+    category: whimsical
+    difficulty: hard
+    expected_elements:
+      - sloth
+      - excavator
+      - cabin
+      - arm
+      - construction
+
+  - name: starfish_bulldozer
+    prompt: |
+      Generate an SVG of a starfish driving a bulldozer.
+      Show an orange starfish operating a yellow bulldozer,
+      pushing dirt on a construction site.
+    category: whimsical
+    difficulty: medium
+    expected_elements:
+      - starfish
+      - bulldozer
+      - dirt
+      - construction
+
+  - name: penguin_surfing
+    prompt: |
+      Generate an SVG of a penguin surfing on a wave.
+      Show a black and white penguin standing on a surfboard,
+      riding a blue ocean wave with spray.
+    category: whimsical
+    difficulty: medium
+    expected_elements:
+      - penguin
+      - surfboard
+      - wave
+      - ocean
+
+  # ============================================================================
+  # SIMPLE SHAPES (Easy - Baseline)
+  # ============================================================================
+
+  - name: simple_house
+    prompt: |
+      Generate an SVG of a simple house.
+      Include a rectangular body, triangular roof, door, and two windows.
+      Use basic colors: red roof, white walls, blue door.
+    category: simple
+    difficulty: easy
+    expected_elements:
+      - house body
+      - roof
+      - door
+      - windows
+
+  - name: simple_tree
+    prompt: |
+      Generate an SVG of a simple tree.
+      Show a brown trunk and green circular or cloud-shaped foliage.
+    category: simple
+    difficulty: easy
+    expected_elements:
+      - trunk
+      - foliage
+
+  - name: simple_car
+    prompt: |
+      Generate an SVG of a simple car.
+      Show a side view with body, wheels, and windows.
+      Use red for the body and black for the wheels.
+    category: simple
+    difficulty: easy
+    expected_elements:
+      - car body
+      - wheels
+      - windows
+
+  - name: simple_sun
+    prompt: |
+      Generate an SVG of a simple sun.
+      Show a yellow circle with rays extending outward.
+    category: simple
+    difficulty: easy
+    expected_elements:
+      - sun circle
+      - rays
+
+  - name: simple_flower
+    prompt: |
+      Generate an SVG of a simple flower.
+      Show a stem, leaves, and petals around a center.
+      Use pink petals and yellow center.
+    category: simple
+    difficulty: easy
+    expected_elements:
+      - stem
+      - petals
+      - center
+
+  # ============================================================================
+  # ICONS (Easy-Medium)
+  # ============================================================================
+
+  - name: icon_heart
+    prompt: |
+      Generate an SVG icon of a heart.
+      Create a symmetrical red heart shape, suitable for use as an icon.
+    category: icon
+    difficulty: easy
+    expected_elements:
+      - heart shape
+
+  - name: icon_star
+    prompt: |
+      Generate an SVG icon of a 5-pointed star.
+      Create a golden/yellow star shape, suitable for ratings.
+    category: icon
+    difficulty: easy
+    expected_elements:
+      - star shape
+      - 5 points
+
+  - name: icon_settings_gear
+    prompt: |
+      Generate an SVG icon of a settings gear.
+      Create a gray gear/cog with teeth around the edge and a circle in the center.
+    category: icon
+    difficulty: medium
+    expected_elements:
+      - gear shape
+      - teeth
+      - center hole
+
+  - name: icon_user_avatar
+    prompt: |
+      Generate an SVG icon of a user avatar.
+      Show a simple silhouette of a person's head and shoulders in a circle.
+    category: icon
+    difficulty: easy
+    expected_elements:
+      - head
+      - shoulders
+      - circle frame
+
+  - name: icon_shopping_cart
+    prompt: |
+      Generate an SVG icon of a shopping cart.
+      Show a cart with wheels and handle, suitable for e-commerce.
+    category: icon
+    difficulty: medium
+    expected_elements:
+      - cart body
+      - wheels
+      - handle
+
+  # ============================================================================
+  # DIAGRAMS (Medium)
+  # ============================================================================
+
+  - name: diagram_flowchart
+    prompt: |
+      Generate an SVG of a simple flowchart.
+      Show Start -> Process -> Decision (diamond) -> End.
+      Use rectangles for process, diamond for decision, with arrows connecting them.
+    category: diagram
+    difficulty: medium
+    expected_elements:
+      - rectangles
+      - diamond
+      - arrows
+      - text labels
+
+  - name: diagram_pie_chart
+    prompt: |
+      Generate an SVG of a pie chart with 4 segments.
+      Show segments of 40%, 30%, 20%, and 10% in different colors.
+      Include a legend with labels.
+    category: diagram
+    difficulty: medium
+    expected_elements:
+      - pie segments
+      - different colors
+      - legend
+
+  - name: diagram_bar_chart
+    prompt: |
+      Generate an SVG of a bar chart with 5 bars.
+      Show vertical bars of varying heights with labels on the x-axis.
+      Include axis lines and a title.
+    category: diagram
+    difficulty: medium
+    expected_elements:
+      - bars
+      - axis
+      - labels
+      - title
+
+  # ============================================================================
+  # ABSTRACT ART (Creative)
+  # ============================================================================
+
+  - name: abstract_geometric
+    prompt: |
+      Generate an SVG of abstract geometric art.
+      Create an interesting composition using circles, triangles, and rectangles
+      in various colors with some overlapping and transparency.
+    category: abstract
+    difficulty: medium
+    expected_elements:
+      - circles
+      - triangles
+      - rectangles
+      - colors
+      - composition
+
+  - name: abstract_waves
+    prompt: |
+      Generate an SVG of abstract flowing waves.
+      Create smooth, curved lines in gradient colors flowing across the canvas,
+      like a modern art piece.
+    category: abstract
+    difficulty: medium
+    expected_elements:
+      - curved lines
+      - gradients
+      - flow
+
+  # ============================================================================
+  # ANIMALS (Medium)
+  # ============================================================================
+
+  - name: animal_cat
+    prompt: |
+      Generate an SVG of a sitting cat.
+      Show a cute cat with pointed ears, whiskers, tail, and expressive eyes.
+      Use orange/ginger coloring.
+    category: animal
+    difficulty: medium
+    expected_elements:
+      - cat body
+      - ears
+      - whiskers
+      - tail
+      - eyes
+
+  - name: animal_bird
+    prompt: |
+      Generate an SVG of a bird on a branch.
+      Show a small colorful bird (like a robin) perched on a tree branch.
+    category: animal
+    difficulty: medium
+    expected_elements:
+      - bird body
+      - wings
+      - beak
+      - branch
+
+  - name: animal_fish
+    prompt: |
+      Generate an SVG of a tropical fish.
+      Show a colorful fish with fins, scales pattern, and an eye.
+      Use bright tropical colors.
+    category: animal
+    difficulty: medium
+    expected_elements:
+      - fish body
+      - fins
+      - scales
+      - eye

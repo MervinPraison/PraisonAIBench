@@ -113,11 +113,15 @@ class Bench:
             if lang != 'code':
                 return lang
         
-        # 3. Check for HTML indicators
+        # 3. Check for SVG indicators
+        if '<svg' in response.lower() and '</svg>' in response.lower():
+            return 'svg'
+        
+        # 4. Check for HTML indicators
         if '<!doctype' in response.lower() or '<html' in response.lower():
             return 'html'
         
-        # 4. Default to HTML (backwards compatible)
+        # 5. Default to HTML (backwards compatible)
         return 'html'
     
     def run_single_test(self,
@@ -167,9 +171,10 @@ class Bench:
         # Use the agent's run_test method which handles timing and error handling
         result = agent.run_test(prompt, test_name)
         
-        # Check if response contains HTML and save it
+        # Check if response contains HTML or SVG and save it
         if result['status'] == 'success' and result['response']:
             self._extract_and_save_html(result['response'], test_name, model)
+            self._extract_and_save_svg(result['response'], test_name, model)
         
         # Run evaluation if enabled
         if self.plugin_manager and result['status'] == 'success' and result['response']:
@@ -782,6 +787,50 @@ class Bench:
                 print(f"💾 HTML file saved: {html_path}")
             except Exception as e:
                 print(f"⚠️  Failed to save HTML file {html_path}: {e}")
+    
+    def _extract_and_save_svg(self, response, test_name, model=None):
+        """Extract SVG code from response and save to .svg file if found."""
+        svg_content = None
+        
+        # Look for SVG code blocks in markdown format
+        svg_pattern = r'```(?:svg|xml)\s*\n(.*?)\n```'
+        matches = re.findall(svg_pattern, response, re.DOTALL | re.IGNORECASE)
+        
+        if matches:
+            for match in matches:
+                if '<svg' in match.lower():
+                    svg_content = match.strip()
+                    print(f"✅ Found complete SVG block ({len(svg_content)} chars)")
+                    break
+        
+        if not svg_content:
+            # Try to find raw SVG
+            svg_raw_pattern = r'(<svg[^>]*>.*?</svg>)'
+            raw_matches = re.findall(svg_raw_pattern, response, re.DOTALL | re.IGNORECASE)
+            
+            if raw_matches:
+                svg_content = raw_matches[0].strip()
+                print(f"✅ Found raw SVG content ({len(svg_content)} chars)")
+        
+        if svg_content:
+            filename = f"{test_name}.svg"
+            
+            # Create model-specific output directory
+            base_output_dir = "output/svg"
+            if model:
+                output_dir = os.path.join(base_output_dir, model)
+            else:
+                output_dir = base_output_dir
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Save SVG file
+            svg_path = os.path.join(output_dir, filename)
+            try:
+                with open(svg_path, 'w', encoding='utf-8') as f:
+                    f.write(svg_content)
+                print(f"💾 SVG file saved: {svg_path}")
+            except Exception as e:
+                print(f"⚠️  Failed to save SVG file {svg_path}: {e}")
     
     def get_summary(self) -> Dict[str, Any]:
         """Get a summary of benchmark results including costs."""
