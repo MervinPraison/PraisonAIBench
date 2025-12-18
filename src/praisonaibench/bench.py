@@ -109,6 +109,9 @@ class Bench:
         match = re.search(r'```(\w+)', response)
         if match:
             lang = match.group(1).lower()
+            # Map xml to svg if it contains SVG content
+            if lang == 'xml' and '<svg' in response.lower():
+                return 'svg'
             # Skip generic 'code' tag
             if lang != 'code':
                 return lang

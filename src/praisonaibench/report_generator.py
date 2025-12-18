@@ -344,6 +344,7 @@ class ReportGenerator:
     @staticmethod
     def _generate_table_rows(results: List[Dict[str, Any]]) -> str:
         """Generate HTML table rows for results"""
+        import re
         rows = ""
         for r in results:
             status = r.get('status', 'unknown')
@@ -364,9 +365,23 @@ class ReportGenerator:
             evaluation = r.get('evaluation', {})
             score = evaluation.get('overall_score', '-') if evaluation else '-'
             
+            # Check for SVG content and create preview
+            svg_preview = ""
+            response = r.get('response', '')
+            if response and '<svg' in response.lower():
+                svg_content = ReportGenerator._extract_svg(response)
+                if svg_content:
+                    # Sanitize SVG for embedding
+                    svg_safe = svg_content.replace('<script', '<!-- script')
+                    svg_safe = svg_safe.replace('</script>', 'script -->')
+                    svg_preview = f'''
+                    <div class="svg-preview" style="background: white; padding: 10px; border-radius: 5px; margin-top: 10px; max-width: 200px; max-height: 150px; overflow: hidden;">
+                        {svg_safe}
+                    </div>'''
+            
             rows += f'''
             <tr>
-                <td>{r.get('test_name', 'Unknown')}</td>
+                <td>{r.get('test_name', 'Unknown')}{svg_preview}</td>
                 <td><span class="status-badge {status_class}">{status.upper()}</span></td>
                 <td>{model_name}</td>
                 <td>{r.get('execution_time', 0):.2f}</td>
@@ -376,6 +391,25 @@ class ReportGenerator:
             </tr>'''
         
         return rows
+    
+    @staticmethod
+    def _extract_svg(content: str) -> str:
+        """Extract SVG from response content"""
+        import re
+        
+        # Try code blocks first
+        svg_block = re.search(r'```(?:svg|xml)?\s*\n(.*?)\n```', content, re.DOTALL)
+        if svg_block:
+            svg = svg_block.group(1)
+            if '<svg' in svg.lower():
+                return svg
+        
+        # Try raw SVG
+        svg_match = re.search(r'(<svg[^>]*>.*?</svg>)', content, re.DOTALL | re.IGNORECASE)
+        if svg_match:
+            return svg_match.group(1)
+        
+        return None
     
     @staticmethod
     def generate_comparison_report(runs: List[Dict[str, Any]], output_path: str = None) -> str:

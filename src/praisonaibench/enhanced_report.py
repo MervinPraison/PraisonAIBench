@@ -514,13 +514,14 @@ class EnhancedReportGenerator:
     
     @staticmethod
     def _generate_detailed_results(results: List[Dict[str, Any]]) -> str:
-        """Generate detailed results table"""
+        """Generate detailed results table with SVG previews"""
         html = '''
         <div class="comparison-table">
             <table>
                 <thead>
                     <tr>
                         <th>Test Name</th>
+                        <th>Preview</th>
                         <th>Model</th>
                         <th>Status</th>
                         <th>Overall</th>
@@ -550,9 +551,13 @@ class EnhancedReportGenerator:
             cost = r.get('cost', {}).get('total_usd', 0)
             cost_str = f"${cost:.6f}" if cost else '—'
             
+            # Generate SVG preview if available
+            svg_preview = EnhancedReportGenerator._generate_svg_preview(r.get('response', ''))
+            
             html += f'''
                 <tr>
                     <td><strong>{r.get('test_name', 'Unknown')}</strong></td>
+                    <td>{svg_preview}</td>
                     <td>{model_short}</td>
                     <td class="{status_class}">{status_icon} {status.upper()}</td>
                     <td style="font-weight: 600;">{overall_score}</td>
@@ -569,6 +574,42 @@ class EnhancedReportGenerator:
         '''
         
         return html
+    
+    @staticmethod
+    def _generate_svg_preview(response: str) -> str:
+        """Generate SVG preview HTML from response"""
+        import re
+        
+        if not response or '<svg' not in response.lower():
+            return '<span style="color: #666;">—</span>'
+        
+        # Try to extract SVG
+        svg_content = None
+        
+        # Try code blocks first
+        svg_block = re.search(r'```(?:svg|xml)?\s*\n(.*?)\n```', response, re.DOTALL)
+        if svg_block:
+            svg = svg_block.group(1)
+            if '<svg' in svg.lower():
+                svg_content = svg
+        
+        # Try raw SVG
+        if not svg_content:
+            svg_match = re.search(r'(<svg[^>]*>.*?</svg>)', response, re.DOTALL | re.IGNORECASE)
+            if svg_match:
+                svg_content = svg_match.group(1)
+        
+        if not svg_content:
+            return '<span style="color: #666;">—</span>'
+        
+        # Sanitize SVG
+        svg_safe = svg_content.replace('<script', '<!-- script')
+        svg_safe = svg_safe.replace('</script>', 'script -->')
+        
+        return f'''
+        <div style="background: white; padding: 8px; border-radius: 6px; width: 80px; height: 60px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            <div style="max-width: 100%; max-height: 100%; transform: scale(0.8);">{svg_safe}</div>
+        </div>'''
     
     @staticmethod
     def _generate_javascript(stats: Dict[str, Any]) -> str:
