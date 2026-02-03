@@ -42,3 +42,10 @@ nav:
   - Getting Started:
     - Installation: getting-started/installation.md
     - Quick Start: getting-started/quick-start.md
+  - Features:
+    - Test Suites: features/test-suites.md
+    - Evaluation System: features/evaluation.md
+    - HTML Extraction: features/html-extraction.md
+    - Cost & Token Tracking: features/cost-tracking.md
+    - Reports & Export: features/reports.md
+    - Plugin System: features/plugins.md
