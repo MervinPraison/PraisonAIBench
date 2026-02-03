@@ -150,6 +150,12 @@ Examples:
     # Extract HTML from existing results
     parser.add_argument('--extract', type=str, help='Extract HTML from existing benchmark results JSON file')
     
+    # Real-time SVG race
+    parser.add_argument('--svg-race', type=str, metavar='PROMPT',
+                       help='Run real-time SVG generation race between models')
+    parser.add_argument('--open-browser', action='store_true', default=True,
+                       help='Open browser for SVG race UI (default: True)')
+    
     args = parser.parse_args()
     
     # Initialize bench
@@ -240,6 +246,24 @@ Examples:
             sys.exit(1)
         
         # Exit early for extract operation - no need for summary or saving
+        return
+    
+    # Real-time SVG race
+    elif args.svg_race:
+        models = args.models.split(',') if args.models else ['gpt-4o-mini', 'gpt-4o']
+        print(f"\n🎬 Starting real-time SVG race...")
+        print(f"   Models: {', '.join(models)}")
+        print(f"   Prompt: {args.svg_race[:50]}...")
+        try:
+            from .realtime_svg_ui import run_realtime_comparison
+            run_realtime_comparison(
+                models=models,
+                prompt=args.svg_race,
+                open_browser=args.open_browser
+            )
+        except Exception as e:
+            print(f"❌ SVG race failed: {e}")
+            sys.exit(1)
         return
     
     # Default to tests.yaml if no specific command provided

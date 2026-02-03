@@ -193,3 +193,5 @@ test_output.txt
 
 
 output/reports/
+output/svg/
+output/svg_test/
