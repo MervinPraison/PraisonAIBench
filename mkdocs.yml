@@ -20,9 +20,6 @@ theme:
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-  font:
-    text: Inter
-    code: JetBrains Mono
   features:
     - navigation.instant
     - content.code.copy
