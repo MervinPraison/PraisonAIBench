@@ -6,7 +6,7 @@ repo_name: MervinPraison/PraisonAIBench
 repo_url: https://github.com/MervinPraison/PraisonAIBench
 
 theme:
-  name: material
+  name: !ENV [PRAISONAI_THEME, material]
   palette:
     - scheme: slate
       primary: teal

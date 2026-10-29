@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
     paths: ['docs/**', 'mkdocs.yml']
+  schedule:
+    - cron: '23 4 * * *'
   workflow_dispatch:
 permissions:
   contents: read
@@ -17,6 +19,17 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install mkdocs mkdocs-material pymdown-extensions
+      - name: Check out shared theme
+        uses: actions/checkout@v4
+        with:
+          repository: MervinPraison/praisonai-docs-theme
+          ssh-key: ${{ secrets.PRAISONAI_THEME_DEPLOY_KEY }}
+          persist-credentials: false
+          path: .praisonai-theme
+      - name: Install shared theme
+        run: pip install ./.praisonai-theme
+      - name: Select shared theme
+        run: echo "PRAISONAI_THEME=praisonai" >> "$GITHUB_ENV"
       - run: mkdocs build
       - uses: actions/upload-pages-artifact@v3
         with:
