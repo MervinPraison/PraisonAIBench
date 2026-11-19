@@ -2,7 +2,7 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'mkdocs.yml']
+    paths: ['docs/**', 'mkdocs.yml', 'aiui.template.yaml']
   schedule:
     - cron: '23 4 * * *'
   workflow_dispatch:
@@ -18,19 +18,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install mkdocs mkdocs-material pymdown-extensions
-      - name: Check out shared theme
-        uses: actions/checkout@v4
-        with:
-          repository: MervinPraison/praisonai-docs-theme
-          ssh-key: ${{ secrets.PRAISONAI_THEME_DEPLOY_KEY }}
-          persist-credentials: false
-          path: .praisonai-theme
-      - name: Install shared theme
-        run: pip install ./.praisonai-theme
-      - name: Select shared theme
-        run: echo "PRAISONAI_THEME=praisonai" >> "$GITHUB_ENV"
-      - run: mkdocs build
+      - name: Install PraisonAI UI
+        run: pip install aiui
+      - name: Build docs
+        run: |
+          aiui build --config aiui.template.yaml --output site --minify
+          if [ -f CNAME ]; then cp CNAME site/CNAME; fi
+          if [ -f docs/CNAME ]; then cp docs/CNAME site/CNAME; fi
+          if [ -f mkdocs-docs/CNAME ]; then cp mkdocs-docs/CNAME site/CNAME; fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
