@@ -6,8 +6,9 @@ site:
   title: PraisonAI Bench
   ui: shadcn
   theme:
-    preset: teal
-    darkMode: true
+    preset: paper
+    radius: md
+    mode: system
   description: Simple LLM Benchmarking Tool using PraisonAI Agents
 seo:
   siteUrl: https://bench.praison.ai
