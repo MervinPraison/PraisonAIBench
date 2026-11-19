@@ -1,3 +1,18 @@
+---
+layout: home
+title: PraisonAI Bench
+description: Simple LLM Benchmarking Tool using PraisonAI Agents
+hero:
+  name: PraisonAI Bench
+  text: PraisonAI Bench
+  tagline: Simple LLM Benchmarking Tool using PraisonAI Agents
+  actions:
+  - text: Quick start
+    link: getting-started/installation.md
+  - text: View on GitHub
+    link: https://github.com/MervinPraison/PraisonAIBench
+    theme: alt
+---
 # PraisonAI Bench
 
 Simple LLM Benchmarking Tool using PraisonAI Agents.

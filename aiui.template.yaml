@@ -14,20 +14,18 @@ seo:
   siteUrl: https://bench.praison.ai
 navigation:
   tabs:
-  - tab: Home
+  - tab: Docs
     groups:
-    - group: Home
+    - group: Get started
       pages:
       - index
-  - tab: Getting Started
-    groups:
+      icon: rocket
     - group: Getting Started
       pages:
       - getting-started/installation
       - getting-started/quick-start
+      icon: rocket
       prefix: getting-started
-  - tab: Features
-    groups:
     - group: Features
       pages:
       - features/test-suites
@@ -36,8 +34,13 @@ navigation:
       - features/cost-tracking
       - features/reports
       - features/plugins
+      icon: book-open
       prefix: features
 navbar:
+  primary:
+    type: button
+    label: Quick start
+    href: /docs/getting-started/installation
   links:
   - label: GitHub
     href: https://github.com/MervinPraison/PraisonAIBench
@@ -53,6 +56,8 @@ content:
     include:
     - '**/*.md'
     - '**/*.mdx'
+    nav:
+      mode: manual
 templates:
   docs:
     layout: ThreeColumnLayout
